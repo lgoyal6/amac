@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>amac</title>
+<style>
+  :root {
+    --bg:#0d0f13; --card:#171a21; --card2:#1e222b; --line:#272c37;
+    --fg:#e6e8ee; --dim:#8b93a7;
+    --work:#4ea3ff; --idle:#8b93a7; --block:#ff8a3d; --end:#4b5162; --ok:#3ddc84;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f6f7f9; --card:#fff; --card2:#f0f2f6; --line:#e2e6ee;
+            --fg:#12151b; --dim:#5d6577; }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:15px/1.45 ui-sans-serif,-apple-system,SF Pro Text,system-ui,sans-serif;
+         padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  header { position:sticky; top:0; z-index:5; background:var(--bg);
+           padding:14px 16px 10px; border-bottom:1px solid var(--line);
+           display:flex; align-items:center; gap:10px; }
+  h1 { font-size:17px; margin:0; letter-spacing:.02em; font-weight:650; }
+  .conn { margin-left:auto; font-size:12px; color:var(--dim); display:flex; align-items:center; gap:6px; }
+  .dot { width:8px; height:8px; border-radius:50%; background:var(--end); }
+  .dot.on { background:var(--ok); }
+
+  main { padding:14px 16px 90px; display:grid; gap:12px;
+         grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); }
+
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
+          padding:13px 14px; cursor:pointer; }
+  .card.blocked { border-color:var(--block); background:linear-gradient(var(--card),var(--card)) padding-box; }
+  .top { display:flex; align-items:center; gap:8px; }
+  .name { font-weight:620; font-size:15px; }
+  .agent { font-size:11px; color:var(--dim); border:1px solid var(--line);
+           padding:1px 6px; border-radius:999px; }
+  .state { margin-left:auto; font-size:11px; text-transform:uppercase;
+           letter-spacing:.06em; font-weight:640; }
+  .state.working{color:var(--work)} .state.idle{color:var(--idle)}
+  .state.blocked{color:var(--block)} .state.ended{color:var(--end)}
+  .state.starting{color:var(--work)}
+  .detail { color:var(--dim); font-size:13px; margin-top:5px;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .dir { color:var(--dim); font-size:11px; margin-top:6px; font-family:ui-monospace,SFMono-Regular,monospace; }
+
+  .ask { margin-top:11px; padding-top:11px; border-top:1px solid var(--line); }
+  .ask-title { font-size:13px; margin-bottom:9px; }
+  .opts { display:flex; gap:7px; flex-wrap:wrap; }
+  button { font:inherit; font-size:13px; font-weight:560; padding:9px 13px;
+           border-radius:9px; border:1px solid var(--line); background:var(--card2);
+           color:var(--fg); cursor:pointer; min-height:40px; }
+  button:active { transform:scale(.97); }
+  button.allow { background:var(--ok); border-color:var(--ok); color:#04140a; }
+  button.reject { background:transparent; color:var(--block); border-color:var(--block); }
+
+  .log { margin-top:11px; padding-top:11px; border-top:1px solid var(--line);
+         font-family:ui-monospace,SFMono-Regular,monospace; font-size:11.5px;
+         color:var(--dim); max-height:210px; overflow-y:auto; }
+  .log div { padding:1.5px 0; word-break:break-word; }
+  .empty { color:var(--dim); text-align:center; padding:44px 16px; grid-column:1/-1; }
+
+  .bar { position:fixed; left:0; right:0; bottom:0; background:var(--card);
+         border-top:1px solid var(--line); padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+         display:flex; gap:8px; }
+  .bar select, .bar input { font:inherit; font-size:14px; padding:9px 10px; border-radius:9px;
+         border:1px solid var(--line); background:var(--card2); color:var(--fg); }
+  .bar input { flex:1; min-width:0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>amac</h1>
+  <div class="conn"><span class="dot" id="dot"></span><span id="connText">connecting</span></div>
+</header>
+
+<main id="grid"><div class="empty">no sessions yet</div></main>
+
+<div class="bar">
+  <select id="agent"></select>
+  <input id="prompt" placeholder="start a session..." enterkeyhint="go">
+</div>
+
+<script>
+// The token rides in the URL because EventSource cannot set headers. Stash it
+// so a refresh or a home-screen bookmark keeps working, then strip it from the
+// address bar so it does not sit in screenshots or shoulder-view.
+const url = new URL(location.href);
+if (url.searchParams.get('token')) {
+  localStorage.setItem('amac_token', url.searchParams.get('token'));
+  history.replaceState({}, '', url.pathname);
+}
+const TOKEN = localStorage.getItem('amac_token') || '';
+
+const grid = document.getElementById('grid');
+const dot = document.getElementById('dot');
+const connText = document.getElementById('connText');
+
+let sessions = new Map();
+let logs = new Map();     // session id -> recent lines
+let open = new Set();     // expanded cards
+let lastSeq = 0;
+
+const api = (path, opts = {}) => fetch(path, {
+  ...opts,
+  headers: { 'Content-Type': 'application/json', 'X-Amac-Token': TOKEN, ...(opts.headers || {}) },
+});
+
+async function refresh() {
+  const r = await api('/api/sessions');
+  if (!r.ok) return;
+  const list = await r.json();
+  sessions = new Map(list.map(s => [s.id, s]));
+  render();
+}
+
+function push(id, line) {
+  if (!id) return;
+  const arr = logs.get(id) || [];
+  arr.push(line);
+  // Bounded on purpose: a long turn emits thousands of updates and a phone
+  // should not hold all of them in the DOM.
+  if (arr.length > 60) arr.shift();
+  logs.set(id, arr);
+}
+
+function render() {
+  const all = [...sessions.values()];
+  if (!all.length) { grid.innerHTML = '<div class="empty">no sessions yet</div>'; return; }
+
+  // Anything waiting on a human sorts first. That is the whole point of the
+  // screen: the question you have not answered should never be below the fold.
+  const rank = s => s.state === 'blocked' ? 0 : s.state === 'working' ? 1 : s.state === 'idle' ? 2 : 3;
+  all.sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));
+
+  grid.innerHTML = '';
+  for (const s of all) {
+    const card = document.createElement('div');
+    card.className = 'card' + (s.state === 'blocked' ? ' blocked' : '');
+    card.onclick = e => {
+      if (e.target.tagName === 'BUTTON') return;
+      open.has(s.id) ? open.delete(s.id) : open.add(s.id);
+      render();
+    };
+
+    const head = document.createElement('div');
+    head.className = 'top';
+    head.innerHTML = `<span class="name">${esc(s.id)}</span>
+      <span class="agent">${esc(s.agent)}</span>
+      <span class="state ${s.state}">${s.state}</span>`;
+    card.appendChild(head);
+
+    const d = document.createElement('div');
+    d.className = 'detail';
+    d.textContent = s.detail || '';
+    card.appendChild(d);
+
+    if (s.pending) {
+      const ask = document.createElement('div');
+      ask.className = 'ask';
+      const t = document.createElement('div');
+      t.className = 'ask-title';
+      t.textContent = s.pending.title;
+      ask.appendChild(t);
+
+      const opts = document.createElement('div');
+      opts.className = 'opts';
+      for (const o of s.pending.options) {
+        const b = document.createElement('button');
+        b.textContent = o.name;
+        if (o.kind && o.kind.startsWith('allow')) b.className = 'allow';
+        if (o.kind && o.kind.startsWith('reject')) b.className = 'reject';
+        b.onclick = async ev => {
+          ev.stopPropagation();
+          b.disabled = true;
+          await api(`/api/sessions/${s.id}/answer`, {
+            method: 'POST', body: JSON.stringify({ optionId: o.optionId }),
+          });
+          refresh();
+        };
+        opts.appendChild(b);
+      }
+      ask.appendChild(opts);
+      card.appendChild(ask);
+    }
+
+    if (open.has(s.id)) {
+      const dir = document.createElement('div');
+      dir.className = 'dir';
+      dir.textContent = s.dir;
+      card.appendChild(dir);
+
+      const log = document.createElement('div');
+      log.className = 'log';
+      for (const line of (logs.get(s.id) || [])) {
+        const el = document.createElement('div');
+        el.textContent = line;
+        log.appendChild(el);
+      }
+      card.appendChild(log);
+      requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
+    }
+
+    grid.appendChild(card);
+  }
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function connect() {
+  const es = new EventSource(`/api/stream?since=${lastSeq}&token=${encodeURIComponent(TOKEN)}`);
+
+  es.onopen = () => { dot.classList.add('on'); connText.textContent = 'live'; };
+  es.onerror = () => {
+    dot.classList.remove('on');
+    connText.textContent = 'reconnecting';
+    // EventSource retries on its own and replays from Last-Event-ID, so there
+    // is nothing to do here but let it.
+  };
+
+  es.onmessage = ev => {
+    const e = JSON.parse(ev.data);
+    lastSeq = Math.max(lastSeq, e.seq);
+    let p = {};
+    try { p = e.payload ? (typeof e.payload === 'string' ? JSON.parse(e.payload) : e.payload) : {}; } catch {}
+
+    if (e.kind === 'session.update') {
+      if (p.text) push(e.session, p.text);
+      else if (p.title) push(e.session, `[${p.update || 'tool'}] ${p.title}`);
+      else if (p.prompt) push(e.session, `> ${p.prompt}`);
+      else if (p.state) push(e.session, `-- ${p.state}${p.detail ? ': ' + p.detail : ''}`);
+    } else if (e.kind === 'permission.requested') {
+      push(e.session, `?? ${p.title}`);
+    } else if (e.kind === 'permission.answered') {
+      push(e.session, `<< ${p.outcome} ${p.optionId || ''}`);
+    } else if (e.kind === 'actuation') {
+      push(e.session, `[${p.op}] ${p.path || ''}`);
+    }
+
+    // State transitions and lifecycle change the card list, so re-read the
+    // authoritative list rather than trying to mutate it from the event.
+    if (e.kind !== 'session.update' || p.state) refresh(); else render();
+  };
+}
+
+async function loadAgents() {
+  const r = await api('/api/agents');
+  const names = r.ok ? await r.json() : ['claude'];
+  const sel = document.getElementById('agent');
+  sel.innerHTML = names.map(n => `<option>${esc(n)}</option>`).join('');
+}
+
+document.getElementById('prompt').addEventListener('keydown', async ev => {
+  if (ev.key !== 'Enter') return;
+  const input = ev.target;
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  input.blur();
+  await api('/api/sessions', {
+    method: 'POST',
+    body: JSON.stringify({ agent: document.getElementById('agent').value, prompt: text }),
+  });
+  refresh();
+});
+
+loadAgents();
+refresh();
+connect();
+setInterval(refresh, 15000);   // backstop if the stream silently stalls
+</script>
+</body>
+</html>

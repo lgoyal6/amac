@@ -8,6 +8,7 @@ import (
 	"io"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -82,8 +83,54 @@ type Client struct {
 	notify  chan Notification
 	handler Handler
 	ctx     context.Context
+	stderr  *tailBuffer
 	done    chan struct{}
 	readEr  error
+}
+
+// tailBuffer keeps the last N bytes written to it. Bounded so a chatty adapter
+// cannot grow memory for the lifetime of a long session.
+type tailBuffer struct {
+	mu    sync.Mutex
+	buf   []byte
+	limit int
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.limit {
+		t.buf = t.buf[len(t.buf)-t.limit:]
+	}
+	return len(p), nil
+}
+
+func (t *tailBuffer) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return strings.TrimSpace(string(t.buf))
+}
+
+// Stderr returns what the adapter last printed. Empty when it said nothing.
+func (c *Client) Stderr() string {
+	if c.stderr == nil {
+		return ""
+	}
+	return c.stderr.String()
+}
+
+// explain enriches a protocol error with the adapter's own diagnostics. "EOF"
+// alone sends you reading the wrong layer.
+func (c *Client) explain(err error) error {
+	msg := c.Stderr()
+	if msg == "" {
+		return err
+	}
+	if len(msg) > 600 {
+		msg = "..." + msg[len(msg)-600:]
+	}
+	return fmt.Errorf("%w (adapter stderr: %s)", err, msg)
 }
 
 // SetHandler installs the responder for agent-initiated requests. Without one,
@@ -104,7 +151,18 @@ func Spawn(ctx context.Context, name string, argv []string, dir string, stderr i
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.Dir = dir
-	cmd.Stderr = stderr
+
+	// Always keep the adapter's last stderr, even when the caller discards it.
+	// An adapter that dies at startup (missing node, bad auth, wrong version)
+	// closes stdout, and the only thing the protocol layer can report is
+	// "EOF" - which says nothing about the cause. The real message is on
+	// stderr, and it is worth exactly the few KB it costs to hold onto.
+	tail := &tailBuffer{limit: 4096}
+	if stderr != nil {
+		cmd.Stderr = io.MultiWriter(stderr, tail)
+	} else {
+		cmd.Stderr = tail
+	}
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -122,6 +180,7 @@ func Spawn(ctx context.Context, name string, argv []string, dir string, stderr i
 		cmd:     cmd,
 		tr:      newTransport(stdout, stdin),
 		name:    name,
+		stderr:  tail,
 		pending: make(map[string]chan response),
 		notify:  make(chan Notification, 256),
 		ctx:     ctx,
@@ -288,7 +347,9 @@ func (c *Client) Initialize(ctx context.Context) (InitializeResult, error) {
 		ClientInfo: ClientInfo{Name: "amac", Title: "amac", Version: "0.1.0"},
 	}, &res)
 	if err != nil {
-		return res, err
+		// The handshake is where a broken adapter shows up, so this is the one
+		// place worth paying to produce a diagnosable error.
+		return res, c.explain(err)
 	}
 	if res.ProtocolVersion > ProtocolVersion {
 		return res, fmt.Errorf("agent %s speaks protocol v%d, amac supports v%d", c.name, res.ProtocolVersion, ProtocolVersion)
