@@ -43,10 +43,10 @@ func cmdModels(args []string) error {
 		for _, m := range missing {
 			fmt.Printf("  %s\n", m)
 		}
-		fmt.Printf("\nAny OpenAI-compatible host works for the cheap tier, for example:\n")
-		fmt.Printf("  export AMAC_CHEAP_BASE_URL=https://api.gmi-serving.com/v1\n")
-		fmt.Printf("  export AMAC_CHEAP_API_KEY=...\n")
-		fmt.Printf("  export AMAC_CHEAP_MODEL=deepseek-ai/DeepSeek-V4-Flash\n")
+		fmt.Printf("\nOne GMI key fills every tier:\n")
+		fmt.Printf("  export GMI_API_KEY=$(security find-generic-password -w -s GMI_API_KEY -a \"$USER\")\n")
+		fmt.Printf("\nOverride any single tier with any OpenAI-compatible host:\n")
+		fmt.Printf("  export AMAC_MID_BASE_URL=... AMAC_MID_API_KEY=... AMAC_MID_MODEL=...\n")
 	}
 	return nil
 }
@@ -159,6 +159,7 @@ func cmdDo(args []string) error {
 	budget := fs.Float64("budget", 0, "max USD for this task (0 = no ceiling)")
 	dbPath := fs.String("db", defaultLogPath(), "event log path")
 	sizeFlag := fs.String("size", "", "force solo|pair|team instead of triaging")
+	approve := fs.String("approve", "auto", "auto (narrowest allow) or deny (dry run)")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -189,19 +190,29 @@ func cmdDo(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if *sizeFlag != "" {
-		fmt.Printf("size: %s (forced)\n\n", *sizeFlag)
-	} else {
-		size, reason := orch.Triage(ctx, task)
-		fmt.Printf("size: %s (%s)\n\n", size, reason)
+	// Deny mode still plans and reads; it just changes nothing. That makes it
+	// a genuine dry run rather than a no-op.
+	if *approve == "deny" {
+		orch.Approve = supervisor.RejectAll
 	}
 
-	run, err := orch.Execute(ctx, task, workdir, *budget)
+	var forced orchestrator.Size
+	if *sizeFlag != "" {
+		forced = orchestrator.Size(*sizeFlag)
+		switch forced {
+		case orchestrator.SizeSolo, orchestrator.SizePair, orchestrator.SizeTeam:
+		default:
+			return fmt.Errorf("-size must be solo, pair or team")
+		}
+	}
+
+	run, err := orch.Execute(ctx, task, workdir, *budget, forced)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("\n%s in %s\n", run.Size, run.Elapsed.Round(time.Second))
+	fmt.Printf("\nsize: %s (%s)\n", run.Size, run.Reason)
+	fmt.Printf("%s in %s\n", run.Size, run.Elapsed.Round(time.Second))
 	for _, r := range run.Results {
 		if r.Skipped != "" {
 			fmt.Printf("  %-9s SKIPPED  %s\n", r.Role, r.Skipped)

@@ -24,6 +24,12 @@ type Supervisor struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session
 	seq      int
+
+	// Every per-session goroutine is tracked so Shutdown can wait for them.
+	// Without this, consume() and watchExit() are still writing session state
+	// when the caller's `defer log.Close()` fires, and the final events of
+	// every run are lost to "database is closed".
+	wg sync.WaitGroup
 }
 
 func New(log *event.Log) *Supervisor {
@@ -121,8 +127,9 @@ func (s *Supervisor) Start(ctx context.Context, agentName, dir string) (*Session
 	})
 	sess.setState(StateIdle, "ready")
 
-	go sess.consume()
-	go sess.watchExit()
+	s.wg.Add(2)
+	go func() { defer s.wg.Done(); sess.consume() }()
+	go func() { defer s.wg.Done(); sess.watchExit() }()
 	return sess, nil
 }
 
@@ -210,8 +217,15 @@ func (s *Supervisor) Blocked() []*Session {
 	return out
 }
 
+// Shutdown stops every session and waits for their goroutines to finish.
+//
+// The wait is the point: Close() kills the adapter process, which ends the
+// read loop, which lets consume() and watchExit() write their final state.
+// Returning before those land means the caller closes the event log out from
+// under them.
 func (s *Supervisor) Shutdown() {
 	for _, sess := range s.List() {
 		sess.Close()
 	}
+	s.wg.Wait()
 }

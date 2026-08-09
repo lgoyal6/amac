@@ -95,10 +95,18 @@ type Orchestrator struct {
 	sup    *supervisor.Supervisor
 	router *router.Router
 	log    *event.Log
+
+	// Approve answers permission requests for orchestrated sessions. It must
+	// be set: nobody is watching these sessions, so without a policy the first
+	// tool call parks forever and the whole run deadlocks.
+	Approve func(*supervisor.Pending) (string, bool)
 }
 
 func New(sup *supervisor.Supervisor, r *router.Router, log *event.Log) *Orchestrator {
-	return &Orchestrator{sup: sup, router: r, log: log}
+	// Default to the narrowest affirmative option. `amac do` is an explicit
+	// instruction to carry out work, so blocking on approvals nobody will see
+	// would make it useless; granting standing permission would be worse.
+	return &Orchestrator{sup: sup, router: r, log: log, Approve: supervisor.LeastPermissiveAllow}
 }
 
 // Triage grades a prompt. It asks the cheap tier through the router, which is
@@ -185,9 +193,18 @@ type Run struct {
 // the next. Sequential rather than parallel on purpose: the executor needs the
 // plan, and the reviewer needs the diff, so there is a genuine dependency
 // chain. Parallelism belongs across independent tasks, not inside one.
-func (o *Orchestrator) Execute(ctx context.Context, task, dir string, budgetUSD float64) (Run, error) {
+// forced, when non-empty, skips triage. The caller having already decided is
+// the one case where grading the prompt is wasted money.
+func (o *Orchestrator) Execute(ctx context.Context, task, dir string, budgetUSD float64, forced Size) (Run, error) {
 	start := time.Now()
-	size, reason := o.Triage(ctx, task)
+
+	var size Size
+	var reason string
+	if forced != "" {
+		size, reason = forced, "forced by caller"
+	} else {
+		size, reason = o.Triage(ctx, task)
+	}
 	run := Run{Task: task, Size: size, Reason: reason, Budget: budgetUSD}
 
 	o.record(event.KindRouteDecided, map[string]any{
@@ -218,6 +235,10 @@ func (o *Orchestrator) Execute(ctx context.Context, task, dir string, budgetUSD 
 			})
 			continue
 		}
+		// Install the policy before prompting. A permission request can arrive
+		// on the very first tool call, and a session without a policy has
+		// nobody to answer it.
+		sess.OnPermission = o.Approve
 
 		_, err = sess.Prompt(ctx, prompt)
 		res := RoleResult{

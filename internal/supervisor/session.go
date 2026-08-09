@@ -61,6 +61,16 @@ type Session struct {
 
 	client *acp.Client
 	sup    *Supervisor
+
+	// OnPermission, when set, answers permission requests without a human.
+	// Returning ok=false falls through to parking on Answer(), so an
+	// unattended runner can decide the cases it understands and still defer
+	// the rest.
+	//
+	// This exists because a session driven by the orchestrator has nobody
+	// watching it: without a policy the first tool call blocks the whole run
+	// forever, which is exactly what happened the first time it ran.
+	OnPermission func(*Pending) (optionID string, ok bool)
 }
 
 func (s *Session) State() (State, string) {
@@ -116,6 +126,35 @@ func (s *Session) Answer(optionID string) error {
 	p.once.Do(func() { p.reply <- out })
 	return nil
 }
+
+func decide(optionID string) acp.PermissionOutcome {
+	if optionID == "" {
+		return acp.PermissionOutcome{Outcome: acp.OutcomeCancelled}
+	}
+	return acp.PermissionOutcome{Outcome: acp.OutcomeSelected, OptionID: optionID}
+}
+
+// LeastPermissiveAllow picks the narrowest affirmative option an agent
+// offered. Preferring allow_once over allow_always matters: a policy that
+// silently grants standing permission changes what future turns may do
+// without anyone deciding that.
+func LeastPermissiveAllow(p *Pending) (string, bool) {
+	for _, o := range p.Options {
+		if o.Kind == "allow_once" {
+			return o.OptionID, true
+		}
+	}
+	for _, o := range p.Options {
+		if strings.HasPrefix(o.Kind, "allow") {
+			return o.OptionID, true
+		}
+	}
+	return "", false
+}
+
+// RejectAll denies everything. Useful for a dry run: the agent still plans and
+// reads, but changes nothing.
+func RejectAll(*Pending) (string, bool) { return "", true }
 
 func optionIDs(opts []acp.PermissionOption) string {
 	ids := make([]string, len(opts))
@@ -223,6 +262,13 @@ func (s *Session) handlePermission(ctx context.Context, req acp.IncomingRequest)
 		"title":      p.ToolCall.Title,
 		"options":    p.Options,
 	})
+
+	// An unattended policy answers first, if it has an opinion.
+	if s.OnPermission != nil {
+		if optionID, ok := s.OnPermission(pend); ok {
+			pend.once.Do(func() { pend.reply <- decide(optionID) })
+		}
+	}
 
 	// Park until answered, the session dies, or the process shuts down. There
 	// is deliberately no timeout: a question that auto-answers after N minutes

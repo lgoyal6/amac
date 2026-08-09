@@ -129,43 +129,90 @@ func (r *Registry) Tiers() []Tier {
 	return out
 }
 
+// GMIBaseURL is GMI Cloud's OpenAI-compatible endpoint. One key there covers
+// every tier, which is the cleanest way to satisfy "model agnostic": no tier
+// is bound to a specific vendor's SDK, and swapping the whole stack is three
+// environment variables.
+const GMIBaseURL = "https://api.gmi-serving.com/v1"
+
+// gmiDefaults are the models used when only a GMI key is supplied. Chosen for
+// the shape of the work each tier does, not for benchmark scores: extraction
+// wants speed, judgement wants headroom.
+//
+// Rates are USD per million tokens and are estimates for reporting only. Cost
+// from an agent adapter is authoritative; this is not.
+var gmiDefaults = map[Tier]struct {
+	model   string
+	in, out float64
+}{
+	TierCheap:  {"deepseek-ai/DeepSeek-V4-Flash", 0.14, 0.28},
+	TierMid:    {"Qwen/Qwen3-235B-A22B-Instruct-2507-FP8", 0.30, 0.60},
+	TierStrong: {"MoonshotAI/Kimi-K3", 0.60, 2.50},
+}
+
 // FromEnv wires providers from the environment. Missing credentials are not an
 // error: amac must run with whatever is configured, and report what is not.
 //
-//	ANTHROPIC_API_KEY                  -> strong tier
-//	AMAC_CHEAP_BASE_URL + _API_KEY     -> cheap tier (any OpenAI-compatible host)
-//	AMAC_MID_BASE_URL   + _API_KEY     -> mid tier
+// Precedence, least specific first, so a single key gets you running and any
+// tier can still be overridden individually:
+//
+//	GMI_API_KEY                          -> all three tiers on GMI Cloud
+//	ANTHROPIC_API_KEY                    -> strong tier (overrides GMI strong)
+//	AMAC_<TIER>_BASE_URL + _API_KEY      -> that tier, any OpenAI-compatible host
+//	AMAC_<TIER>_MODEL                    -> that tier's model
 func FromEnv() (*Registry, []string) {
 	r := NewRegistry()
 	var missing []string
 
-	if k := os.Getenv("ANTHROPIC_API_KEY"); k != "" {
-		m := envOr("AMAC_STRONG_MODEL", "claude-sonnet-5")
-		r.Set(&anthropic{key: k, model: m, rateIn: 3.0, rateOut: 15.0})
+	// 1. One GMI key fills every tier.
+	if k := os.Getenv("GMI_API_KEY"); k != "" {
+		for tier, d := range gmiDefaults {
+			r.Set(&openAICompatible{
+				base:  GMIBaseURL,
+				key:   k,
+				model: envOr(tierEnv(tier, "MODEL"), d.model),
+				tier:  tier, rateIn: d.in, rateOut: d.out,
+			})
+		}
 	} else {
-		missing = append(missing, "ANTHROPIC_API_KEY (strong tier)")
+		missing = append(missing, "GMI_API_KEY (fills all three tiers)")
 	}
 
-	for _, spec := range []struct {
-		tier             Tier
-		base, key, model string
-		in, out          float64
-	}{
-		{TierCheap, "AMAC_CHEAP_BASE_URL", "AMAC_CHEAP_API_KEY", "AMAC_CHEAP_MODEL", 0.14, 0.28},
-		{TierMid, "AMAC_MID_BASE_URL", "AMAC_MID_API_KEY", "AMAC_MID_MODEL", 0.6, 1.2},
-	} {
-		base, key := os.Getenv(spec.base), os.Getenv(spec.key)
-		if base == "" || key == "" {
-			missing = append(missing, fmt.Sprintf("%s + %s (%s tier)", spec.base, spec.key, spec.tier))
-			continue
-		}
-		r.Set(&openAICompatible{
-			base: strings.TrimRight(base, "/"), key: key,
-			model: envOr(spec.model, "unknown"), tier: spec.tier,
-			rateIn: spec.in, rateOut: spec.out,
+	// 2. Anthropic, when present, takes the strong tier. Frontier judgement is
+	// the one place a closed model still earns its price.
+	if k := os.Getenv("ANTHROPIC_API_KEY"); k != "" {
+		r.Set(&anthropic{
+			key:    k,
+			model:  envOr("AMAC_STRONG_MODEL", "claude-sonnet-5"),
+			rateIn: 3.0, rateOut: 15.0,
 		})
 	}
+
+	// 3. Explicit per-tier configuration wins over everything.
+	for _, tier := range []Tier{TierCheap, TierMid, TierStrong} {
+		base, key := os.Getenv(tierEnv(tier, "BASE_URL")), os.Getenv(tierEnv(tier, "API_KEY"))
+		if base == "" || key == "" {
+			continue
+		}
+		d := gmiDefaults[tier]
+		r.Set(&openAICompatible{
+			base: strings.TrimRight(base, "/"), key: key,
+			model: envOr(tierEnv(tier, "MODEL"), d.model),
+			tier:  tier, rateIn: d.in, rateOut: d.out,
+		})
+	}
+
+	for _, tier := range []Tier{TierCheap, TierMid, TierStrong} {
+		if _, ok := r.Get(tier); !ok {
+			missing = append(missing, fmt.Sprintf("%s tier (set GMI_API_KEY, or %s + %s)",
+				tier, tierEnv(tier, "BASE_URL"), tierEnv(tier, "API_KEY")))
+		}
+	}
 	return r, missing
+}
+
+func tierEnv(t Tier, suffix string) string {
+	return "AMAC_" + strings.ToUpper(t.String()) + "_" + suffix
 }
 
 func envOr(k, def string) string {
