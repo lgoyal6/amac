@@ -84,8 +84,22 @@ it with a regex over rendered text and needed two competing detectors because
 neither was trustworthy.
 
 Cost tracking also comes free: `usage_update` notifications carry token counts
-and a `cost` object straight from the protocol, so the ledger needs no
-instrumentation.
+and a `cost` object straight from the protocol, so `amac cost` is a query over
+data already on disk rather than a subsystem.
+
+```
+SESSION          AGENT    WHEN         COST       CTX  TURNS  ASKS
+claude-3c1297    claude   Aug08     $0.1338        3%      1     1
+codex-1a4f       codex    Aug08         n/a        7%      1     0
+
+total $0.1338 across 1 priced session(s)
+1 session(s) reported no cost (agent does not expose it); total is a lower bound
+```
+
+Codex reports tokens but not money, so `Cost` is a `*float64` and an unpriced
+session prints `n/a`. Coercing it to `$0.00` would produce a report that
+silently understates spend, which is the one thing a cost report must never
+do.
 
 ## Roadmap
 
@@ -106,10 +120,23 @@ instrumentation.
 
 ## Design notes
 
-**Durability is a choice, not a default.** `event.Full` fsyncs every commit:
-an acknowledged event has reached the disk. `event.Relaxed` is faster and can
-lose the tail on power loss. A log whose entire value is being trustworthy
-after a crash defaults to Full.
+**Durability is a choice, not a default, and the cost is measured.** `Full`
+fsyncs every commit, so an acknowledged event has reached the disk. `Relaxed`
+lets the OS schedule it. On this machine (M-series, APFS):
+
+| policy | ns/op | appends/sec |
+| --- | --- | --- |
+| Full | 71,056 | ~14,100 |
+| Relaxed | 54,168 | ~18,500 |
+
+31% for the guarantee, against a workload that peaks in the low hundreds of
+events per second. Full is the default and it is not close.
+
+`TestCrashDurability` proves the guarantee rather than asserting it: it forks a
+child that appends and reports each acknowledged sequence, SIGKILLs it
+mid-write, reopens the database, and checks that every acknowledged event is
+present, that no record is torn, that no payload is corrupt, and that the
+sequence continues forward rather than being reused.
 
 **A slow subscriber gets dropped, never blocks the writer.** The log is the
 durable record; a live subscription is a convenience. Losing the second must

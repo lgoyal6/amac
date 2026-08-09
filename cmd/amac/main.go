@@ -36,6 +36,8 @@ func main() {
 	switch cmd {
 	case "setup":
 		err = cmdSetup(args)
+	case "cost":
+		err = cmdCost(args)
 	case "daemon":
 		err = cmdDaemon(args)
 	case "run":
@@ -72,6 +74,8 @@ func usage() {
         Start a session, send a prompt, answer what it asks.
   amac probe [-agent claude|codex] [-all] [-dir PATH]
         Handshake with an agent adapter and record what it can do.
+  amac cost [-days N]
+        What sessions have cost, from the event log.
   amac log [-n N] [-since SEQ]
         Show recent events.
   amac agents

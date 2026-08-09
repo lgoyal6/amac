@@ -2,6 +2,8 @@ package supervisor
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,6 +30,30 @@ func New(log *event.Log) *Supervisor {
 	return &Supervisor{log: log, sessions: make(map[string]*Session)}
 }
 
+// newID mints a session id that is unique across daemon restarts.
+//
+// A per-process counter is not good enough. Restarting the daemon reset it, so
+// two unrelated sessions days apart both became "claude-1" and every query
+// over the event log silently conflated them. In an event-sourced system the
+// id IS the join key, and a reused one is data corruption rather than a
+// cosmetic clash.
+func (s *Supervisor) newID(agentName string) (string, error) {
+	for range 8 {
+		var b [3]byte
+		if _, err := rand.Read(b[:]); err != nil {
+			return "", err
+		}
+		id := fmt.Sprintf("%s-%s", agentName, hex.EncodeToString(b[:]))
+		s.mu.Lock()
+		_, clash := s.sessions[id]
+		s.mu.Unlock()
+		if !clash {
+			return id, nil
+		}
+	}
+	return "", fmt.Errorf("could not mint a unique session id")
+}
+
 // record is fire-and-forget on purpose. Losing an observability event must
 // never fail the operation that produced it, and the failure is reported
 // rather than swallowed.
@@ -48,10 +74,10 @@ func (s *Supervisor) Start(ctx context.Context, agentName, dir string) (*Session
 		return nil, err
 	}
 
-	s.mu.Lock()
-	s.seq++
-	id := fmt.Sprintf("%s-%d", agentName, s.seq)
-	s.mu.Unlock()
+	id, err := s.newID(agentName)
+	if err != nil {
+		return nil, err
+	}
 
 	var stderr io.Writer = io.Discard
 	if os.Getenv("AMAC_DEBUG") != "" {

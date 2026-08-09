@@ -90,6 +90,11 @@ func Open(path string, d Durability) (*Log, error) {
 
 func (l *Log) Close() error { return l.db.Close() }
 
+// DB exposes the handle for read-only views over the log (the ledger, the
+// miner). Writes must go through Append so sequence numbers stay a total
+// order and subscribers stay correct.
+func (l *Log) DB() *sql.DB { return l.db }
+
 // Append writes one event and returns it with Seq assigned. The write is
 // committed before subscribers are notified, so nobody can observe an event
 // that a crash would then un-happen.

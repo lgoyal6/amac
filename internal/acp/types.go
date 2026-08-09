@@ -164,15 +164,15 @@ type PromptResult struct {
 
 // SessionUpdate discriminator values.
 const (
-	UpdateAgentMessageChunk   = "agent_message_chunk"
-	UpdateAgentThoughtChunk   = "agent_thought_chunk"
-	UpdateToolCall            = "tool_call"
-	UpdateToolCallUpdate      = "tool_call_update"
-	UpdatePlan                = "plan"
-	UpdateUsage               = "usage_update"
-	UpdateUserMessageChunk    = "user_message_chunk"
-	UpdateAvailableCommands   = "available_commands_update"
-	UpdateCurrentModeUpdate   = "current_mode_update"
+	UpdateAgentMessageChunk = "agent_message_chunk"
+	UpdateAgentThoughtChunk = "agent_thought_chunk"
+	UpdateToolCall          = "tool_call"
+	UpdateToolCallUpdate    = "tool_call_update"
+	UpdatePlan              = "plan"
+	UpdateUsage             = "usage_update"
+	UpdateUserMessageChunk  = "user_message_chunk"
+	UpdateAvailableCommands = "available_commands_update"
+	UpdateCurrentModeUpdate = "current_mode_update"
 )
 
 type SessionNotification struct {
