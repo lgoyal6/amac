@@ -1,0 +1,127 @@
+# amac
+
+A control plane for the AI agents running on my Mac.
+
+Agents are not scarce any more; attention is. At any moment there are several
+Claude Code and Codex sessions running here, and the hard part is no longer
+starting them. It is knowing which one is blocked, what it is about to do,
+what it is costing, and being able to answer it from wherever I am.
+
+amac is the layer macOS does not have for that. It is called an OS in the
+sense ROS is: not a kernel, but the process model, scheduler, permission
+system and journal for a class of thing the host does not manage.
+
+| OS concept | amac |
+| --- | --- |
+| processes | agent sessions |
+| scheduler | orchestrator with per-task model budgets |
+| syscalls | actuators (Notion, tmux, Discord) |
+| capabilities | per-app and per-verb allowlists |
+| journal | the event log |
+| drivers | one ACP adapter per agent, one gateway per model |
+
+## The one design decision
+
+Everything is an event.
+
+Every subsystem appends to one log and subscribes to it. Nothing queries
+another subsystem directly. The dashboard is a view over the log, automations
+are subscribers, the workflow miner is a query, and "why did it do that" is
+answered by replay rather than by guessing.
+
+That constraint is what makes the rest tractable, and it is the piece that
+cannot be retrofitted later.
+
+## Why ACP, and not screen scraping
+
+The predecessor to this (`~/agentmon`) read agent state with `tmux
+capture-pane` and regexes over the rendered terminal. It worked, and it taught
+me exactly why it cannot be made reliable: permission mode becomes unreadable
+the moment a dialog covers the status footer, a pane that merely *discusses* a
+prompt trips the same detector as a pane that *has* one, and two separate
+detectors were needed because neither was trustworthy alone. All of that is
+the cost of parsing a rendering instead of reading a state.
+
+[ACP](https://agentclientprotocol.com) is an open, versioned, JSON-RPC
+protocol for exactly this, with adapters for Claude Code, Codex and Gemini
+CLI. Tool calls, permission requests and output arrive as structured data.
+Being vendor-neutral is not a bonus here, it is the requirement: I use Codex
+today and want open models on cheap work tomorrow.
+
+## Status
+
+Phase 1. A full session runs end to end against both agents:
+
+- **ACP client**: bidirectional JSON-RPC over stdio. Concurrent request
+  correlation, agent-initiated requests answered on their own goroutines,
+  bounded notification delivery, dead agents surface as errors rather than
+  hangs.
+- **Supervisor**: owns sessions, tracks state from protocol messages, answers
+  `fs/read_text_file`, `fs/write_text_file` and `session/request_permission`,
+  streams every `session/update` into the log.
+- **Event log**: SQLite in WAL mode, append-only, total order by sequence,
+  explicit fsync policy, live subscribe plus replay-from-sequence.
+- **Adapter registry**: one table, the only vendor coupling in the codebase.
+
+```
+amac setup                     install pinned adapters once
+amac run -agent codex 'task'   start a session, send a prompt, answer it
+amac probe -all                handshake every agent, record capabilities
+amac log -n 20                 recent events
+```
+
+Verified 2026-08-08 against Claude Agent v0.66.0 and Codex v1.1.14, both
+protocol v1, both driven by the same code: session created, prompt sent, tool
+calls streamed, permission request raised and answered, files written, turn
+ended clean.
+
+### What this bought over the old approach
+
+`blocked` is now a fact. It is set when the agent sends
+`session/request_permission`, carries the tool title and the exact options
+offered, and is cleared by replying on a channel. The predecessor guessed at
+it with a regex over rendered text and needed two competing detectors because
+neither was trustworthy.
+
+Cost tracking also comes free: `usage_update` notifications carry token counts
+and a `cost` object straight from the protocol, so the ledger needs no
+instrumentation.
+
+## Roadmap
+
+1. **Daemon**: supervise sessions, WebSocket API, widget dashboard on the
+   tailnet
+2. **Gateway and router**: LiteLLM in front of Anthropic and open models. A
+   cascade, not a predictor: strong model by default, route down only on
+   high-confidence-easy plus mechanical verification, escalate on doubt. The
+   evaluation harness lands before the router, because the measured
+   cost/quality curve is the only claim worth making
+3. **Orchestrator**: grade the prompt, convene as many specialised agents as
+   it actually warrants, with a per-task token budget
+4. **Sensors**: browser extension plus email parsing to keep an application
+   tracker current without being told
+5. **Observer**: what I am working on, metadata first, pixels only for
+   allowlisted apps, default deny
+6. **Miner**: patterns in the log become suggested automations
+
+## Design notes
+
+**Durability is a choice, not a default.** `event.Full` fsyncs every commit:
+an acknowledged event has reached the disk. `event.Relaxed` is faster and can
+lose the tail on power loss. A log whose entire value is being trustworthy
+after a crash defaults to Full.
+
+**A slow subscriber gets dropped, never blocks the writer.** The log is the
+durable record; a live subscription is a convenience. Losing the second must
+never risk the first, and a dropped subscriber recovers by replaying from its
+last sequence number.
+
+**Scanner buffers are sized for real payloads.** `bufio.Scanner` defaults to
+64KB, and a single tool result carrying a file blows straight past it. The
+failure mode is indistinguishable from an agent going quiet, which is the
+worst kind of bug to debug, so the limit is explicit and overflow is a hard
+error.
+
+**Capabilities stay as raw JSON.** Adapters disagree about what they
+advertise and gain new capabilities between releases. Decoding into a fixed
+struct would turn a new capability into a broken handshake.
