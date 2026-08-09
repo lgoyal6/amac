@@ -18,9 +18,14 @@
 <div class="hint">Your Mac's tailnet address. <code>amac daemon</code> prints it on startup.</div>
 
 <label for="token">Token</label>
-<input id="token" type="password" placeholder="from ~/.amac/token">
-<div class="hint">Stored in extension storage, never sent to any page.</div>
+<input id="token" type="password" placeholder="paste the 64-character token here" autocomplete="off" spellcheck="false">
+<div class="hint">
+  The <em>contents</em> of <code>~/.amac/token</code>, not the path. Get it with:<br>
+  <code>cat ~/.amac/token | pbcopy</code><br>
+  Stored in extension storage, never sent to any page.
+</div>
 
 <button id="save">Save</button><span id="saved"></span>
+<div class="hint" id="status"></div>
 
 <script src="options.js"></script>
