@@ -35,6 +35,29 @@ $('save').addEventListener('click', async () => {
     return;
   }
 
+  // Ask for access to exactly the host that was configured, at the moment it
+  // is configured. The manifest deliberately does NOT hold a standing
+  // permission for the daemon: the tailnet address can change, and a static
+  // pattern for it was silently invalid anyway ("http://100.*/*" is not a
+  // legal match pattern, since a wildcard may only be the whole host or a
+  // leading "*."). Chrome dropped it and every fetch failed with a bare
+  // TypeError that looked like the daemon being down.
+  let origin;
+  try {
+    origin = new URL(endpoint).origin + '/*';
+  } catch {
+    status.style.color = '#c0392b';
+    status.textContent = 'That endpoint is not a valid URL.';
+    return;
+  }
+
+  const granted = await chrome.permissions.request({ origins: [origin] });
+  if (!granted) {
+    status.style.color = '#c0392b';
+    status.textContent = `Access to ${origin} was declined, so the tracker cannot reach the daemon.`;
+    return;
+  }
+
   await chrome.storage.local.set({ endpoint, token });
   $('saved').textContent = 'saved';
 

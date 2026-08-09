@@ -75,7 +75,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stream", s.auth(s.stream))
 	mux.HandleFunc("GET /api/agents", s.auth(s.agents))
 	mux.HandleFunc("POST /api/applications", s.auth(s.recordApplication))
-	mux.HandleFunc("OPTIONS /api/applications", s.preflight)
+	mux.HandleFunc("OPTIONS /api/", s.preflight)
 
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -97,8 +97,16 @@ func (s *Server) Handler() http.Handler {
 // auth accepts the token in a header or a query parameter. The query form is
 // not laziness: EventSource cannot set headers, so an SSE stream has no other
 // way to authenticate. Compared in constant time either way.
+//
+// It also applies CORS, because every API route can legitimately be called
+// from the browser extension, not just the one that records applications. The
+// options page's connection check hits /api/agents, and when only
+// /api/applications carried the headers that check failed with a bare
+// TypeError indistinguishable from the daemon being down.
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		allowExtensionOrigin(w, r)
+
 		got := r.Header.Get("X-Amac-Token")
 		if got == "" {
 			got = r.URL.Query().Get("token")
@@ -109,6 +117,21 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// allowExtensionOrigin echoes the caller's origin only when it is a browser
+// extension. Not "*": these routes start agents and approve their tool calls,
+// so an arbitrary website must never be handed a CORS grant even if it somehow
+// learned the token.
+func allowExtensionOrigin(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if !strings.HasPrefix(origin, "chrome-extension://") &&
+		!strings.HasPrefix(origin, "moz-extension://") &&
+		!strings.HasPrefix(origin, "safari-web-extension://") {
+		return
+	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Vary", "Origin")
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -260,20 +283,15 @@ func (s *Server) stopSession(w http.ResponseWriter, r *http.Request) {
 // Echoing the extension origin keeps a random website from posting here even
 // if it somehow learned the token.
 func (s *Server) preflight(w http.ResponseWriter, r *http.Request) {
-	origin := r.Header.Get("Origin")
-	if strings.HasPrefix(origin, "chrome-extension://") || strings.HasPrefix(origin, "moz-extension://") {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
+	allowExtensionOrigin(w, r)
+	if w.Header().Get("Access-Control-Allow-Origin") != "" {
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Amac-Token")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) recordApplication(w http.ResponseWriter, r *http.Request) {
-	if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "chrome-extension://") {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-	}
-
 	var body struct {
 		Company string `json:"company"`
 		Role    string `json:"role"`

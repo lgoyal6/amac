@@ -12,9 +12,9 @@
     "*://*.smartrecruiters.com/*",
     "*://*.icims.com/*",
     "*://*.jobvite.com/*",
-    "*://*.bamboohr.com/*",
-    "http://100.*/*"
+    "*://*.bamboohr.com/*"
   ],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
