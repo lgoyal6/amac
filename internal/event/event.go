@@ -37,6 +37,12 @@ const (
 	// the audit log and kill switch have something to work with.
 	KindActuation Kind = "actuation"
 
+	// What you were doing. Metadata only, and only for allowlisted apps.
+	KindObservation Kind = "observation"
+
+	// A job application, from the browser extension or a confirmation email.
+	KindApplication Kind = "application"
+
 	// Diagnostics from amac itself.
 	KindDaemon Kind = "daemon"
 )

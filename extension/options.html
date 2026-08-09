@@ -1,0 +1,26 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>amac apply tracker</title>
+<style>
+  body { font: 14px/1.5 -apple-system, system-ui, sans-serif; margin: 24px; max-width: 460px; }
+  label { display: block; margin: 14px 0 4px; font-weight: 600; }
+  input { width: 100%; padding: 8px; font: inherit; border: 1px solid #ccc; border-radius: 6px; }
+  button { margin-top: 16px; padding: 8px 16px; font: inherit; border-radius: 6px;
+           border: 1px solid #ccc; background: #f4f4f6; cursor: pointer; }
+  .hint { color: #666; font-size: 12px; margin-top: 4px; }
+  #saved { color: #128a3d; margin-left: 10px; }
+</style>
+
+<h2>amac apply tracker</h2>
+
+<label for="endpoint">Daemon endpoint</label>
+<input id="endpoint" placeholder="http://100.x.y.z:7788">
+<div class="hint">Your Mac's tailnet address. <code>amac daemon</code> prints it on startup.</div>
+
+<label for="token">Token</label>
+<input id="token" type="password" placeholder="from ~/.amac/token">
+<div class="hint">Stored in extension storage, never sent to any page.</div>
+
+<button id="save">Save</button><span id="saved"></span>
+
+<script src="options.js"></script>

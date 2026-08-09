@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "amac apply tracker",
+  "version": "0.1.0",
+  "description": "Notices when you submit a job application and tells your local amac daemon.",
+  "permissions": ["storage", "webNavigation"],
+  "host_permissions": [
+    "*://*.greenhouse.io/*",
+    "*://*.lever.co/*",
+    "*://*.ashbyhq.com/*",
+    "*://*.myworkdayjobs.com/*",
+    "*://*.smartrecruiters.com/*",
+    "*://*.icims.com/*",
+    "*://*.jobvite.com/*",
+    "*://*.bamboohr.com/*",
+    "http://100.*/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.greenhouse.io/*",
+        "*://*.lever.co/*",
+        "*://*.ashbyhq.com/*",
+        "*://*.myworkdayjobs.com/*",
+        "*://*.smartrecruiters.com/*",
+        "*://*.icims.com/*",
+        "*://*.jobvite.com/*",
+        "*://*.bamboohr.com/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html"
+}

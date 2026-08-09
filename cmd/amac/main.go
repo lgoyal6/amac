@@ -36,6 +36,20 @@ func main() {
 	switch cmd {
 	case "setup":
 		err = cmdSetup(args)
+	case "models":
+		err = cmdModels(args)
+	case "route":
+		err = cmdRoute(args)
+	case "eval":
+		err = cmdEval(args)
+	case "do":
+		err = cmdDo(args)
+	case "observe":
+		err = cmdWatch(args)
+	case "learn":
+		err = cmdLearn(args)
+	case "apply":
+		err = cmdApply(args)
 	case "cost":
 		err = cmdCost(args)
 	case "daemon":
@@ -74,6 +88,20 @@ func usage() {
         Start a session, send a prompt, answer what it asks.
   amac probe [-agent claude|codex] [-all] [-dir PATH]
         Handshake with an agent adapter and record what it can do.
+  amac do [-size solo|pair|team] [-budget USD] <task...>
+        Triage a task and run the right sized team of agents.
+  amac route [-dry] <prompt...>
+        Route one prompt through the cascade.
+  amac eval [-tasks FILE]
+        Measure cost and quality per tier. Run this before trusting the router.
+  amac models
+        Which model providers are configured.
+  amac observe
+        Watch allowlisted apps (metadata only, default deny).
+  amac learn [-days N]
+        Patterns in the log, and automations worth adding.
+  amac apply -email FILE | -company X -role Y
+        Record a job application.
   amac cost [-days N]
         What sessions have cost, from the event log.
   amac log [-n N] [-since SEQ]

@@ -12,9 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lgoyal6/amac/internal/agent"
+	"github.com/lgoyal6/amac/internal/apply"
 	"github.com/lgoyal6/amac/internal/event"
 	"github.com/lgoyal6/amac/internal/supervisor"
 )
@@ -72,6 +74,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/events", s.auth(s.events))
 	mux.HandleFunc("GET /api/stream", s.auth(s.stream))
 	mux.HandleFunc("GET /api/agents", s.auth(s.agents))
+	mux.HandleFunc("POST /api/applications", s.auth(s.recordApplication))
+	mux.HandleFunc("OPTIONS /api/applications", s.preflight)
 
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -245,6 +249,72 @@ func (s *Server) stopSession(w http.ResponseWriter, r *http.Request) {
 	}
 	sess.Close()
 	writeJSON(w, 200, map[string]string{"status": "stopped"})
+}
+
+// ------------------------------------------------------------ applications --
+
+// preflight answers the browser extension's CORS check.
+//
+// The allowed origin is chrome-extension://*, not "*": this endpoint writes to
+// a tracker and, with a token, is reachable from any page the browser loads.
+// Echoing the extension origin keeps a random website from posting here even
+// if it somehow learned the token.
+func (s *Server) preflight(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if strings.HasPrefix(origin, "chrome-extension://") || strings.HasPrefix(origin, "moz-extension://") {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Amac-Token")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) recordApplication(w http.ResponseWriter, r *http.Request) {
+	if origin := r.Header.Get("Origin"); strings.HasPrefix(origin, "chrome-extension://") {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+	}
+
+	var body struct {
+		Company string `json:"company"`
+		Role    string `json:"role"`
+		URL     string `json:"url"`
+		ATS     string `json:"ats"`
+		Source  string `json:"source"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if body.Company == "" {
+		writeJSON(w, 400, map[string]string{"error": "company required"})
+		return
+	}
+
+	app := apply.Application{
+		Company: body.Company, Role: body.Role, URL: body.URL, ATS: body.ATS,
+		Source: apply.Source(body.Source), AppliedAt: time.Now(),
+	}
+	if app.Role == "" {
+		app.Role = "Unspecified"
+	}
+	if app.ATS == "" {
+		if ats, ok := apply.DetectATS(body.URL); ok {
+			app.ATS = ats
+		}
+	}
+
+	// The Notion sink is optional so a missing token degrades to local-only
+	// tracking rather than dropping the detection entirely.
+	var sink apply.Sink
+	if n, err := apply.NewNotion(); err == nil {
+		sink = n
+	}
+	isNew, err := apply.NewTracker(s.log, sink).Record(r.Context(), app)
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]any{"recorded": isNew, "key": app.Key(), "company": app.Company, "role": app.Role})
 }
 
 // ---------------------------------------------------------------- events ----
