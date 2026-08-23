@@ -18,7 +18,7 @@ func TestRunFlagsSilence(t *testing.T) {
 	}{
 		{"fresh", time.Hour, OK},
 		{"inside grace", 13 * time.Hour, OK}, // Every 12h + Grace 6h = 18h
-		// Just inside Every+Grace. An exact 18h case is untestable: Run measures
+		// Just inside Every+Grace. An exact 18h case is untestable: Sweep measures
 		// time.Since, which is always a few nanoseconds past what we set up.
 		{"just inside the limit", 18*time.Hour - time.Minute, OK},
 		{"gone quiet", 19 * time.Hour, Late},
@@ -27,7 +27,7 @@ func TestRunFlagsSilence(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			last := time.Now().Add(-tc.age)
-			got := Run(context.Background(), []Automation{{
+			got := Sweep(context.Background(), []Automation{{
 				Name: "x", Every: 12 * time.Hour, Grace: 6 * time.Hour,
 				Check: func(context.Context) (Report, error) {
 					return Report{State: OK, Last: last, Detail: "delivered"}, nil
@@ -44,7 +44,7 @@ func TestRunFlagsSilence(t *testing.T) {
 // out into Late. Late means "it went quiet", and inventing that from a zero
 // timestamp would page him for a gap in our own knowledge.
 func TestUnknownLastIsNotLate(t *testing.T) {
-	got := Run(context.Background(), []Automation{{
+	got := Sweep(context.Background(), []Automation{{
 		Name: "x", Every: time.Hour, Grace: time.Minute,
 		Check: func(context.Context) (Report, error) {
 			return Report{State: OK, Detail: "no timestamp available"}, nil
@@ -58,7 +58,7 @@ func TestUnknownLastIsNotLate(t *testing.T) {
 // A broken probe is our bug, not his automation's. It must never read as OK
 // (a false all-clear) and never as Failing (a false alarm).
 func TestProbeErrorIsUnknown(t *testing.T) {
-	got := Run(context.Background(), []Automation{{
+	got := Sweep(context.Background(), []Automation{{
 		Name: "x", Every: time.Hour, Grace: time.Minute,
 		Check: func(context.Context) (Report, error) {
 			return Report{State: OK}, context.DeadlineExceeded
@@ -77,7 +77,7 @@ func TestRunSortsWorstFirst(t *testing.T) {
 		return Automation{Name: name, Every: time.Hour, Grace: time.Hour,
 			Check: func(context.Context) (Report, error) { return Report{State: s, Last: time.Now()}, nil }}
 	}
-	got := Run(context.Background(), []Automation{
+	got := Sweep(context.Background(), []Automation{
 		mk("fine", OK), mk("dunno", Unknown), mk("broken", Failing), mk("offline", Down),
 	})
 	want := []string{"broken", "offline", "dunno", "fine"}

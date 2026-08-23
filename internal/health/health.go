@@ -87,12 +87,12 @@ type Automation struct {
 	Check func(context.Context) (Report, error)
 }
 
-// Run probes every automation and applies the lateness test.
+// Sweep probes every automation and applies the lateness test.
 //
 // Probes run sequentially. There are four of them and each is a couple of HTTP
 // calls; concurrency here would buy a second and cost the ability to read the
 // output in order.
-func Run(ctx context.Context, list []Automation) []Report {
+func Sweep(ctx context.Context, list []Automation) []Report {
 	out := make([]Report, 0, len(list))
 	for _, a := range list {
 		r, err := a.Check(ctx)

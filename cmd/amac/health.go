@@ -9,6 +9,8 @@ import (
 	"os"
 	"time"
 
+	"sort"
+
 	"github.com/lgoyal6/amac/internal/event"
 	"github.com/lgoyal6/amac/internal/health"
 )
@@ -26,6 +28,7 @@ func cmdHealth(args []string) error {
 	digest := fs.Bool("digest", false, "DM the full roster, healthy or not")
 	alert := fs.Bool("alert", false, "DM only what changed since the last sweep")
 	quiet := fs.Bool("quiet", false, "no stdout, for launchd")
+	runs := fs.Bool("runs", false, "also report every individual run since the last sweep")
 	dry := fs.Bool("dry-run", false, "print the DM instead of sending it")
 	dbPath := fs.String("db", defaultLogPath(), "event log path")
 	timeout := fs.Duration("timeout", 90*time.Second, "overall probe timeout")
@@ -47,7 +50,7 @@ func cmdHealth(args []string) error {
 		return err
 	}
 
-	reports := health.Run(ctx, health.All())
+	reports := health.Sweep(ctx, health.All())
 
 	if !*quiet {
 		for _, r := range reports {
@@ -91,6 +94,12 @@ func cmdHealth(args []string) error {
 			fmt.Println(kind + " sent")
 		}
 		return nil
+	}
+
+	if *runs {
+		if err := reportRuns(ctx, log, *quiet); err != nil {
+			fmt.Fprintf(os.Stderr, "amac: runs: %v\n", err)
+		}
 	}
 
 	switch {
@@ -140,4 +149,98 @@ func lastStates(ctx context.Context, log *event.Log) (map[string]health.State, e
 		out[r.Name] = r.State
 	}
 	return out, nil
+}
+
+// reportRuns reports each individual run exactly once.
+//
+// The state sweep answers "is this delivering?" from the newest run, which is
+// the right question for waking someone up and the wrong one for noticing a
+// failure that was recovered from. job-discovery crashed three times in twenty
+// hours while the sweep reported it green throughout, because a success
+// followed each crash before anyone looked.
+func reportRuns(ctx context.Context, log *event.Log, quiet bool) error {
+	seen, first, err := seenRuns(ctx, log)
+	if err != nil {
+		return err
+	}
+
+	fresh := health.NewRuns(ctx, seen)
+	if len(fresh) == 0 {
+		if !quiet {
+			fmt.Println("no new runs")
+		}
+		return nil
+	}
+	sort.Slice(fresh, func(i, j int) bool { return fresh[i].Started.Before(fresh[j].Started) })
+
+	for _, r := range fresh {
+		ev, err := event.New(event.KindAutomationRun, "health", r.Automation, r)
+		if err != nil {
+			return err
+		}
+		if _, err := log.Append(ctx, ev); err != nil {
+			return err
+		}
+		if !quiet {
+			fmt.Printf("%s %-22s %-8s %s\n", r.Status.Icon(), r.Automation, r.Status, r.Detail)
+		}
+	}
+
+	// The very first sweep sees every run the APIs still remember, which is
+	// dozens. Announcing history he has already lived through would bury the
+	// one thing this exists to surface, so the first pass only establishes the
+	// baseline.
+	if first {
+		if !quiet {
+			fmt.Printf("\nbaseline: %d past run(s) recorded, not sent\n", len(fresh))
+		}
+		return nil
+	}
+
+	// Failures go out on their own so they are never a line in a list he
+	// skims. The batch then carries only what they did not, because a lone
+	// failure otherwise arrives twice: once as the alert and once as a batch
+	// of one saying the same thing.
+	var rest []health.Run
+	for _, r := range fresh {
+		if r.Status != health.RunFailed {
+			rest = append(rest, r)
+			continue
+		}
+		if err := health.Send(ctx, health.RunFailure(r)); err != nil {
+			return err
+		}
+	}
+	if len(rest) == 0 {
+		return nil
+	}
+	return health.Send(ctx, health.RunBatch(rest))
+}
+
+// seenRuns returns the run ids already reported, and whether this is the first
+// sweep to look.
+func seenRuns(ctx context.Context, log *event.Log) (map[string]bool, bool, error) {
+	rows, err := log.DB().QueryContext(ctx,
+		`SELECT session, payload FROM events WHERE kind = ? ORDER BY seq DESC LIMIT 2000`,
+		string(event.KindAutomationRun))
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	seen := map[string]bool{}
+	for rows.Next() {
+		var automation string
+		var payload []byte
+		if err := rows.Scan(&automation, &payload); err != nil {
+			continue
+		}
+		var r struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(payload, &r) == nil && r.ID != "" {
+			seen[automation+"/"+r.ID] = true
+		}
+	}
+	return seen, len(seen) == 0, nil
 }
