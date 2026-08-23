@@ -44,6 +44,14 @@
   .state.starting{color:var(--work)}
   .detail { color:var(--dim); font-size:13px; margin-top:5px;
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .kind { font-size: 11px; padding: 1px 6px; border-radius: 3px;
+          background: #232323; color: #888; }
+  .kind.on { background: #1d3226; color: #6fcf97; }
+  .attach { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 12px; color: #9aa; background: #1a1a1a;
+            padding: 6px 8px; border-radius: 4px; margin-top: 6px; cursor: pointer; }
+  .attach:hover { background: #202020; }
+  .attach.copied { color: #6fcf97; }
   .dir { color:var(--dim); font-size:11px; margin-top:6px; font-family:ui-monospace,SFMono-Regular,monospace; }
 
   .ask { margin-top:11px; padding-top:11px; border-top:1px solid var(--line); }
@@ -148,7 +156,9 @@ function render() {
     const head = document.createElement('div');
     head.className = 'top';
     head.innerHTML = `<span class="name">${esc(s.id)}</span>
-      <span class="agent">${esc(s.agent)}</span>
+      <span class="agent">${esc(s.agent || 'shell')}</span>
+      ${s.kind === 'tmux' ? '<span class="kind">tmux</span>' : ''}
+      ${s.attached ? '<span class="kind on">attached</span>' : ''}
       <span class="state ${s.state}">${s.state}</span>`;
     card.appendChild(head);
 
@@ -191,6 +201,23 @@ function render() {
       dir.className = 'dir';
       dir.textContent = s.dir;
       card.appendChild(dir);
+
+      // amac owns ACP sessions and can prompt or answer them over the API. A
+      // tmux session belongs to whoever started it, so the only honest
+      // affordance is the command that puts you back in front of it.
+      if (s.kind === 'tmux') {
+        const at = document.createElement('div');
+        at.className = 'attach';
+        at.textContent = `tmux attach -t ${s.id}`;
+        at.title = 'click to copy';
+        at.onclick = ev => {
+          ev.stopPropagation();
+          navigator.clipboard?.writeText(at.textContent);
+          at.classList.add('copied');
+          setTimeout(() => at.classList.remove('copied'), 900);
+        };
+        card.appendChild(at);
+      }
 
       const log = document.createElement('div');
       log.className = 'log';
