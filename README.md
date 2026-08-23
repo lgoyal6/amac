@@ -101,7 +101,49 @@ session prints `n/a`. Coercing it to `$0.00` would produce a report that
 silently understates spend, which is the one thing a cost report must never
 do.
 
+## Automation health
+
+The first subsystem that runs unattended. Five automations are declared with
+the cadence they are expected to *deliver* at, and a launchd sweep every 15
+minutes records a verdict for each into the log.
+
+```
+amac health                 check now and print
+amac health -alert -quiet   DM only what changed (launchd, every 15m)
+amac health -digest         DM the whole roster (launchd, 10:00 daily)
+```
+
+Two things make this a monitor rather than a log.
+
+**It counts deliveries, not runs.** Every one of these pipelines is scheduled
+several times over for redundancy, so most runs deliberately do nothing:
+morning-brief fires four crons and the first success claims the day, hacklist
+fires four and a gate lets one through. "The last run was green" is therefore
+almost always true and almost never informative. Each probe reads the artifact
+the automation commits only once work landed: `briefs/.delivery.json`, written
+after Discord confirms the send; `data/history/sweep-<ISO>.json`, written by a
+real sweep. The two local launchd jobs are read the same way, from the
+completion marker they append to their log rather than from the file's mtime,
+because a job that dies halfway still writes to its log.
+
+**It detects silence.** A push-based log records the runs that happened and can
+never tell you about the run that didn't. Cadence and grace are declared per
+automation and the lateness test is applied centrally, so an automation that
+dies quietly still produces a finding, and no probe has to remember to check.
+
+A probe that fails reports `unknown`, never `ok`. A monitor that says green
+when it only proved the web server answers is worse than no monitor, because it
+converts an unknown into a false assurance.
+
 ## Roadmap
+
+Session babysitting is **out of scope**. Claude Code Remote Control now pushes
+to the phone when a task finishes or needs a decision, takes the approval from
+there, and suppresses on terminal *focus* rather than mere presence, which is
+the bug that made the tmux predecessor useless in practice. Rebuilding that
+would be rebuilding a feature the vendor ships. What is left is what Remote
+Control does not reach: Codex and Gemini sessions, automation health, and cost
+across all of them.
 
 1. **Daemon**: supervise sessions, WebSocket API, widget dashboard on the
    tailnet
