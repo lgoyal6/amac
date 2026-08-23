@@ -48,6 +48,11 @@ const (
 	// reading the log rather than by trusting that no alert means no problem.
 	KindAutomationCheck Kind = "automation.check"
 
+	// An agent session wants the human. Recorded whether or not it was
+	// delivered, with the reason it was held back, so a silent stretch can be
+	// told apart from a stretch where nothing happened.
+	KindAttention Kind = "attention"
+
 	// Diagnostics from amac itself.
 	KindDaemon Kind = "daemon"
 )

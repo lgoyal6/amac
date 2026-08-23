@@ -135,6 +135,45 @@ A probe that fails reports `unknown`, never `ok`. A monitor that says green
 when it only proved the web server answers is worse than no monitor, because it
 converts an unknown into a false assurance.
 
+## Attention
+
+Remote Control covers Claude Code sessions. It does not cover Codex, which is
+half of what runs here, so this does.
+
+```
+amac attention -codex '<notify payload>'   from Codex's notify hook
+amac attention -bell -session S            from tmux's alert-bell hook
+```
+
+**Two signals, because Codex only offers one and it is the less useful one.**
+The `notify` hook fires solely on `agent-turn-complete`, so a request for
+approval, the case where the session is actually blocked, never reaches a
+program that way. It does ring the terminal bell, and tmux can turn a bell into
+a hook. That is the only structured route to "this session is waiting on you"
+that does not involve scraping the pane, which is what ACP was adopted to stop
+doing.
+
+A finished turn produces both signals within the same second. The bell handler
+therefore waits four seconds before deciding, which lets the notify hook, the
+one that knows what the agent actually said, land first and win. An approval
+request produces only the bell, so after four seconds nothing has superseded it
+and it goes out.
+
+**Suppress on focus, not on presence.** The predecessor held a notification
+back whenever a tmux client was attached to the session or the keyboard had
+been touched in the last two minutes. Both are true nearly always: a dozen
+clients are attached right now and he is at the machine all day. So every
+decision was correct and every alert was silent, for nine days. This resolves
+the frontmost Terminal tab to its tty, maps that to a tmux client, and
+suppresses only that one session. Everything else gets through. If the answer
+cannot be determined the notification is sent, because a spurious ping costs a
+glance and a missed one costs a blocked agent nobody notices.
+
+Every decision is recorded, including the suppressed ones and the reason. A
+notification that was correctly withheld and one that silently failed look
+identical from outside, and telling them apart is precisely what was impossible
+before.
+
 ## Roadmap
 
 Session babysitting is **out of scope**. Claude Code Remote Control now pushes

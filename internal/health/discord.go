@@ -1,82 +1,21 @@
 package health
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/lgoyal6/amac/internal/discord"
 )
 
 // Delivery reuses the Discord bot agentmon already registered: same token in
 // the login keychain, same cached DM channel. Standing up a second bot would
 // mean a second token to rotate and a second DM thread to check, for a channel
 // that is already proven to reach his phone.
-const discordAPI = "https://discord.com/api/v10"
-
-func discordToken() string {
-	if t := os.Getenv("AGENTMON_DISCORD_TOKEN"); t != "" {
-		return t
-	}
-	out, err := exec.Command("security", "find-generic-password",
-		"-w", "-s", "AGENTMON_DISCORD_TOKEN", "-a", os.Getenv("USER")).Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
-func discordChannel() string {
-	b, err := os.ReadFile(os.Getenv("HOME") + "/.agentmon/state/.discord_dm")
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(b))
-}
-
-// Send posts one message to the DM channel.
-func Send(ctx context.Context, content string) error {
-	tok, ch := discordToken(), discordChannel()
-	if tok == "" {
-		return fmt.Errorf("no Discord token (keychain AGENTMON_DISCORD_TOKEN)")
-	}
-	if ch == "" {
-		return fmt.Errorf("no cached DM channel (~/.agentmon/state/.discord_dm)")
-	}
-	// Discord hard-caps a message at 2000 characters and rejects the whole
-	// request past it, so a long digest must be trimmed rather than dropped.
-	const limit = 1990
-	if len(content) > limit {
-		cut := content[:limit]
-		// Cut back to the last line break so the message never ends mid-word.
-		if i := strings.LastIndexByte(cut, '\n'); i > limit/2 {
-			cut = cut[:i]
-		}
-		content = cut + "\n…"
-	}
-	body, _ := json.Marshal(map[string]string{"content": content})
-	req, err := http.NewRequestWithContext(ctx, "POST",
-		discordAPI+"/channels/"+ch+"/messages", bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bot "+tok)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := httpc.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("discord: http %d", resp.StatusCode)
-	}
-	return nil
-}
+// Send delivers one message to the DM channel.
+func Send(ctx context.Context, content string) error { return discord.Send(ctx, content) }
 
 // Digest renders the full roster for a phone screen.
 //
