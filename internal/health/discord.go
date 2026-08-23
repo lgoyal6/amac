@@ -139,3 +139,41 @@ func Alert(reports []Report, prev map[string]State) (string, bool) {
 	}
 	return strings.TrimRight(b.String(), "\n"), true
 }
+
+// RunBatch renders every run seen this sweep as one message.
+//
+// One message per run would be roughly twenty-two pings a day, and a channel
+// that pings twenty-two times a day gets muted. A muted channel is precisely
+// how nothing reached him between Aug 13 and Aug 22, so the volume is the
+// safety property here, not a matter of taste.
+func RunBatch(runs []Run) string {
+	var b strings.Builder
+	if len(runs) == 1 {
+		b.WriteString("**Run**\n")
+	} else {
+		fmt.Fprintf(&b, "**Runs** · %d\n", len(runs))
+	}
+	for _, r := range runs {
+		fmt.Fprintf(&b, "%s **%s** · %s", r.Status.Icon(), r.Automation, r.Detail)
+		if r.Duration > 0 {
+			fmt.Fprintf(&b, " · %s", short(r.Duration))
+		}
+		b.WriteString("\n")
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// RunFailure is sent on its own, so a failure is never a line in a list he
+// skims. Everything else can wait for the batch.
+func RunFailure(r Run) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "🔴 **%s run failed** · %s\n", r.Automation, r.Detail)
+	fmt.Fprintf(&b, "started %s", r.Started.Local().Format("Mon 15:04"))
+	if r.Duration > 0 {
+		fmt.Fprintf(&b, ", ran %s", short(r.Duration))
+	}
+	if r.URL != "" {
+		fmt.Fprintf(&b, "\n<%s>", r.URL)
+	}
+	return b.String()
+}

@@ -53,6 +53,12 @@ const (
 	// told apart from a stretch where nothing happened.
 	KindAttention Kind = "attention"
 
+	// One individual execution of an automation, reported exactly once
+	// whatever happened after it. Separate from automation.check, which is a
+	// verdict on the newest state and deliberately says nothing about a
+	// failure that a later run recovered from.
+	KindAutomationRun Kind = "automation.run"
+
 	// Diagnostics from amac itself.
 	KindDaemon Kind = "daemon"
 )

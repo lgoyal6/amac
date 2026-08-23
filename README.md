@@ -131,7 +131,36 @@ never tell you about the run that didn't. Cadence and grace are declared per
 automation and the lateness test is applied centrally, so an automation that
 dies quietly still produces a finding, and no probe has to remember to check.
 
-A probe that fails reports `unknown`, never `ok`. A monitor that says green
+A probe that fails reports `unknown`, never `ok`.
+
+### Every run, not just the newest
+
+The sweep above asks "is this delivering?", which is a question about the
+newest state. That is right for waking someone up and wrong for noticing a
+failure that was recovered from: job-discovery crashed three times in twenty
+hours while the sweep reported it green throughout, because a success followed
+each crash before anyone looked.
+
+`amac health -runs` reports each individual run exactly once, whatever happened
+after it. Telling a real skip from a failure needs a different signal per
+automation, because none of them expose it the same way:
+
+| automation | how a skip is identified |
+| --- | --- |
+| morning-brief | GitHub reports every step `success` either way, because the skip happens *inside* the steps. So the test is whether a delivery commit landed inside the run's own window. |
+| hacklist-sf | the gate skips a whole job, which GitHub does report: `job=discover conclusion=skipped`. |
+| job-discovery | a run with nothing to send still succeeds. Its pipeline report carries `shouldSend` and the counts behind it, which also makes the better message: "0 accepted of 61,268 scanned". |
+| launchd jobs | each completion marker is one run; brew prints its own failure tally. |
+
+Failures are sent on their own so they are never a line in a list you skim.
+Everything else arrives as one batch per sweep, because one message per run is
+about twenty-two pings a day, and a channel that pings twenty-two times a day
+gets muted. That is not a matter of taste: a muted channel is exactly how
+nothing reached the phone between Aug 13 and Aug 22.
+
+The first sweep records every run the APIs still remember, dozens of them, and
+sends none of it. Announcing history he has already lived through would bury
+the one thing this exists to surface. A monitor that says green
 when it only proved the web server answers is worse than no monitor, because it
 converts an unknown into a false assurance.
 

@@ -152,3 +152,53 @@ func launchdStatus(ctx context.Context, label string) (loaded bool, exit int, er
 	}
 	return strings.Contains(string(out), label), exit, nil
 }
+
+// marker is one completed run recorded in a job's log.
+type marker struct {
+	at   time.Time
+	note string
+}
+
+// allMarkers returns every completion marker in the tail of a log, oldest
+// first. Reporting each run individually needs all of them, not just the last:
+// two brew runs can land between two sweeps and the earlier one is exactly the
+// kind of failure the state sweep was blind to.
+func allMarkers(path string) []marker {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil
+	}
+	const window = 64 << 10
+	off, size := int64(0), fi.Size()
+	if size > window {
+		off, size = size-window, window
+	}
+	buf := make([]byte, size)
+	if _, err := f.ReadAt(buf, off); err != nil && err != io.EOF {
+		return nil
+	}
+	var out []marker
+	for _, m := range markerRe.FindAllStringSubmatch(string(buf), -1) {
+		ts, err := time.ParseInLocation("2006-01-02 15:04:05", m[1], time.Local)
+		if err != nil {
+			continue
+		}
+		out = append(out, marker{at: ts, note: strings.TrimSuffix(strings.TrimSpace(m[2]), "===")})
+	}
+	return out
+}
+
+// failureCount reads brew-autoupgrade's own tally out of its marker.
+func failureCount(note string) int {
+	m := failuresRe.FindStringSubmatch(note)
+	if m == nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(m[1])
+	return n
+}
