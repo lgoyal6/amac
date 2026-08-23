@@ -54,6 +54,8 @@ func main() {
 		err = cmdCost(args)
 	case "health":
 		err = cmdHealth(args)
+	case "attention":
+		err = cmdAttention(args)
 	case "daemon":
 		err = cmdDaemon(args)
 	case "run":
@@ -106,6 +108,8 @@ func usage() {
         Record a job application.
   amac cost [-days N]
         What sessions have cost, from the event log.
+  amac attention [-codex JSON | -bell] [-session S] [-quiet]
+        A session wants you. Decides whether to interrupt, and records it.
   amac health [-digest|-alert] [-quiet]
         Check every declared automation and record the sweep.
         -alert DMs only what changed; -digest DMs the whole roster.
