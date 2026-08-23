@@ -174,6 +174,42 @@ notification that was correctly withheld and one that silently failed look
 identical from outside, and telling them apart is precisely what was impossible
 before.
 
+## Crew: the org, as sessions you can take over
+
+`amac do` runs the roles headless. `amac crew` runs the same org as real tmux
+sessions you can attach to, argue with, and carry on from inside.
+
+```
+amac crew -plan  <task>    print the chain, open nothing
+amac crew        <task>    open the first role
+amac crew -next  <task>    open the next role whose input is ready
+```
+
+```
+team  (graded by deepseek-v3)
+handoff  ~/.amac/runs/add-a-json-flag-to-amac-health
+
+  1. planner   claude  ready     am-add-a-json-flag-to-amac-health-planner
+  2. executor  claude  waiting   am-add-a-json-flag-to-amac-health-executor
+  3. verifier  codex   waiting   am-add-a-json-flag-to-amac-health-verifier
+  4. reviewer  codex   waiting   am-add-a-json-flag-to-amac-health-reviewer
+```
+
+**The handoff is a file, not a pipe.** Headless, a role's output is read off the
+ACP wire and passed to the next in memory. Once a human has the keyboard that
+is gone, and the only way to recover it would be to read the rendered pane,
+which is the practice ACP was adopted to end. So each role writes to
+`~/.amac/runs/<slug>/<role>.md` and the next is told to read it. The chain
+advances only as far as the artifacts exist, which is why roles show `waiting`
+rather than opening and burning context on a file that is not there yet.
+
+Making the handoff an artifact buys something the in-memory version could not:
+the plan can be edited before the executor ever sees it, and a run reads back
+afterwards without the sessions still being alive.
+
+Sessions are named `am-<slug>-<role>`, following the convention the rest of the
+machine already uses, so they appear in existing tooling and not only here.
+
 ## Roadmap
 
 Session babysitting is **out of scope**. Claude Code Remote Control now pushes
