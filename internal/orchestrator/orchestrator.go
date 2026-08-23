@@ -14,9 +14,11 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/lgoyal6/amac/internal/crew"
 	"github.com/lgoyal6/amac/internal/event"
 	"github.com/lgoyal6/amac/internal/model"
 	"github.com/lgoyal6/amac/internal/router"
@@ -167,6 +169,53 @@ func heuristicSize(task string) Size {
 		return SizePair
 	}
 	return SizePair
+}
+
+// -------------------------------------------------------------- attachable ---
+
+// Attachable lays out the same org as Execute, but as sessions a human can
+// take over instead of subprocesses only amac can talk to.
+//
+// The shape of the work is unchanged: still a chain, because the executor
+// needs the plan and the reviewer needs the diff. What changes is where the
+// handoff lives. Execute passes a role's output to the next in memory; here it
+// goes through a file, because the alternative is reading it back off a
+// rendered terminal.
+//
+// This returns the plan rather than starting anything. Deciding what to open
+// and opening it are worth keeping apart: the caller can print the chain, and
+// a run that is going to fail on the third role should say so before the first
+// one has burned any tokens.
+func (o *Orchestrator) Attachable(task, dir string, size Size) []crew.Session {
+	slug := crew.Slug(task)
+	runDir := crew.RunDir(slug)
+
+	roles := Org(size)
+	out := make([]crew.Session, 0, len(roles))
+	var prev string
+	for _, r := range roles {
+		s := crew.Session{
+			Name:   crew.Name(slug, r.Name),
+			Role:   r.Name,
+			Agent:  r.Agent,
+			Dir:    dir,
+			Input:  prev,
+			Output: filepath.Join(runDir, r.Name+".md"),
+		}
+		prev = s.Output
+		out = append(out, s)
+	}
+	return out
+}
+
+// BriefFor is the instruction a given role's session opens with.
+func BriefFor(s crew.Session, task string) string {
+	for _, r := range Org(SizeTeam) {
+		if r.Name == s.Role {
+			return crew.Brief(s, r.Brief, task)
+		}
+	}
+	return crew.Brief(s, "", task)
 }
 
 // ---------------------------------------------------------------- running ---

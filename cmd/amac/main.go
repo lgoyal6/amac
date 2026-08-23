@@ -44,6 +44,8 @@ func main() {
 		err = cmdEval(args)
 	case "do":
 		err = cmdDo(args)
+	case "crew":
+		err = cmdCrew(args)
 	case "observe":
 		err = cmdWatch(args)
 	case "learn":
@@ -93,7 +95,9 @@ func usage() {
   amac probe [-agent claude|codex] [-all] [-dir PATH]
         Handshake with an agent adapter and record what it can do.
   amac do [-size solo|pair|team] [-budget USD] <task...>
-        Triage a task and run the right sized team of agents.
+        Triage a task and run the right sized team of agents, headless.
+  amac crew [-size S] [-next|-all|-plan] <task...>
+        The same org, as tmux sessions you can attach to and take over.
   amac route [-dry] <prompt...>
         Route one prompt through the cascade.
   amac eval [-tasks FILE]
