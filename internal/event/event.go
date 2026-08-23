@@ -43,6 +43,11 @@ const (
 	// A job application, from the browser extension or a confirmation email.
 	KindApplication Kind = "application"
 
+	// One health sweep over the declared automations. Carries every report,
+	// not just the failures, so "it was fine an hour ago" is answerable by
+	// reading the log rather than by trusting that no alert means no problem.
+	KindAutomationCheck Kind = "automation.check"
+
 	// Diagnostics from amac itself.
 	KindDaemon Kind = "daemon"
 )

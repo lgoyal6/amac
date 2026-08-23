@@ -52,6 +52,8 @@ func main() {
 		err = cmdApply(args)
 	case "cost":
 		err = cmdCost(args)
+	case "health":
+		err = cmdHealth(args)
 	case "daemon":
 		err = cmdDaemon(args)
 	case "run":
@@ -104,6 +106,9 @@ func usage() {
         Record a job application.
   amac cost [-days N]
         What sessions have cost, from the event log.
+  amac health [-digest|-alert] [-quiet]
+        Check every declared automation and record the sweep.
+        -alert DMs only what changed; -digest DMs the whole roster.
   amac log [-n N] [-since SEQ]
         Show recent events.
   amac agents
