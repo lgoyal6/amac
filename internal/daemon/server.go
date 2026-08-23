@@ -19,6 +19,7 @@ import (
 	"github.com/lgoyal6/amac/internal/apply"
 	"github.com/lgoyal6/amac/internal/event"
 	"github.com/lgoyal6/amac/internal/supervisor"
+	"github.com/lgoyal6/amac/internal/tmux"
 )
 
 //go:embed ui/*
@@ -143,13 +144,19 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 // ---------------------------------------------------------------- sessions --
 
 type sessionView struct {
-	ID      string       `json:"id"`
-	Agent   string       `json:"agent"`
-	Dir     string       `json:"dir"`
-	State   string       `json:"state"`
-	Detail  string       `json:"detail"`
-	Started time.Time    `json:"started"`
-	Pending *pendingView `json:"pending,omitempty"`
+	ID    string `json:"id"`
+	Agent string `json:"agent"`
+	Dir   string `json:"dir"`
+	State string `json:"state"`
+	// Kind separates the sessions amac owns and can drive from the ones it
+	// only observes. The board shows both; only "acp" accepts a prompt or an
+	// answer over the API, and the UI has to know which is which or it will
+	// offer buttons that cannot work.
+	Kind     string       `json:"kind"`
+	Attached bool         `json:"attached,omitempty"`
+	Detail   string       `json:"detail"`
+	Started  time.Time    `json:"started"`
+	Pending  *pendingView `json:"pending,omitempty"`
 }
 
 type pendingView struct {
@@ -167,7 +174,7 @@ type optionView struct {
 func view(sess *supervisor.Session) sessionView {
 	st, detail := sess.State()
 	v := sessionView{
-		ID: sess.ID, Agent: sess.Agent, Dir: sess.Dir,
+		ID: sess.ID, Agent: sess.Agent, Dir: sess.Dir, Kind: "acp",
 		State: string(st), Detail: detail, Started: sess.Started,
 	}
 	if p := sess.Pending(); p != nil {
@@ -185,7 +192,81 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 	for _, sess := range s.sup.List() {
 		out = append(out, view(sess))
 	}
+	out = append(out, s.tmuxSessions(r.Context())...)
 	writeJSON(w, 200, out)
+}
+
+// tmuxSessions lists the sessions amac did not start.
+//
+// Their state comes from the attention events their hooks recorded, never from
+// reading the pane. That means the honest answer is often "unknown": tmux can
+// prove a session exists, and the hooks can prove it asked for something, but
+// nothing here can prove an agent is mid-thought. Saying "unknown" is the
+// point. The predecessor guessed with a regex and was confidently wrong.
+func (s *Server) tmuxSessions(ctx context.Context) []sessionView {
+	list, err := tmux.List()
+	if err != nil || len(list) == 0 {
+		return nil
+	}
+	last := s.lastAttention(ctx)
+
+	out := make([]sessionView, 0, len(list))
+	for _, t := range list {
+		v := sessionView{
+			ID: t.Name, Agent: t.Agent(), Dir: t.Dir, Kind: "tmux",
+			Attached: t.Attached, Started: t.Created,
+			State: "unknown", Detail: t.Command,
+		}
+		if a, ok := last[t.Name]; ok {
+			v.State, v.Detail = a.state, a.detail
+		}
+		out = append(out, v)
+	}
+	return out
+}
+
+type attnState struct{ state, detail string }
+
+// lastAttention reads the newest attention event per session in one query.
+// One query per session would be twenty round trips for a page that refreshes.
+func (s *Server) lastAttention(ctx context.Context) map[string]attnState {
+	rows, err := s.log.DB().QueryContext(ctx, `
+		SELECT session, payload FROM events
+		 WHERE kind = ? AND seq IN (
+		       SELECT MAX(seq) FROM events WHERE kind = ? AND session != '' GROUP BY session)`,
+		string(event.KindAttention), string(event.KindAttention))
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
+	out := map[string]attnState{}
+	for rows.Next() {
+		var sess string
+		var payload []byte
+		if err := rows.Scan(&sess, &payload); err != nil {
+			continue
+		}
+		var body struct {
+			Reason  string `json:"reason"`
+			Message string `json:"message"`
+		}
+		if err := json.Unmarshal(payload, &body); err != nil {
+			continue
+		}
+		a := attnState{state: "idle", detail: body.Message}
+		if body.Reason == "wants-attention" {
+			a.state = "blocked"
+			if a.detail == "" {
+				a.detail = "asked for you"
+			}
+		}
+		if a.detail == "" {
+			a.detail = "finished its turn"
+		}
+		out[sess] = a
+	}
+	return out
 }
 
 func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
