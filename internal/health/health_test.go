@@ -247,3 +247,63 @@ func TestTailMarkerReadsOnlyTheTail(t *testing.T) {
 		t.Fatal("returned the stale marker from outside the window")
 	}
 }
+
+// The digest is read on a phone, where Discord's column is about forty
+// characters. Nothing here can enforce how Discord wraps, but it can keep the
+// lines we control short enough to survive it, and it can keep a URL from
+// being buried inside a sentence.
+func TestDigestFitsAPhoneScreen(t *testing.T) {
+	reports := []Report{
+		{Name: "hacklist-sf", State: Failing, Last: time.Now().Add(-2 * time.Hour),
+			Detail: "last run failure (SF discovery, 51m ago) https://github.com/lgoyal6/hacklist-sf/actions/runs/32608022200",
+			Notes:  []string{`open pipeline-red issue #13, 15d old`}},
+		{Name: "morning-brief", State: OK, Detail: "delivered 2026-08-22"},
+		{Name: "brew-autoupgrade", State: OK, Detail: "last completed 2h ago"},
+	}
+	got := Digest(reports)
+
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "http") {
+			continue // a URL is as long as it is
+		}
+		// Bold markers render to nothing, so they do not count against width.
+		if w := len(strings.ReplaceAll(line, "**", "")); w > 56 {
+			t.Errorf("line too wide for a phone (%d chars): %q", w, line)
+		}
+	}
+	if strings.Contains(got, "    ") {
+		t.Error("digest indents; indentation wastes a phone's width")
+	}
+	// The URL must be on its own line, not inside the failure sentence.
+	for _, line := range strings.Split(got, "\n") {
+		if strings.Contains(line, "http") && !strings.HasPrefix(line, "<") {
+			t.Errorf("URL not lifted onto its own line: %q", line)
+		}
+	}
+}
+
+func TestDigestAllHealthyLeadsWithReassurance(t *testing.T) {
+	got := Digest([]Report{
+		{Name: "a", State: OK, Detail: "delivered"},
+		{Name: "b", State: OK, Detail: "delivered"},
+	})
+	if !strings.HasPrefix(got, "✅ **Automations** · all 2 delivering") {
+		t.Errorf("all-healthy digest should open with the all-clear, got:\n%s", got)
+	}
+	if strings.Contains(got, "Healthy") {
+		t.Error("a Healthy subheading is redundant when nothing is broken")
+	}
+}
+
+func TestSplitURLKeepsTrailingProse(t *testing.T) {
+	text, link := splitURL("broke https://example.com/run/1 during the sweep")
+	if text != "broke during the sweep" {
+		t.Errorf("text = %q", text)
+	}
+	if link != "<https://example.com/run/1>" {
+		t.Errorf("link = %q", link)
+	}
+	if text, link := splitURL("no link here"); text != "no link here" || link != "" {
+		t.Errorf("plain detail mangled: %q %q", text, link)
+	}
+}
