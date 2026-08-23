@@ -102,7 +102,8 @@ func Digest(reports []Report) string {
 	}
 
 	for _, r := range bad {
-		fmt.Fprintf(&b, "\n%s **%s** · %s\n%s\n", r.State.Icon(), r.Name, r.State, tidy(r.Detail))
+		text, link := splitURL(r.Detail)
+		fmt.Fprintf(&b, "\n%s **%s** · %s\n%s\n", r.State.Icon(), r.Name, r.State, text)
 		if !r.Last.IsZero() {
 			fmt.Fprintf(&b, "· last delivery %s\n", r.Last.Local().Format("Mon 15:04"))
 		}
@@ -112,6 +113,9 @@ func Digest(reports []Report) string {
 		if r.Err != "" {
 			fmt.Fprintf(&b, "· %s\n", tidy(r.Err))
 		}
+		if link != "" {
+			fmt.Fprintf(&b, "%s\n", link)
+		}
 	}
 
 	if len(good) > 0 {
@@ -120,8 +124,11 @@ func Digest(reports []Report) string {
 		} else {
 			b.WriteString("\n")
 		}
+		// No per-line icon here. Under a Healthy heading every one of them
+		// would be the same green dot, and two columns of emoji width is the
+		// difference between these lines fitting a phone and wrapping.
 		for _, r := range good {
-			fmt.Fprintf(&b, "🟢 %s · %s\n", r.Name, tidy(r.Detail))
+			fmt.Fprintf(&b, "**%s** · %s\n", r.Name, tidy(r.Detail))
 		}
 	}
 
@@ -137,6 +144,23 @@ var bareURL = regexp.MustCompile(`https?://[^\s<>]+`)
 // off the screen, and these links are for tapping, not for reading.
 func tidy(s string) string {
 	return bareURL.ReplaceAllString(strings.TrimSpace(s), "<$0>")
+}
+
+// splitURL lifts a trailing link out of a detail string onto its own line.
+// Inline, a GitHub Actions run URL is longer than the sentence carrying it and
+// wraps across four phone lines, burying the reason the automation is red.
+func splitURL(s string) (text, link string) {
+	s = strings.TrimSpace(s)
+	loc := bareURL.FindStringIndex(s)
+	if loc == nil {
+		return s, ""
+	}
+	text = strings.TrimRight(strings.TrimSpace(s[:loc[0]]), " ·,:")
+	link = "<" + s[loc[0]:loc[1]] + ">"
+	if rest := strings.TrimSpace(s[loc[1]:]); rest != "" {
+		text = strings.TrimSpace(text + " " + rest)
+	}
+	return text, link
 }
 
 // Alert renders only what changed, so a healthy day is silent. A monitor that
@@ -162,9 +186,13 @@ func Alert(reports []Report, prev map[string]State) (string, bool) {
 	}
 	var b strings.Builder
 	for _, r := range broke {
-		fmt.Fprintf(&b, "%s **%s** · %s\n%s\n", r.State.Icon(), r.Name, r.State, tidy(r.Detail))
+		text, link := splitURL(r.Detail)
+		fmt.Fprintf(&b, "%s **%s** · %s\n%s\n", r.State.Icon(), r.Name, r.State, text)
 		for _, n := range r.Notes {
 			fmt.Fprintf(&b, "· %s\n", tidy(n))
+		}
+		if link != "" {
+			fmt.Fprintf(&b, "%s\n", link)
 		}
 	}
 	for _, r := range fixed {
