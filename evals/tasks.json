@@ -31,7 +31,7 @@
     "id": "regex-recall-01",
     "prompt": "In one word, what does the acronym WAL stand for in databases? Answer with the expanded phrase only.",
     "check": "regex",
-    "values": "(?i)write[- ]ahead log",
+    "values": ["(?i)write[- ]ahead log"],
     "note": "Factual recall, no reasoning. Cheap models should get this."
   },
   {

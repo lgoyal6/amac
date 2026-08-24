@@ -141,6 +141,25 @@ func cmdEval(args []string) error {
 	}
 	fmt.Print(rep.Table())
 
+	// Record which models produced the curve. Arm names alone age badly: the
+	// cheap tier is a different model six months from now, and a curve you
+	// cannot attribute is a number you cannot re-check.
+	models := map[string]string{}
+	for _, t := range reg.Tiers() {
+		p, _ := reg.Get(t)
+		models[t.String()] = p.Model()
+	}
+	ev, err := event.New(event.KindEvalCompleted, "eval", "", map[string]any{
+		"tasks": len(tasks), "taskSet": *tasksPath, "arms": rep.Arms,
+		"models": models, "realGates": rep.RealGates, "weakGates": rep.WeakGates,
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := log.Append(context.Background(), ev); err != nil {
+		return err
+	}
+
 	if *out != "" {
 		b, _ := json.MarshalIndent(rep, "", "  ")
 		if err := os.WriteFile(*out, b, 0o644); err != nil {

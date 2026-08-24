@@ -44,9 +44,12 @@ type Task struct {
 	Note string `json:"note,omitempty"`
 }
 
-// Verify is the mechanical check. It is also reused as the router's verifier,
-// which keeps the eval honest: the harness measures the same gate production
-// uses, rather than a friendlier one.
+// Verify is the mechanical check that GRADES an answer. It is the answer key,
+// so it is the one thing the cascade must never be given: see Gate.
+//
+// It stays mechanical for the reason the package doc gives. A judge model
+// grading a judge model is how evaluation harnesses quietly stop measuring
+// anything.
 func (t Task) Verify(answer string) error {
 	a := strings.TrimSpace(answer)
 	switch t.Check {
@@ -75,6 +78,38 @@ func (t Task) Verify(answer string) error {
 		return router.JSONVerifier(t.Values...)("", a)
 	}
 	return fmt.Errorf("unknown check %q", t.Check)
+}
+
+// Gate is the verifier the CASCADE runs with, which is deliberately not the
+// same thing as the check that grades the answer.
+//
+// contains and regex carry the expected answer inside the check. Handing one to
+// the router lets the cascade consult the answer key before deciding whether to
+// keep a cheap model's reply, and production has no answer key. Measured
+// routed-arm quality would then be a property of the harness rather than of the
+// router, which is the one thing this package exists not to do.
+//
+// one_of and json_keys are different in kind: production really does know the
+// label set and the required keys before the call, so those gates pass through
+// unchanged. Everything else falls back to the weakest check production could
+// actually run, which is "did the model answer at all".
+func (t Task) Gate() router.Verifier {
+	switch t.Check {
+	case CheckOneOf:
+		return router.OneOfVerifier(t.Values...)
+	case CheckJSONKeys:
+		return router.JSONVerifier(t.Values...)
+	default:
+		return router.NonEmptyVerifier(1)
+	}
+}
+
+// RealGate reports whether Gate is the same check production would run. It is
+// reported per run because it bounds how much the routed number is worth: a
+// suite of tasks nothing can mechanically gate measures a cascade that is
+// mostly running on hope.
+func (t Task) RealGate() bool {
+	return t.Check == CheckOneOf || t.Check == CheckJSONKeys
 }
 
 func LoadTasks(path string) ([]Task, error) {
@@ -124,6 +159,12 @@ func (a ArmSummary) Quality() float64 {
 type Report struct {
 	Arms    []ArmSummary
 	Results []Result
+
+	// RealGates and WeakGates split the task set by whether the cascade could
+	// be gated the way production would gate it. Reported alongside the curve
+	// because the routed arm's quality means less the larger WeakGates is.
+	RealGates int
+	WeakGates int
 }
 
 // Table renders the cost/quality frontier. Savings are stated against the
@@ -161,6 +202,15 @@ func (r Report) Table() string {
 			sb.WriteString("\n")
 		}
 	}
+	// State how much of the routed number is load-bearing. A cascade gated on
+	// "the model said something" is not the cascade production runs on the
+	// tasks that matter, and a curve that does not say so invites being quoted
+	// as though every task were gated properly.
+	if len(r.Arms) > 0 && r.WeakGates > 0 {
+		fmt.Fprintf(&sb, "\nrouted gating: %d of %d tasks gated as production would; %d carry their\n"+
+			"answer in the check and fell back to non-empty output.\n",
+			r.RealGates, r.RealGates+r.WeakGates, r.WeakGates)
+	}
 	return sb.String()
 }
 
@@ -186,6 +236,13 @@ type Runner struct {
 // options rather than hypothetical ones.
 func (r *Runner) Run(ctx context.Context, tasks []Task) (Report, error) {
 	var rep Report
+	for _, t := range tasks {
+		if t.RealGate() {
+			rep.RealGates++
+		} else {
+			rep.WeakGates++
+		}
+	}
 	arms := []string{}
 	for _, t := range r.Reg.Tiers() {
 		arms = append(arms, t.String())
@@ -208,7 +265,9 @@ func (r *Runner) Run(ctx context.Context, tasks []Task) (Report, error) {
 			var err error
 
 			if arm == "routed" {
-				resp, dec, rErr := r.Router.Call(ctx, req, func(_, a string) error { return task.Verify(a) })
+				// Gate(), never Verify(): the cascade must decide without the
+				// answer key, exactly as it does in production.
+				resp, dec, rErr := r.Router.Call(ctx, req, task.Gate())
 				answer, costUSD, err = resp.Text, dec.TotalCost(), rErr
 				if dec.Escalated {
 					sum.Escalated++

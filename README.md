@@ -239,6 +239,48 @@ afterwards without the sessions still being alive.
 Sessions are named `am-<slug>-<role>`, following the convention the rest of the
 machine already uses, so they appear in existing tooling and not only here.
 
+## Measuring the router
+
+The roadmap says the evaluation harness lands *before* the router is trusted,
+because the measured cost/quality curve is the only claim worth making. The
+harness is here. The curve is not: that needs a key and real models, and what
+follows was produced against stub models to exercise the machinery.
+
+What changed is what the harness is allowed to know.
+
+**The cascade must not be gated on the answer key.** `amac eval` handed the
+router each task's own check as its verifier. For `one_of` and `json_keys` that
+is fair, because production genuinely knows the label set and the required keys
+before the call. For `contains` and `regex` the check *carries the answer*, so
+the cascade was rejecting cheap answers it could only tell were wrong because it
+had been shown the right one. Nothing in production can do that, so every routed
+number was a property of the harness rather than of the router.
+
+Same stub models, same eight tasks, the only difference being what the cascade
+was allowed to see:
+
+| gate | routed quality | cost vs strong | escalations |
+| --- | --- | --- | --- |
+| the task's own check | 100.0% | -32% | 4 |
+| what production can check | 75.0% | -40% | 2 |
+
+The old harness overstated quality by 25 points *and* understated the saving,
+because two of its four escalations were impossible. The real trade on this
+suite is cheaper and worse. That is a statement worth making; "routing is free"
+is not, and it is exactly the quality loss you never find out about that the
+cascade exists to prevent.
+
+So the report states the census as well, because it bounds the claim:
+
+```
+routed gating: 4 of 8 tasks gated as production would; 4 carry their
+answer in the check and fell back to non-empty output.
+```
+
+Each run appends `eval.completed` carrying the arms, that census, and the model
+behind every tier. A curve you cannot attribute to specific models is a number
+you cannot re-check once they change underneath you.
+
 ## Roadmap
 
 Session babysitting is **out of scope**. Claude Code Remote Control now pushes
@@ -251,11 +293,10 @@ across all of them.
 
 1. **Daemon**: supervise sessions, WebSocket API, widget dashboard on the
    tailnet
-2. **Gateway and router**: LiteLLM in front of Anthropic and open models. A
-   cascade, not a predictor: strong model by default, route down only on
-   high-confidence-easy plus mechanical verification, escalate on doubt. The
-   evaluation harness lands before the router, because the measured
-   cost/quality curve is the only claim worth making
+2. **Gateway and router**: the gateway (any OpenAI-compatible host, one key
+   for all three tiers) and the cascade are in, and the harness that has to
+   justify them now measures the cascade without showing it the answer key.
+   What is left is the curve itself, against real models rather than stubs
 3. **Orchestrator**: grade the prompt, convene as many specialised agents as
    it actually warrants, with a per-task token budget
 4. **Sensors**: browser extension plus email parsing to keep an application
