@@ -120,6 +120,47 @@ t('workday phrasing', () => {
   assert.equal(sent[0].payload.ats, 'Workday');
 });
 
+console.log('\ncompany extraction');
+
+t('a term is not a company (the real bug)', () => {
+  const env = makeEnv({
+    host: 'job-boards.greenhouse.io', path: '/ctccampusboard/jobs/4708230005',
+    h1: 'Software Engineering Internship - Summer 2027',
+    bodyText: 'Thank you for applying. Your application has been submitted.',
+  });
+  const p = run(env)[0].payload;
+  assert.notEqual(p.company, 'Summer 2027', 'recorded a term as the company');
+  assert.equal(p.role, 'Software Engineering Internship', `role was ${p.role}`);
+  assert.equal(p.company, 'Ctccampusboard', `company was ${p.company}`);
+});
+
+t('falls back to the greenhouse org slug', () => {
+  const env = makeEnv({
+    host: 'boards.greenhouse.io', path: '/stripe/jobs/12345',
+    h1: 'Backend Engineer',
+    bodyText: 'Thanks for applying! Your application was received.',
+  });
+  assert.equal(run(env)[0].payload.company, 'Stripe');
+});
+
+t('workday takes the company from the subdomain', () => {
+  const env = makeEnv({
+    host: 'acme.myworkdayjobs.com', path: '/en-US/careers/job/999',
+    h1: 'Platform Engineer',
+    bodyText: 'We have received your application.',
+  });
+  assert.equal(run(env)[0].payload.company, 'Acme');
+});
+
+t('an explicit company in the page still wins', () => {
+  const env = makeEnv({
+    host: 'jobs.lever.co', path: '/anthropic/abc',
+    h1: 'Engineer - Fall 2027', meta: { site_name: 'Anthropic' },
+    bodyText: 'Thank you for applying.',
+  });
+  assert.equal(run(env)[0].payload.company, 'Anthropic');
+});
+
 console.log('\nreporting once');
 
 t('does not report twice on re-render', () => {
