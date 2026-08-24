@@ -59,6 +59,12 @@ const (
 	// failure that a later run recovered from.
 	KindAutomationRun Kind = "automation.run"
 
+	// One evaluation run: the cost/quality curve, the arms it was measured
+	// over, and the models underneath. Recorded because the curve is the claim
+	// the router rests on, and a claim that only exists in terminal scrollback
+	// cannot be compared against the next one when the models change.
+	KindEvalCompleted Kind = "eval.completed"
+
 	// Diagnostics from amac itself.
 	KindDaemon Kind = "daemon"
 )
