@@ -5,6 +5,15 @@ package event
 // about what Relaxed loses, so the durability claim has no baseline. This runs
 // the identical procedure with Relaxed and REPORTS the loss instead of failing,
 // so the two arms can be compared on the same machine in the same session.
+//
+// What this can and cannot show. SIGKILL ends the process but does not clear
+// the OS page cache, so writes Relaxed already handed to the kernel are still
+// there on reopen. Measured loss is 0, repeatably, and that is the result
+// rather than a flaw in the procedure: it is evidence for the first half of
+// Relaxed's doc comment, "survives process kill". The second half, "can lose
+// the tail on machine crash", needs power loss or a kernel panic to observe and
+// no test on this machine can stage one. So Relaxed's exposure is bounded to
+// machine death, and this is the arm that shows it.
 
 import (
 	"context"
