@@ -212,7 +212,10 @@ type sessionView struct {
 	// on the board until its next turn ends. Saying "blocked, asked 40m ago"
 	// hands that judgement to the person reading it; saying "blocked" alone
 	// makes a claim about now that amac cannot support.
-	Since time.Time `json:"since,omitempty"`
+	// A pointer, because `omitempty` does nothing for a zero time.Time: it is a
+	// struct, not a basic type, so an unset one serialises as year 1 and the
+	// board rendered a session nobody had heard from as "739855d ago".
+	Since *time.Time `json:"since,omitempty"`
 }
 
 type pendingView struct {
@@ -293,10 +296,11 @@ func (s *Server) tmuxSessions(ctx context.Context) []sessionView {
 		// answered. Claude's hooks report every transition including the one
 		// that clears it, so where they exist they are authoritative.
 		if a, ok := last[t.Name]; ok {
-			v.State, v.Detail, v.Since = a.state, a.detail, a.at
+			v.State, v.Detail = a.state, a.detail
+			v.Since = when(a.at)
 		}
 		if st, ok := states[t.Name]; ok {
-			v.State, v.Since = st.State, st.At
+			v.State, v.Since = st.State, when(st.At)
 			// The newer state's own detail, or none. Keeping the attention
 			// event's text here left a card reading "working" above "Claude is
 			// waiting for your input": that sentence described the moment the
@@ -367,6 +371,16 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 
 	swept, _ := time.Parse(time.RFC3339Nano, at)
 	writeJSON(w, 200, map[string]any{"at": swept, "reports": out})
+}
+
+// when returns a timestamp only when there is one. A zero time is not a very
+// old fact, it is the absence of a fact, and rendering it as an age says
+// something false with total confidence.
+func when(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
 }
 
 type attnState struct {

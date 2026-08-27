@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 const tok = "tok"
@@ -227,5 +228,32 @@ func TestEventsAreReadable(t *testing.T) {
 func TestUnknownPathsAre404(t *testing.T) {
 	if got := do(t, req("GET", "/nope", "")).Code; got != 404 {
 		t.Errorf("got %d", got)
+	}
+}
+
+// A session amac has never heard from has no timestamp, and the board reads
+// whatever it is given as an age. `omitempty` is no help: time.Time is a
+// struct, so an unset one is not empty, it is the year 1, and the card said
+// "739855d ago" with total confidence. The field is a pointer now so absence
+// can be transmitted as absence.
+func TestAnUnknownSessionShipsNoTimestamp(t *testing.T) {
+	var known = time.Date(2026, 8, 27, 12, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		name string
+		v    sessionView
+		want bool // is "since" expected in the JSON
+	}{
+		{"never heard from", sessionView{ID: "am-x", State: "unknown"}, false},
+		{"a real observation", sessionView{ID: "am-y", State: "blocked", Since: when(known)}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			b, err := json.Marshal(c.v)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := strings.Contains(string(b), `"since"`); got != c.want {
+				t.Fatalf("since present = %v, want %v in %s", got, c.want, b)
+			}
+		})
 	}
 }

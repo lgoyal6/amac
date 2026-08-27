@@ -354,6 +354,9 @@ const esc = s => { const d = document.createElement('div'); d.textContent = s ??
 function ago(iso) {
   const secs = (Date.now() - new Date(iso)) / 1000;
   if (!isFinite(secs) || secs < 0) return '';
+  // Anything older than this machine is a missing timestamp wearing a date, not
+  // a fact worth showing. A card once read "739855d ago" with a straight face.
+  if (secs > 10 * 365 * 86400) return '';
   if (secs < 90) return 'just now';
   const mins = Math.round(secs / 60);
   if (mins < 60) return mins + 'm ago';
