@@ -12,163 +12,192 @@
 <link rel="icon" type="image/png" href="/icon-192.png">
 <title>amac</title>
 <style>
+  /* An instrument panel for a machine you own, not a web app.
+     Identifiers are monospace because that is what they are and what the
+     terminal already calls them. State is said once, as a light down the edge
+     of the card, rather than three times in three devices. Space is a scale,
+     not nineteen values chosen one at a time. */
   :root {
-    --bg:#0d0f13; --card:#171a21; --card2:#1e222b; --line:#272c37;
-    --fg:#e6e8ee; --dim:#8b93a7;
-    --work:#4ea3ff; --idle:#8b93a7; --block:#ff8a3d; --end:#4b5162; --ok:#3ddc84;
-    --fail:#ff5d5d;
+    --bg:#0b0d10; --surface:#14171c; --raise:#1b1f26; --line:#242a33;
+    --fg:#e7eaf0; --dim:#7d8697; --faint:#4d5563;
+
+    --blocked:#ff9147; --working:#4c9aff; --idle:#6b7688;
+    --ok:#3fb950; --fail:#f85149; --late:#d29922;
+
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px;
+    --r:10px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    --sans: -apple-system, "SF Pro Text", system-ui, sans-serif;
   }
   @media (prefers-color-scheme: light) {
-    :root { --bg:#f6f7f9; --card:#fff; --card2:#f0f2f6; --line:#e2e6ee;
-            --fg:#12151b; --dim:#5d6577; }
+    :root { --bg:#f7f8fa; --surface:#fff; --raise:#f1f3f6; --line:#e3e7ee;
+            --fg:#11141a; --dim:#5f6878; --faint:#98a1b0; }
   }
+
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  /* .grid and .bar set display, which outranks the [hidden] attribute in the
-     UA stylesheet. Without this the tab bar changes the underline and leaves
-     the board on screen. */
   [hidden] { display:none !important; }
-  body { margin:0; background:var(--bg); color:var(--fg);
-         font:15px/1.45 ui-sans-serif,-apple-system,SF Pro Text,system-ui,sans-serif;
-         padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--sans);
+         padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+         -webkit-font-smoothing:antialiased; }
+  button { font:inherit; cursor:pointer; }
+
+  /* ---- header ---------------------------------------------------------- */
   header { position:sticky; top:0; z-index:5; background:var(--bg);
-           padding:14px 16px 0; border-bottom:1px solid var(--line); }
-  .brand { display:flex; align-items:center; gap:10px; }
-  h1 { font-size:17px; margin:0; letter-spacing:.02em; font-weight:650; }
-  .conn { margin-left:auto; font-size:12px; color:var(--dim); display:flex; align-items:center; gap:6px; }
-  .dot { width:8px; height:8px; border-radius:50%; background:var(--end); }
+           border-bottom:1px solid var(--line); padding:var(--s4) var(--s4) 0; }
+  .brand { display:flex; align-items:baseline; gap:var(--s3); }
+  h1 { font:600 15px/1 var(--mono); margin:0; letter-spacing:-.01em; }
+  .summary { font:12px/1 var(--mono); color:var(--dim); }
+  .summary b { font-weight:600; }
+  .s-blocked { color:var(--blocked); } .s-working { color:var(--working); }
+  .conn { margin-left:auto; font:11px/1 var(--mono); color:var(--faint);
+          display:flex; align-items:center; gap:var(--s2); }
+  .dot { width:6px; height:6px; border-radius:50%; background:var(--faint); }
   .dot.on { background:var(--ok); }
 
-  nav { display:flex; gap:2px; margin-top:11px; }
-  nav button { background:none; border:none; border-bottom:2px solid transparent;
-               color:var(--dim); font-size:14px; font-weight:600; padding:7px 12px 9px;
-               border-radius:0; min-height:0; cursor:pointer; }
-  nav button.on { color:var(--fg); border-bottom-color:var(--work); }
-  nav .badge.ready { background:var(--work); color:#03121f; }
-  nav .badge { display:inline-block; min-width:17px; margin-left:5px; padding:0 5px;
-               border-radius:999px; background:var(--block); color:#1a0d04;
-               font-size:11px; font-weight:700; }
+  nav { display:flex; gap:var(--s4); margin-top:var(--s4); overflow-x:auto; }
+  nav button { background:none; border:0; padding:0 0 var(--s3);
+               border-bottom:2px solid transparent; color:var(--dim);
+               font:500 13px/1 var(--sans); white-space:nowrap; }
+  nav button.on { color:var(--fg); border-bottom-color:var(--fg); }
+  nav .badge { display:inline-block; margin-left:var(--s1); padding:1px 5px;
+               border-radius:6px; background:var(--blocked); color:#231000;
+               font:700 10px/1.4 var(--mono); }
+  nav .badge.ready { background:var(--working); color:#001427; }
 
-  main { padding:14px 16px 90px; }
-  .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
+  main { padding:var(--s4) var(--s4) 96px; }
+  .grid { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); }
 
-  .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
-          padding:13px 14px; }
-  .card.blocked { border-color:var(--block); }
+  /* ---- session card ---------------------------------------------------- */
+  /* The state is a light down the left edge. Said once, in the place the eye
+     lands first, instead of as a dot and a badge and a border all at once. */
+  .card { background:var(--surface); border:1px solid var(--line);
+          border-left:2px solid var(--faint); border-radius:var(--r);
+          padding:var(--s3) var(--s4); }
+  .card.blocked { border-left-color:var(--blocked); }
+  .card.working { border-left-color:var(--working); }
+  .card.idle    { border-left-color:var(--idle); }
   .card > .top { cursor:pointer; }
-  .top { display:flex; align-items:center; gap:8px; }
-  .pip { width:7px; height:7px; border-radius:50%; flex:none; background:var(--end); }
-  .pip.blocked { background:var(--block); box-shadow:0 0 0 3px color-mix(in srgb, var(--block) 22%, transparent); }
-  .pip.working { background:var(--work); box-shadow:0 0 0 3px color-mix(in srgb, var(--work) 22%, transparent); }
-  .pip.idle { background:var(--idle); }
-  .summary { font-size:12.5px; color:var(--dim); }
-  .summary b { font-weight:680; }
-  .s-blocked { color:var(--block); }
-  .s-working { color:var(--work); }
-  .name { font-weight:620; font-size:15px; flex:1 1 auto; min-width:0;
+  .top { display:flex; align-items:baseline; gap:var(--s2); }
+  .name { font:600 13px/1.4 var(--mono); flex:1 1 auto; min-width:0;
           overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .agent { font-size:11px; color:var(--dim); border:1px solid var(--line);
-           padding:1px 6px; border-radius:999px; flex:none; }
-  .state { margin-left:auto; font-size:11px; text-transform:uppercase;
-           letter-spacing:.06em; font-weight:640; flex:none; }
-  .state.working{color:var(--work)} .state.idle{color:var(--idle)}
-  .state.blocked{color:var(--block)} .state.ended{color:var(--end)}
-  .state.starting{color:var(--work)} .state.unknown{color:var(--end)}
-  .tags { display:flex; gap:6px; margin-top:7px; flex-wrap:wrap; }
-  .detail { color:var(--dim); font-size:13px; margin-top:6px;
+  .state { font:11px/1.4 var(--mono); color:var(--faint); flex:none; }
+  .state.blocked { color:var(--blocked); } .state.working { color:var(--working); }
+  .pip { display:none; }
+
+  .tags { display:flex; gap:var(--s2); margin-top:var(--s2); flex-wrap:wrap; }
+  .agent, .kind { font:10px/1.6 var(--mono); color:var(--dim);
+                  border:1px solid var(--line); border-radius:5px; padding:0 5px; }
+  .kind.on { color:var(--ok); border-color:color-mix(in srgb, var(--ok) 35%, transparent); }
+  .detail { color:var(--dim); font-size:12.5px; margin-top:var(--s2);
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .kind { font-size:11px; padding:1px 6px; border-radius:3px; flex:none;
-          background:var(--card2); color:var(--dim); }
-  .kind.on { background:#1d3226; color:#6fcf97; }
-  .dir { color:var(--dim); font-size:11px; margin-top:6px; font-family:ui-monospace,SFMono-Regular,monospace;
+  .dir { color:var(--faint); font:11px/1.5 var(--mono); margin-top:var(--s1);
          overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-  .ask { margin-top:11px; padding-top:11px; border-top:1px solid var(--line); }
-  .ask-title { font-size:13px; margin-bottom:9px; }
-  .opts { display:flex; gap:7px; flex-wrap:wrap; }
-  button { font:inherit; font-size:13px; font-weight:560; padding:9px 13px;
-           border-radius:9px; border:1px solid var(--line); background:var(--card2);
-           color:var(--fg); cursor:pointer; min-height:40px; }
-  button:active { transform:scale(.97); }
-  button:disabled { opacity:.5; }
-  button.allow { background:var(--ok); border-color:var(--ok); color:#04140a; }
-  button.reject { background:transparent; color:var(--block); border-color:var(--block); }
-  button.sm { min-height:34px; padding:6px 10px; font-size:12.5px; }
-  button.go { background:var(--work); border-color:var(--work); color:#03121f; }
+  /* ---- the pane, which is the thing worth looking at ------------------- */
+  .pane { margin-top:var(--s3); background:var(--bg); border:1px solid var(--line);
+          border-radius:var(--r); padding:var(--s3);
+          font:11px/1.45 var(--mono); color:#c3cad8; white-space:pre;
+          overflow:auto; max-height:280px; }
 
-  /* The pane mirror. Not a parse of the terminal: the bytes, forwarded, for a
-     human to read exactly as `tmux attach` would show them. */
-  .pane { margin-top:11px; background:#0a0c10; border:1px solid var(--line);
-          border-radius:9px; padding:9px 10px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-          font-size:11px; line-height:1.35; color:#c9cfdd; white-space:pre;
-          overflow:auto; max-height:270px; }
-  @media (prefers-color-scheme: light) { .pane { background:#0d0f13; } }
-  .keys { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
-  .typebar { display:flex; gap:6px; margin-top:8px; }
-  .typebar input { flex:1; min-width:0; font:inherit; font-size:14px; padding:9px 10px;
-                   border-radius:9px; border:1px solid var(--line); background:var(--card2); color:var(--fg); }
-  .note { color:var(--dim); font-size:11.5px; margin-top:7px; }
+  /* A keypad: one dense row, monospace, sized like keys rather than buttons. */
+  .keys { display:flex; gap:var(--s1); margin-top:var(--s2); flex-wrap:wrap; }
+  .keys button { background:var(--raise); border:1px solid var(--line);
+                 border-radius:6px; color:var(--dim); font:11px/1 var(--mono);
+                 padding:7px 9px; min-width:30px; }
+  .keys button:active { background:var(--line); color:var(--fg); }
 
-  .log { margin-top:11px; padding-top:11px; border-top:1px solid var(--line);
-         font-family:ui-monospace,SFMono-Regular,monospace; font-size:11.5px;
-         color:var(--dim); max-height:200px; overflow-y:auto; }
-  .log div { padding:1.5px 0; word-break:break-word; }
-  .empty { color:var(--dim); text-align:center; padding:44px 16px; grid-column:1/-1; }
+  .typebar { display:flex; gap:var(--s2); margin-top:var(--s2); }
+  .typebar input { flex:1; min-width:0; background:var(--raise); color:var(--fg);
+                   border:1px solid var(--line); border-radius:8px;
+                   padding:9px var(--s3); font:12.5px/1 var(--sans); }
+  .typebar input::placeholder { color:var(--faint); }
+  .note { display:none; }
 
-  .bar { position:fixed; left:0; right:0; bottom:0; background:var(--card);
-         border-top:1px solid var(--line); padding:10px 12px calc(10px + env(safe-area-inset-bottom));
-         display:flex; gap:8px; }
-  .bar select, .bar input { font:inherit; font-size:14px; padding:9px 10px; border-radius:9px;
-         border:1px solid var(--line); background:var(--card2); color:var(--fg); }
+  .ask { margin-top:var(--s3); padding-top:var(--s3); border-top:1px solid var(--line); }
+  .ask-title { font-size:12.5px; margin-bottom:var(--s2); }
+  .opts { display:flex; gap:var(--s2); flex-wrap:wrap; }
+  .opts button { background:var(--raise); border:1px solid var(--line); color:var(--fg);
+                 border-radius:8px; padding:9px var(--s3); font-size:12.5px; }
+  .opts button.allow { background:var(--ok); border-color:var(--ok); color:#04140a; font-weight:600; }
+  .opts button.reject { background:transparent; color:var(--blocked); border-color:var(--blocked); }
+
+  button.sm { background:var(--raise); border:1px solid var(--line); color:var(--dim);
+              border-radius:7px; padding:7px 10px; font:11.5px/1 var(--sans); }
+  button.sm:active { color:var(--fg); }
+  button.go { background:var(--fg); border-color:var(--fg); color:var(--bg); font-weight:600; }
+  /* Quiet. The state light is what should be loudest on this screen, and a
+     white button next to it was winning. */
+  button.send { color:var(--fg); border-color:var(--faint); }
+  .keys-div { width:1px; align-self:stretch; background:var(--line); margin:0 var(--s1); }
+  /* The pane scrolls sideways and nothing said so. */
+  .pane { -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 20px),transparent);
+          mask-image:linear-gradient(to right,#000 calc(100% - 20px),transparent); }
+  button:disabled { opacity:.45; }
+
+  .log { margin-top:var(--s3); padding-top:var(--s3); border-top:1px solid var(--line);
+         font:11px/1.5 var(--mono); color:var(--faint);
+         max-height:180px; overflow-y:auto; }
+  .log div { padding:1px 0; word-break:break-word; }
+  .empty { color:var(--faint); text-align:center; padding:var(--s5) var(--s4);
+           font-size:13px; grid-column:1/-1; }
+
+  .bar { position:fixed; left:0; right:0; bottom:0; background:var(--surface);
+         border-top:1px solid var(--line);
+         padding:var(--s3) var(--s3) calc(var(--s3) + env(safe-area-inset-bottom));
+         display:flex; gap:var(--s2); }
+  .bar select, .bar input { background:var(--raise); color:var(--fg);
+         border:1px solid var(--line); border-radius:8px;
+         padding:9px var(--s3); font:12.5px/1 var(--sans); }
   .bar input { flex:1; min-width:0; }
 
-  /* crew */
-  .compose { background:var(--card); border:1px solid var(--line); border-radius:14px;
-             padding:13px 14px; margin-bottom:14px; display:grid; gap:8px; }
-  .compose input, .compose select { font:inherit; font-size:14px; padding:9px 10px; border-radius:9px;
-             border:1px solid var(--line); background:var(--card2); color:var(--fg); width:100%; }
-  .row { display:flex; gap:8px; flex-wrap:wrap; }
-  /* minmax(0,1fr), not the default: a grid track sizes to max-content, so a
-     long session name made the row wider than the card it sits in and pushed
-     the state off the right edge. */
-  .chain { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; margin-top:10px; }
-  .role { display:flex; align-items:center; gap:9px; background:var(--card2); min-width:0;
-          border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13.5px; }
-  .role .n { color:var(--dim); font-size:12px; width:14px; flex:none; }
-  .role .rn { font-weight:620; width:74px; flex:none; }
-  .role .ra { color:var(--dim); font-size:12px; width:52px; flex:none; }
-  .role .rs { margin-left:auto; font-size:11px; text-transform:uppercase; letter-spacing:.06em;
-              font-weight:640; flex:none; }
-  .rs.running{color:var(--work)} .rs.done{color:var(--ok)}
-  .rs.waiting{color:var(--dim)} .rs.ready{color:var(--block)}
-  .art { margin-top:9px; background:#0a0c10; border:1px solid var(--line); border-radius:9px;
-         padding:10px 11px; font-family:ui-monospace,SFMono-Regular,monospace; font-size:11.5px;
-         color:#c9cfdd; white-space:pre-wrap; max-height:320px; overflow:auto; }
-  .size { font-size:11px; border:1px solid var(--line); border-radius:999px; padding:1px 8px; color:var(--dim); }
+  /* ---- compose / crew --------------------------------------------------- */
+  .compose { background:var(--surface); border:1px solid var(--line);
+             border-radius:var(--r); padding:var(--s4); margin-bottom:var(--s3);
+             display:grid; gap:var(--s2); }
+  .compose input, .compose select { width:100%; background:var(--raise); color:var(--fg);
+             border:1px solid var(--line); border-radius:8px;
+             padding:9px var(--s3); font:12.5px/1 var(--sans); }
+  .row { display:flex; gap:var(--s2); flex-wrap:wrap; align-items:center; }
+  .chain { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--s1); margin-top:var(--s3); }
+  .role { display:flex; align-items:center; gap:var(--s3); min-width:0;
+          background:var(--raise); border:1px solid var(--line);
+          border-radius:8px; padding:var(--s2) var(--s3); font:11.5px/1.4 var(--mono); }
+  .role .n { color:var(--faint); width:10px; flex:none; }
+  .role .rn { color:var(--fg); width:66px; flex:none; }
+  .role .ra { color:var(--dim); width:46px; flex:none; }
+  .role .rs { margin-left:auto; flex:none; color:var(--faint); }
+  .rs.running{color:var(--working)} .rs.done{color:var(--ok)}
+  .rs.waiting{color:var(--faint)} .rs.ready{color:var(--blocked)}
+  .art { margin-top:var(--s2); background:var(--bg); border:1px solid var(--line);
+         border-radius:8px; padding:var(--s3); font:11px/1.5 var(--mono);
+         color:#c3cad8; white-space:pre-wrap; max-height:320px; overflow:auto; }
+  .size { font:10px/1.6 var(--mono); color:var(--dim);
+          border:1px solid var(--line); border-radius:5px; padding:0 6px; }
 
-  .acts { display:flex; gap:7px; align-items:center; margin-top:8px; flex-wrap:wrap; }
-  .acts .said { margin:0; }
-  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
-           gap:12px; margin-bottom:14px; }
-  .tile { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 15px; }
-  .tv { font-size:26px; font-weight:660; letter-spacing:-.01em; font-variant-numeric:tabular-nums; }
-  .tl { color:var(--dim); font-size:12px; margin-top:3px; }
-
-  .bar-row { display:flex; align-items:center; gap:9px; padding:4px 0; }
-  .bar-name { width:38%; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .bar-track { flex:1; height:8px; background:var(--card2); border-radius:999px; overflow:hidden; }
-  .bar-fill { height:100%; background:var(--work); border-radius:999px; }
-  .bar-val { width:64px; text-align:right; font-size:12.5px; color:var(--dim);
-             font-variant-numeric:tabular-nums; }
-
-  /* health */
-  .hrow { display:flex; align-items:baseline; gap:9px; padding:11px 0; border-bottom:1px solid var(--line); }
+  /* ---- health / queue rows ---------------------------------------------- */
+  .hrow { display:flex; gap:var(--s3); padding:var(--s3) 0; border-bottom:1px solid var(--line); }
   .hrow:last-child { border-bottom:none; }
-  .hstate { font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; font-weight:700;
-            width:62px; flex:none; padding-top:2px; }
+  .hstate { font:10px/1.8 var(--mono); width:56px; flex:none; color:var(--faint); }
   .hstate.ok{color:var(--ok)} .hstate.failing{color:var(--fail)}
-  .hstate.late{color:var(--block)} .hstate.unknown{color:var(--dim)}
-  .hname { font-weight:600; font-size:14px; }
-  .hdetail { color:var(--dim); font-size:12.5px; margin-top:3px; }
+  .hstate.late{color:var(--late)} .hstate.down{color:var(--blocked)}
+  .hname { font:600 12.5px/1.5 var(--mono); }
+  .hdetail { color:var(--dim); font-size:12px; margin-top:2px; }
+  .acts { display:flex; gap:var(--s2); align-items:center; margin-top:var(--s2); flex-wrap:wrap; }
+
+  /* ---- spend ------------------------------------------------------------ */
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+           gap:var(--s3); margin-bottom:var(--s3); }
+  .tile { background:var(--surface); border:1px solid var(--line);
+          border-radius:var(--r); padding:var(--s3) var(--s4); }
+  .tv { font:600 22px/1.2 var(--mono); letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .tl { color:var(--dim); font-size:11.5px; margin-top:var(--s1); }
+  .bar-row { display:flex; align-items:center; gap:var(--s3); padding:5px 0; }
+  .bar-name { width:36%; font:11.5px/1.4 var(--mono); color:var(--fg);
+              overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bar-track { flex:1; height:6px; background:var(--raise); border-radius:3px; overflow:hidden; }
+  .bar-fill { height:100%; background:var(--working); border-radius:3px; }
+  .bar-val { width:62px; text-align:right; font:11.5px/1.4 var(--mono);
+             color:var(--dim); font-variant-numeric:tabular-nums; }
 </style>
 </head>
 <body>
@@ -389,22 +418,26 @@ function render() {
 
 function cardFor(s) {
   const card = document.createElement('div');
-  card.className = 'card' + (s.state === 'blocked' ? ' blocked' : '');
+  // The state is on the card, which colours the light down its edge. Said in
+  // one place instead of as a dot, a badge and a border all claiming it.
+  card.className = 'card ' + s.state;
 
   const head = document.createElement('div');
   head.className = 'top';
   // The name gets the whole line. Four badges beside it truncated every session
   // to "am-lakshgoyal-..." on a phone, which is the one field you need to tell
   // two sessions apart, so the badges moved underneath it.
-  head.innerHTML = `<span class="pip ${esc(s.state)}"></span><span class="name">${esc(s.id)}</span>
+  head.innerHTML = `<span class="name">${esc(s.id)}</span>
     <span class="state ${esc(s.state)}">${esc(s.state)}</span>`;
   head.onclick = () => { open.has(s.id) ? open.delete(s.id) : open.add(s.id); render(); };
   card.appendChild(head);
 
   const tags = document.createElement('div');
   tags.className = 'tags';
+  // Only what distinguishes one card from another. "tmux" was on nearly all of
+  // them and told you nothing; "acp" is the rare one and still does.
   tags.innerHTML = `<span class="agent">${esc(s.agent || 'shell')}</span>
-    ${s.kind === 'tmux' ? '<span class="kind">tmux</span>' : '<span class="kind">acp</span>'}
+    ${s.kind === 'acp' ? '<span class="kind">acp</span>' : ''}
     ${s.attached ? '<span class="kind on">attached</span>' : ''}`;
   card.appendChild(tags);
 
@@ -449,7 +482,6 @@ function cardFor(s) {
     card.appendChild(dir);
 
     if (s.kind === 'tmux') card.appendChild(remote(s));
-    card.appendChild(inspect(s));
 
     const log = document.createElement('div');
     log.className = 'log';
@@ -516,6 +548,11 @@ function remote(s) {
   key('down', { key: 'Down' });
   key('refresh', {});
   keys.lastChild.onclick = ev => { ev.stopPropagation(); capture(s.id); };
+  // diff and files join the same row: everything here acts on this session,
+  // and splitting them across three rows only reflected the order they were
+  // written in.
+  keys.appendChild(divider());
+  inspectKeys(s, keys);
   wrap.appendChild(keys);
 
   const bar = document.createElement('div');
@@ -524,7 +561,7 @@ function remote(s) {
   input.placeholder = 'type into ' + s.id;
   input.enterKeyHint = 'send';
   const go = document.createElement('button');
-  go.className = 'sm go';
+  go.className = 'sm send';
   go.textContent = 'send';
   const fire = ev => {
     ev.stopPropagation();
@@ -538,20 +575,21 @@ function remote(s) {
   bar.append(input, go);
   wrap.appendChild(bar);
 
-  const note = document.createElement('div');
-  note.className = 'note';
-  note.textContent = 'keys go straight into the pane, exactly as if you had typed them there';
-  wrap.appendChild(note);
   return wrap;
 }
 
 // The pane shows what an agent is saying; the diff shows what it has done, and
 // an agent that says it fixed the bug looks identical in a terminal to one that
 // has. Read-only, and confined to the session's own directory.
-function inspect(s) {
-  const wrap = document.createElement('div');
-  const bar = document.createElement('div');
-  bar.className = 'keys';
+function divider() {
+  const d = document.createElement('span');
+  d.className = 'keys-div';
+  return d;
+}
+
+// Adds the read-only actions to an existing control row, and returns the pane
+// they write into.
+function inspectKeys(s, bar) {
   const out = document.createElement('div');
   out.className = 'pane';
   out.hidden = true;
@@ -559,7 +597,6 @@ function inspect(s) {
   const show = (text) => { out.hidden = false; out.textContent = text; };
   const btn = (label, fn) => {
     const b = document.createElement('button');
-    b.className = 'sm';
     b.textContent = label;
     b.onclick = async ev => { ev.stopPropagation(); b.disabled = true; await fn(); b.disabled = false; };
     bar.appendChild(b);
@@ -578,8 +615,8 @@ function inspect(s) {
     await browse(s.id, '', show);
   });
 
-  wrap.append(bar, out);
-  return wrap;
+  bar.after(out);
+  return out;
 }
 
 async function browse(id, path, show) {
