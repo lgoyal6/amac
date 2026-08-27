@@ -116,7 +116,11 @@ var lastExitRe = regexp.MustCompile(`"LastExitStatus"\s*=\s*(-?\d+)`)
 func launchdStatus(ctx context.Context, label string) (loaded bool, exit int, running bool, err error) {
 	bin, err := exec.LookPath("launchctl")
 	if err != nil {
-		return false, 0, false, err
+		// Names the reason rather than surfacing a bare exec error. A roster
+		// copied from a Mac onto a Linux box should say which probe kind to
+		// use instead, not report "executable file not found in $PATH".
+		return false, 0, false, fmt.Errorf(
+			"launchctl is not on this machine: launchd_marker is macOS-only, use systemd_unit on Linux")
 	}
 	out, err := exec.CommandContext(ctx, bin, "list", label).Output()
 	if err != nil {

@@ -202,3 +202,53 @@ func TestHeartbeatProbe(t *testing.T) {
 		t.Error("a nameless beat must be refused")
 	}
 }
+
+// systemd's timestamps are the reason its probe needs no log where launchd's
+// does: launchd reports an exit status and not when it happened.
+func TestSystemdTime(t *testing.T) {
+	for _, s := range []string{
+		"Tue 2026-08-27 09:30:01 UTC",
+		"2026-08-27 09:30:01 UTC",
+	} {
+		got, ok := systemdTime(s)
+		if !ok {
+			t.Errorf("failed to parse %q", s)
+			continue
+		}
+		if got.Year() != 2026 || got.Hour() != 9 {
+			t.Errorf("%q parsed as %s", s, got)
+		}
+	}
+	// A unit that has never run reports an empty timestamp. That is a fact
+	// about the unit, not a parse failure, and reporting it as one would turn
+	// "new" into "broken".
+	for _, s := range []string{"", "n/a", "   "} {
+		if _, ok := systemdTime(s); ok {
+			t.Errorf("%q should not parse", s)
+		}
+	}
+}
+
+// A roster written on a Mac and run on Linux should say which probe to use
+// instead, rather than surfacing a bare exec error.
+func TestPlatformProbesExplainThemselves(t *testing.T) {
+	p := writeRoster(t, `{"automations":[
+	  {"name":"a","every":"24h","probe":"launchd_marker","with":{"label":"x","log":"/tmp/x.log"}},
+	  {"name":"b","every":"24h","probe":"systemd_unit","with":{"unit":"x.service"}}
+	]}`)
+	list, err := Load(p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Both kinds load anywhere. Whichever one is not native to this machine
+	// reports why when it runs, which is the difference between a roster that
+	// will not load and one that tells you what to change.
+	if len(list) != 2 {
+		t.Fatalf("both platform kinds must load, got %d", len(list))
+	}
+	for _, a := range list {
+		if a.Check == nil {
+			t.Fatalf("%s built no check", a.Name)
+		}
+	}
+}

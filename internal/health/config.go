@@ -82,6 +82,7 @@ func (e ErrNoConfig) Error() string {
 func kinds(log *event.Log) map[string]probeMaker {
 	return map[string]probeMaker{
 		"launchd_marker":       newLaunchdMarker,
+		"systemd_unit":         newSystemdUnit,
 		"service":              newService,
 		"marker_fields":        newMarkerFields,
 		"spend_snapshot":       newSpendSnapshot,
