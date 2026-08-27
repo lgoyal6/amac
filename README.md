@@ -601,6 +601,12 @@ that died after its first line. It now reads `generatedAt` out of the snapshot,
 which is a real delivery marker. Finding the artifact was cheaper than adding
 one.
 
+It also carries the breakdown looseapi computes and nothing had ever read:
+which projects the cost went to, and which models ran it. Merged across tools
+rather than reported per tool, because the question is what a project cost and
+not what it cost in Claude Code specifically; two agents working in the same
+repo are one line of spend.
+
 The agent figure keeps looseapi's label: equivalent API cost, not spend. On a
 flat subscription those tokens cost nothing marginal, and quietly upgrading the
 number into money on the way across a repo boundary is exactly the kind of

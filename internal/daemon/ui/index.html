@@ -143,6 +143,13 @@
   .tv { font-size:26px; font-weight:660; letter-spacing:-.01em; }
   .tl { color:var(--dim); font-size:12px; margin-top:3px; }
 
+  .bar-row { display:flex; align-items:center; gap:9px; padding:4px 0; }
+  .bar-name { width:38%; font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bar-track { flex:1; height:8px; background:var(--card2); border-radius:999px; overflow:hidden; }
+  .bar-fill { height:100%; background:var(--work); border-radius:999px; }
+  .bar-val { width:64px; text-align:right; font-size:12.5px; color:var(--dim);
+             font-variant-numeric:tabular-nums; }
+
   /* health */
   .hrow { display:flex; align-items:baseline; gap:9px; padding:11px 0; border-bottom:1px solid var(--line); }
   .hrow:last-child { border-bottom:none; }
@@ -802,6 +809,27 @@ $('taskTitle').addEventListener('keydown', ev => { if (ev.key === 'Enter') fileT
 // started and only prices what an adapter reported; looseapi reads both CLIs'
 // logs whoever started them, plus the billing mail that is the only source for
 // a credit balance falling to zero.
+// A share bar rather than a number alone. The useful thing about a breakdown on
+// a phone is which two or three lines dominate, and that reads off a length in
+// one glance and off a column of figures in several.
+function bars(title, rows) {
+  if (!rows || !rows.length) return '';
+  return `<div class="card" style="margin-bottom:12px">
+    <div class="hdetail" style="margin-bottom:9px">${esc(title)}</div>
+    ${rows.map(r => `
+      <div class="bar-row">
+        <div class="bar-name">${esc(r.name)}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.max(r.share, 1)}%"></div></div>
+        <div class="bar-val">${esc(usd(r.cents))}</div>
+      </div>`).join('')}
+  </div>`;
+}
+
+// Matches the server's formatter: no false precision, and never rounded to zero
+// when there is real money in it.
+const usd = c => c === 0 ? '$0' : c < 100 ? `$${(c / 100).toFixed(2)}`
+  : c < 100000 ? `$${Math.round(c / 100)}` : `$${Math.round(c / 100).toLocaleString()}`;
+
 async function loadSpend() {
   const el = $('spendOut');
   const r = await api('/api/spend');
@@ -814,6 +842,8 @@ async function loadSpend() {
       <div class="tile"><div class="tv">${esc(d.todayUsd)}</div><div class="tl">agents today</div></div>
       <div class="tile"><div class="tv">${esc(d.agentUsd)}</div><div class="tl">agents, ${d.days}d</div></div>
     </div>
+    ${bars('where it went', d.byProject)}
+    ${bars('what ran it', d.byModel)}
     <div class="card">
       ${d.alerts && d.alerts.length
         ? d.alerts.map(a => `<div class="hrow">
