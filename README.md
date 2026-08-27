@@ -739,6 +739,42 @@ never showed because amac had one writer per process until sixteen of them
 raced. The pragmas are in the DSN now, where they apply to every connection the
 pool opens.
 
+## Turning it around: amac, to the agents
+
+Everything above points one way. amac watches agents and reports to a human.
+
+An agent running in a repo currently has no idea whether another agent is
+already editing the same tree, whether the pipeline whose output it is about to
+trust delivered this morning, or that the thing it just found and cannot fix
+could be written down somewhere a person will see. It asks you, and you are on
+your phone, and the answer arrives twenty minutes later or not at all.
+
+```
+amac mcp        serve amac over MCP on stdio
+```
+
+Six tools, and the descriptions are the interface: an agent decides whether to
+call one by reading it, so they are written as advice about when the answer
+matters rather than as a summary of what the function returns.
+
+| tool | when an agent should reach for it |
+| --- | --- |
+| `working_here` | before editing a tree, so two agents do not produce a diff neither can explain |
+| `automation_health` | before trusting a file or feed something else generates |
+| `file_task` | for work it found and is not going to do, instead of a line in a final message |
+| `queue` | before starting something substantial another agent may hold |
+| `agent_spend` | when choosing a model for a job that will run many times |
+| `report_done` | so a scheduled job it owns is missed when it stops |
+
+**Read-mostly on purpose.** Two of them write, and both are additive: file a
+task, post a heartbeat. Nothing stops a session or answers a permission
+request, because an agent approving another agent's tool call is a loop nobody
+asked for and the entire reason permission prompts reach a human at all.
+
+`working_here` excludes the session asking. The server runs as a subprocess of
+that session and inherits its `TMUX_PANE`, so it can tell, and without it the
+answer to "is anyone else in here" always included the one asking.
+
 ## Measuring the router
 
 The roadmap says the evaluation harness lands *before* the router is trusted,
