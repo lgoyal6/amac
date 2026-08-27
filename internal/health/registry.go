@@ -64,12 +64,23 @@ func All() []Automation {
 		},
 		{
 			Name:  "disk-sweep",
-			What:  "weekly clean of regenerable caches (launchd, Sun 11:00)",
-			Every: 7 * 24 * time.Hour,
-			// A Sunday with the lid shut pushes it to Monday. Missing two
-			// Sundays is the signal, and on a weekly cadence there is no rush.
-			Grace: 48 * time.Hour,
+			What:  "daily clean of regenerable caches (launchd, 11:00)",
+			Every: 24 * time.Hour,
+			// Only fires while the Mac is awake, same as brew-autoupgrade, so
+			// a closed lid legitimately skips a day.
+			Grace: 24 * time.Hour,
 			Check: DiskSweep,
+		},
+		{
+			Name: "machine-pressure",
+			What: "swap and disk, read on the reaper's 30-minute tick",
+			// The reaper's cadence, because that is what takes the reading. If
+			// the reaper stops, this goes late rather than quiet, which is the
+			// answer that matters: pressure detection having stopped is not
+			// the same as no pressure.
+			Every: 30 * time.Minute,
+			Grace: 30 * time.Minute,
+			Check: MachinePressure,
 		},
 		{
 			Name:  "devspend",

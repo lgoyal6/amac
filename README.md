@@ -105,7 +105,7 @@ do.
 
 ## Automation health
 
-The first subsystem that runs unattended. Nine automations are declared with
+The first subsystem that runs unattended. Ten automations are declared with
 the cadence they are expected to *deliver* at, and a launchd sweep every 15
 minutes records a verdict for each into the log.
 
@@ -161,6 +161,30 @@ reported. Forty-eight a day saying nothing happened is how a channel gets muted,
 and this system already paid for that lesson. A run that actually killed a
 session is a session ended on this machine without anyone asking, so that one
 gets a line.
+
+**Detection and deletion want different clocks.** Swap and disk were computed
+only by the cache job, which ran weekly. Swap crossed 90% here on a Tuesday and
+the next thing that would have looked was Sunday's run. So the reading moved
+onto the reaper's thirty-minute tick, which already existed and already walked
+the machine, and the cache job moved to daily. Neither job decides anything: the
+reaper records the numbers in its marker and `machine-pressure` decides whether
+they are worth waking someone for, which keeps alerting in one place.
+
+It is a separate line from the reaper rather than a note on it, because "the
+reaper script is healthy" and "the machine is drowning" have different fixes and
+a single red line covering both sends you to read a shell script when what is
+needed is closing something. For the same reason the report names which limit
+was crossed:
+
+```
+machine-pressure  failing  swap 92% and disk 91%, read 53s ago
+                  · swap is memory, not disk: clearing caches will not move it,
+                    closing sessions will
+```
+
+That note exists because the obvious response to pressure is to run the cache
+job, and for swap that response does nothing at all. Nothing the sweep deletes
+is in memory.
 
 **A banner is not a delivery.** `disk-sweep` writes one line before it does any
 work and another after, so reading the newest marker would report a run that
