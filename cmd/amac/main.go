@@ -62,6 +62,8 @@ func main() {
 		err = cmdHooks(args)
 	case "daemon":
 		err = cmdDaemon(args)
+	case "url":
+		err = cmdURL(args)
 	case "run":
 		err = cmdRun(args)
 	case "probe":
@@ -92,6 +94,8 @@ func usage() {
         Install the pinned ACP adapters locally (run once).
   amac daemon [-port N] [-localhost]
         Run the control plane and dashboard (tailnet only).
+  amac url
+        Print the dashboard link, token included, for opening on a phone.
   amac run [-agent NAME] [-dir PATH] [-auto] <prompt...>
         Start a session, send a prompt, answer what it asks.
   amac probe [-agent claude|codex] [-all] [-dir PATH]

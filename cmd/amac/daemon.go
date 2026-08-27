@@ -115,3 +115,32 @@ func bindNote(localhost bool) string {
 	}
 	return "tailnet only"
 }
+
+// cmdURL prints the dashboard link.
+//
+// Getting the link was harder than it should be: the daemon prints it once at
+// startup into a launchd log, and assembling it by hand means knowing the port,
+// finding the tailnet address and catting the token. That is three steps to put
+// a URL on a phone, and the phone is the whole point.
+func cmdURL(args []string) error {
+	fs := flag.NewFlagSet("url", flag.ExitOnError)
+	port := fs.Int("port", 7788, "port the daemon is on")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	token, err := daemon.Token()
+	if err != nil {
+		return err
+	}
+	ip, err := daemon.TailnetIP()
+	if err != nil {
+		// The address, not a guess at one. Printing a localhost link here would
+		// hand back something that cannot work from a phone, which is the only
+		// device that needs this command.
+		return fmt.Errorf("%w\n\nThe board is tailnet-only. Connect Tailscale and run this again", err)
+	}
+
+	fmt.Printf("http://%s:%d/?token=%s\n", ip, *port, token)
+	return nil
+}
