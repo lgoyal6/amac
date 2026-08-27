@@ -56,9 +56,18 @@ type Usage struct {
 }
 
 type Tool struct {
-	Tool  string            `json:"tool"`
-	Total Totals            `json:"total"`
-	ByDay map[string]Totals `json:"byDay"`
+	Tool      string            `json:"tool"`
+	Total     Totals            `json:"total"`
+	ByDay     map[string]Totals `json:"byDay"`
+	ByProject map[string]Totals `json:"byProject"`
+	ByModel   map[string]Totals `json:"byModel"`
+}
+
+// Slice is one line of a breakdown: a project, or a model, and what it came to.
+type Slice struct {
+	Name  string `json:"name"`
+	Cents int64  `json:"cents"`
+	Share int    `json:"share"` // percent of the total, for reading at a glance
 }
 
 // Totals carries token counts and a cents figure that is deliberately not
@@ -142,4 +151,37 @@ func USD(cents int64) string {
 		return fmt.Sprintf("$%.2f", float64(cents)/100)
 	}
 	return fmt.Sprintf("$%.0f", float64(cents)/100)
+}
+
+// Breakdown merges one of looseapi's per-tool groupings into a ranked list.
+//
+// Merged rather than reported per tool, because the question is what a project
+// cost and not what a project cost in Claude Code specifically. Two agents
+// working in the same repo are one line of spend.
+func (s Snapshot) Breakdown(key string, top int) []Slice {
+	merged := map[string]int64{}
+	for _, t := range s.Usage.Tools {
+		group := t.ByProject
+		if key == "model" {
+			group = t.ByModel
+		}
+		for name, v := range group {
+			merged[name] += v.Cents
+		}
+	}
+
+	total := s.AgentCents()
+	out := make([]Slice, 0, len(merged))
+	for name, cents := range merged {
+		share := 0
+		if total > 0 {
+			share = int(float64(cents) / float64(total) * 100)
+		}
+		out = append(out, Slice{Name: name, Cents: cents, Share: share})
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Cents > out[j].Cents })
+	if len(out) > top {
+		out = out[:top]
+	}
+	return out
 }

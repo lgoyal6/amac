@@ -188,6 +188,8 @@ type spendView struct {
 	TodayUSD   string        `json:"todayUsd"`
 	Days       int           `json:"days"`
 	Alerts     []spend.Alert `json:"alerts"`
+	ByProject  []spend.Slice `json:"byProject"`
+	ByModel    []spend.Slice `json:"byModel"`
 	At         time.Time     `json:"at"`
 	Stale      bool          `json:"stale"`
 	// Caveat travels with the number. looseapi is careful to call the agent
@@ -211,7 +213,12 @@ func (s *Server) spend(w http.ResponseWriter, r *http.Request) {
 		TodayUSD:   spend.USD(snap.TodayCents(time.Now())),
 		Days:       snap.Usage.Days,
 		Alerts:     snap.Worst(6),
-		At:         snap.GeneratedAt,
+		// Five each. The interesting thing about a breakdown on a phone is
+		// which two or three lines dominate, and a list long enough to scroll
+		// buries that under the ones that do not.
+		ByProject: snap.Breakdown("project", 5),
+		ByModel:   snap.Breakdown("model", 5),
+		At:        snap.GeneratedAt,
 		// The scan is daily, so a reading past two days has stopped tracking
 		// reality and the page has to say so rather than show it as current.
 		Stale:  snap.Age() > 48*time.Hour,
