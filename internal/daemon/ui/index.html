@@ -65,7 +65,11 @@
   nav .badge.ready { background:var(--working); color:#001427; }
 
   main { padding:var(--s4) var(--s4) 96px; }
-  .grid { display:grid; gap:var(--s3); grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); }
+  /* align-items:start, not the default stretch. Opening one card grows its row,
+     and every other card in that row grew with it into a tall empty box that
+     read as a rendering fault. A card should be as tall as what it contains. */
+  .grid { display:grid; gap:var(--s3); align-items:start;
+          grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); }
 
   /* ---- session card ---------------------------------------------------- */
   /* The state is a light down the left edge. Said once, in the place the eye
@@ -76,6 +80,13 @@
   .card.blocked { border-left-color:var(--blocked); }
   .card.working { border-left-color:var(--working); }
   .card.idle    { border-left-color:var(--idle); }
+  /* An open card carries a terminal mirror and a keypad, so it stands several
+     times the height of a closed one. Left in the flow it dragged its whole
+     row up to that height, and once the row stopped stretching it left a hole
+     beside it three cards wide. It becomes a full-width band at the top
+     instead: the session you are answering gets the room, the rest stay a
+     tidy grid, and it lands in the same place whichever card you opened. */
+  .card.open { grid-column:1 / -1; order:-1; }
   .card > .top { cursor:pointer; }
   .top { display:flex; align-items:baseline; gap:var(--s2); }
   .name { font:600 13px/1.4 var(--mono); flex:1 1 auto; min-width:0;
@@ -464,7 +475,7 @@ function cardFor(s) {
   const card = document.createElement('div');
   // The state is on the card, which colours the light down its edge. Said in
   // one place instead of as a dot, a badge and a border all claiming it.
-  card.className = 'card ' + s.state;
+  card.className = 'card ' + s.state + (open.has(s.id) ? ' open' : '');
 
   const head = document.createElement('div');
   head.className = 'top';
