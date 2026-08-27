@@ -295,8 +295,15 @@ func (s *Server) tmuxSessions(ctx context.Context) []sessionView {
 		}
 		if st, ok := states[t.Name]; ok {
 			v.State, v.Since = st.State, st.At
-			if st.Detail != "" {
-				v.Detail = st.Detail
+			// The newer state's own detail, or none. Keeping the attention
+			// event's text here left a card reading "working" above "Claude is
+			// waiting for your input": that sentence described the moment the
+			// hook state has just superseded, and a stale explanation under a
+			// fresh state is worse than no explanation, because it reads as
+			// current.
+			v.Detail = st.Detail
+			if v.Detail == "" {
+				v.Detail = t.Command
 			}
 			// The pane command is a fact, but a wrapper or a resumed session
 			// shows up as its interpreter. A hook that named itself knows

@@ -56,7 +56,16 @@
   .card.blocked { border-color:var(--block); }
   .card > .top { cursor:pointer; }
   .top { display:flex; align-items:center; gap:8px; }
-  .name { font-weight:620; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pip { width:7px; height:7px; border-radius:50%; flex:none; background:var(--end); }
+  .pip.blocked { background:var(--block); box-shadow:0 0 0 3px color-mix(in srgb, var(--block) 22%, transparent); }
+  .pip.working { background:var(--work); box-shadow:0 0 0 3px color-mix(in srgb, var(--work) 22%, transparent); }
+  .pip.idle { background:var(--idle); }
+  .summary { font-size:12.5px; color:var(--dim); }
+  .summary b { font-weight:680; }
+  .s-blocked { color:var(--block); }
+  .s-working { color:var(--work); }
+  .name { font-weight:620; font-size:15px; flex:1 1 auto; min-width:0;
+          overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .agent { font-size:11px; color:var(--dim); border:1px solid var(--line);
            padding:1px 6px; border-radius:999px; flex:none; }
   .state { margin-left:auto; font-size:11px; text-transform:uppercase;
@@ -64,7 +73,8 @@
   .state.working{color:var(--work)} .state.idle{color:var(--idle)}
   .state.blocked{color:var(--block)} .state.ended{color:var(--end)}
   .state.starting{color:var(--work)} .state.unknown{color:var(--end)}
-  .detail { color:var(--dim); font-size:13px; margin-top:5px;
+  .tags { display:flex; gap:6px; margin-top:7px; flex-wrap:wrap; }
+  .detail { color:var(--dim); font-size:13px; margin-top:6px;
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .kind { font-size:11px; padding:1px 6px; border-radius:3px; flex:none;
           background:var(--card2); color:var(--dim); }
@@ -140,7 +150,7 @@
   .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
            gap:12px; margin-bottom:14px; }
   .tile { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px 15px; }
-  .tv { font-size:26px; font-weight:660; letter-spacing:-.01em; }
+  .tv { font-size:26px; font-weight:660; letter-spacing:-.01em; font-variant-numeric:tabular-nums; }
   .tl { color:var(--dim); font-size:12px; margin-top:3px; }
 
   .bar-row { display:flex; align-items:center; gap:9px; padding:4px 0; }
@@ -153,8 +163,8 @@
   /* health */
   .hrow { display:flex; align-items:baseline; gap:9px; padding:11px 0; border-bottom:1px solid var(--line); }
   .hrow:last-child { border-bottom:none; }
-  .hstate { font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:700;
-            width:66px; flex:none; }
+  .hstate { font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; font-weight:700;
+            width:62px; flex:none; padding-top:2px; }
   .hstate.ok{color:var(--ok)} .hstate.failing{color:var(--fail)}
   .hstate.late{color:var(--block)} .hstate.unknown{color:var(--dim)}
   .hname { font-weight:600; font-size:14px; }
@@ -165,6 +175,7 @@
 <header>
   <div class="brand">
     <h1>amac</h1>
+    <span class="summary" id="summary"></span>
     <div class="conn"><span class="dot" id="dot"></span><span id="connText">connecting</span></div>
   </div>
   <nav>
@@ -340,6 +351,15 @@ async function refresh() {
   const badge = $('blockedCount');
   badge.hidden = blocked === 0;
   badge.textContent = blocked;
+
+  // What the machine is doing, in one line, above the fold. A board that opens
+  // on twenty cards makes you count them before you know whether to care.
+  const n = st => list.filter(s => s.state === st).length;
+  $('summary').innerHTML = [
+    blocked ? `<b class="s-blocked">${blocked}</b> blocked` : '',
+    n('working') ? `<b class="s-working">${n('working')}</b> working` : '',
+    `${list.length} sessions`,
+  ].filter(Boolean).join(' · ');
   if (tab === 'board') render();
 }
 
@@ -373,13 +393,20 @@ function cardFor(s) {
 
   const head = document.createElement('div');
   head.className = 'top';
-  head.innerHTML = `<span class="name">${esc(s.id)}</span>
-    <span class="agent">${esc(s.agent || 'shell')}</span>
-    ${s.kind === 'tmux' ? '<span class="kind">tmux</span>' : ''}
-    ${s.attached ? '<span class="kind on">attached</span>' : ''}
+  // The name gets the whole line. Four badges beside it truncated every session
+  // to "am-lakshgoyal-..." on a phone, which is the one field you need to tell
+  // two sessions apart, so the badges moved underneath it.
+  head.innerHTML = `<span class="pip ${esc(s.state)}"></span><span class="name">${esc(s.id)}</span>
     <span class="state ${esc(s.state)}">${esc(s.state)}</span>`;
   head.onclick = () => { open.has(s.id) ? open.delete(s.id) : open.add(s.id); render(); };
   card.appendChild(head);
+
+  const tags = document.createElement('div');
+  tags.className = 'tags';
+  tags.innerHTML = `<span class="agent">${esc(s.agent || 'shell')}</span>
+    ${s.kind === 'tmux' ? '<span class="kind">tmux</span>' : '<span class="kind">acp</span>'}
+    ${s.attached ? '<span class="kind on">attached</span>' : ''}`;
+  card.appendChild(tags);
 
   const d = document.createElement('div');
   d.className = 'detail';
@@ -686,7 +713,7 @@ async function loadHealth() {
         <div class="hname">${esc(rep.name)}</div>
         <div class="hdetail">${esc(rep.detail)}</div>
         ${(rep.notes || []).map(n => `<div class="hdetail">${esc(n)}</div>`).join('')}
-        ${rep.home ? `<div class="acts">
+        ${rep.home && rep.state !== 'ok' ? `<div class="acts">
              <button class="sm fix" data-name="${esc(rep.name)}">fix it</button>
              <button class="sm shell" data-name="${esc(rep.name)}">shell</button>
              <span class="hdetail said"></span>
@@ -695,6 +722,10 @@ async function loadHealth() {
     </div>`).join('')
     + `<div class="hdetail" style="margin-top:12px">swept ${esc(new Date(at).toLocaleString())}</div>`;
 
+  // Only on rows that are not ok. Every row carrying two buttons made the
+  // healthy ones as loud as the broken one, which is backwards for a screen
+  // whose whole job is to be scanned for the thing that needs you.
+  //
   // "fix it" hands the finding to the org: it is graded, the chain is laid out,
   // and the first role opens as a session you can take over. The brief is built
   // on the server from what the sweep actually saw, so it says the same thing

@@ -198,6 +198,15 @@ A probe that fails reports `unknown`, never `ok`.
 Three of the nine are not deliveries in the sense above, and each needed the
 probe to answer a different question.
 
+**A cadence on a laptop is a cadence while awake.** The reaper declares thirty
+minutes and went `late` at three hours, which was the declaration being wrong
+rather than the job: `StartInterval` does not fire while the machine is asleep,
+so launchd defers and runs once on wake, and a lid closed over lunch produces a
+gap no dead reaper is needed to explain. Grace is four hours for the two jobs
+that ride it. That does cost detection speed, and the trade is only acceptable
+because of what the failure looks like: a reaper that has stopped shows up as
+sessions accumulating over days, not as anything urgent within the hour.
+
 **A prevention delivers the absence of a problem.** `tmux-idle-reaper` kills
 detached agent sessions idle beyond eight hours, and its normal run correctly
 does nothing, so its log was silent whether it was working or had stopped. A
