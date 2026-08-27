@@ -27,6 +27,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lgoyal6/amac/internal/event"
@@ -206,4 +207,49 @@ func (s *Server) record(ctx context.Context, session, text, key string, enter bo
 		return
 	}
 	_, _ = s.log.Append(ctx, ev)
+}
+
+// panes captures every session at once, for the wall.
+//
+// One request rather than one per card. The board polls, and a grid of twelve
+// sessions asking separately is twelve HTTP round trips and twelve renders a
+// tick, which on a phone is the difference between a wall and a slideshow.
+//
+// Captures run concurrently because each is a fork and they do not contend:
+// twelve sequential tmux calls at a few milliseconds each is most of a frame
+// budget spent waiting on processes that could have run together.
+func (s *Server) panes(w http.ResponseWriter, r *http.Request) {
+	list, err := tmux.List()
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	n, _ := strconv.Atoi(r.URL.Query().Get("lines"))
+	if n <= 0 || n > 60 {
+		// Fewer than the expanded card shows. A wall trades depth per session
+		// for seeing all of them, and a tile deep enough to read properly is a
+		// tile you can only fit two of.
+		n = 14
+	}
+
+	out := make([]paneView, len(list))
+	var wg sync.WaitGroup
+	for i, t := range list {
+		wg.Add(1)
+		go func(i int, name string) {
+			defer wg.Done()
+			out[i] = paneView{Session: name, At: time.Now()}
+			raw, err := exec.CommandContext(r.Context(), "tmux",
+				"capture-pane", "-p", "-t", "="+name+":").Output()
+			if err != nil {
+				// A session that ended between the list and the capture is not
+				// an error worth failing the whole wall over.
+				out[i].Text = ""
+				return
+			}
+			out[i].Text = tail(string(raw), n)
+		}(i, t.Name)
+	}
+	wg.Wait()
+	writeJSON(w, 200, out)
 }

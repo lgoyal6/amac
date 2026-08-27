@@ -150,6 +150,28 @@
          padding:9px var(--s3); font:12.5px/1 var(--sans); }
   .bar input { flex:1; min-width:0; }
 
+  /* ---- the wall --------------------------------------------------------- */
+  .wall { display:grid; gap:var(--s2);
+          grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
+  .tile-pane { background:var(--surface); border:1px solid var(--line);
+               border-left:2px solid var(--faint); border-radius:var(--r);
+               overflow:hidden; cursor:pointer; }
+  .tile-pane.blocked { border-left-color:var(--blocked); }
+  .tile-pane.working { border-left-color:var(--working); }
+  .tile-pane.idle    { border-left-color:var(--idle); }
+  .tile-head { display:flex; align-items:baseline; gap:var(--s2);
+               padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); }
+  .tile-name { font:600 11.5px/1.4 var(--mono); flex:1 1 auto; min-width:0;
+               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tile-body { padding:var(--s2) var(--s3); font:10px/1.4 var(--mono);
+               color:#aab3c2; white-space:pre; overflow:hidden; height:180px;
+               -webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent),
+                                  linear-gradient(to right,#000 calc(100% - 16px),transparent);
+               -webkit-mask-composite:source-in;
+               mask-image:linear-gradient(to bottom,#000 78%,transparent),
+                          linear-gradient(to right,#000 calc(100% - 16px),transparent);
+               mask-composite:intersect; }
+
   /* ---- compose / crew --------------------------------------------------- */
   .compose { background:var(--surface); border:1px solid var(--line);
              border-radius:var(--r); padding:var(--s4); margin-bottom:var(--s3);
@@ -209,6 +231,7 @@
   </div>
   <nav>
     <button data-tab="board" class="on">board<span class="badge" id="blockedCount" hidden></span></button>
+    <button data-tab="wall">wall</button>
     <button data-tab="queue">queue<span class="badge ready" id="readyCount" hidden></span></button>
     <button data-tab="crew">crew</button>
     <button data-tab="health">health</button>
@@ -218,6 +241,10 @@
 
 <main>
   <div id="board" class="grid"><div class="empty">no sessions yet</div></div>
+
+  <section id="wall" hidden>
+    <div id="wallOut" class="wall"></div>
+  </section>
 
   <section id="queue" hidden>
     <div class="compose">
@@ -345,6 +372,17 @@ let tab = 'board';
 // Answering the question you have not answered is the entire job of the
 // screen, and making you tap twice to see it is the screen failing at it.
 let autoOpened = new Set();
+let todayUsd = '';
+
+// Read once a minute rather than on every refresh. The snapshot behind it is
+// written daily, so polling it at the board's rate would be asking a question
+// whose answer changes once a day.
+async function loadTodaySpend() {
+  const r = await api('/api/spend');
+  if (!r.ok) return;
+  const d = await r.json();
+  if (d.todayUsd) { todayUsd = d.todayUsd; refresh(); }
+}
 
 // ------------------------------------------------------------------ board --
 
@@ -388,6 +426,9 @@ async function refresh() {
     blocked ? `<b class="s-blocked">${blocked}</b> blocked` : '',
     n('working') ? `<b class="s-working">${n('working')}</b> working` : '',
     `${list.length} sessions`,
+    // What today has cost, next to what is running. The two numbers belong
+    // together: the second is the reason to look at the first.
+    todayUsd ? `<b>${esc(todayUsd)}</b> today` : '',
   ].filter(Boolean).join(' · ');
   if (tab === 'board') render();
 }
@@ -794,6 +835,58 @@ async function dispatch(btn, what, name) {
   refresh();
 }
 
+// ------------------------------------------------------------------- wall --
+
+// Every session's live output at once, which is the view the board cannot be:
+// a card list shows you one pane at a time and hides the rest behind a tap.
+// The trade is depth. Fourteen lines each is not enough to read a long answer
+// and is enough to see which one has stopped and which one is asking.
+async function loadWall() {
+  const r = await api('/api/panes');
+  if (!r.ok) return;
+  const panes = await r.json();
+  const byName = new Map(panes.map(p => [p.session, p.text]));
+  const el = $('wallOut');
+
+  // Blocked first, same order the board uses, so the thing that needs you is
+  // the tile you land on rather than one you have to find.
+  const rank = s => s.state === 'blocked' ? 0 : s.state === 'working' ? 1 : s.state === 'idle' ? 2 : 3;
+  const all = [...sessions.values()]
+    .filter(s => byName.has(s.id))
+    .sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));
+
+  if (!all.length) { el.innerHTML = '<div class="empty">no sessions to show</div>'; return; }
+
+  el.innerHTML = all.map(s => `
+    <div class="tile-pane ${esc(s.state)}">
+      <div class="tile-head">
+        <span class="tile-name">${esc(s.id)}</span>
+        <span class="state ${esc(s.state)}">${esc(s.state)}</span>
+      </div>
+      <div class="tile-body">${esc(byName.get(s.id) || '')}</div>
+    </div>`).join('');
+
+  el.querySelectorAll('.tile-pane').forEach((tile, i) => {
+    // Tapping a tile takes you to that session on the board, where the keypad
+    // is. The wall is for seeing; acting still happens in one place.
+    tile.onclick = () => {
+      open.add(all[i].id);
+      document.querySelector('nav button[data-tab="board"]').click();
+      requestAnimationFrame(() => {
+        [...document.querySelectorAll('#board .name')]
+          .find(n => n.textContent === all[i].id)
+          ?.scrollIntoView({ block: 'center' });
+      });
+    };
+  });
+}
+
+// Slower than the board's open card. Twelve captures a tick is twelve forks,
+// and a wall is for watching rather than for reacting to a keystroke.
+setInterval(() => {
+  if (tab === 'wall' && !document.hidden && !unauthorized) loadWall();
+}, 5000);
+
 // ------------------------------------------------------------------ queue --
 
 // The board never finishes work on a worker's behalf. A task is done when the
@@ -932,9 +1025,10 @@ document.querySelectorAll('nav button').forEach(b => {
   b.onclick = () => {
     tab = b.dataset.tab;
     document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
-    for (const id of ['board', 'queue', 'crew', 'health', 'spend']) $(id).hidden = id !== tab;
+    for (const id of ['board', 'wall', 'queue', 'crew', 'health', 'spend']) $(id).hidden = id !== tab;
     $('startBar').hidden = tab !== 'board';
     if (tab === 'board') render();
+    if (tab === 'wall') loadWall();
     if (tab === 'queue') loadQueue();
     if (tab === 'crew') loadRuns();
     if (tab === 'health') loadHealth();
@@ -1016,6 +1110,8 @@ $('prompt').addEventListener('keydown', async ev => {
 });
 
 loadAgents();
+loadTodaySpend();
+setInterval(loadTodaySpend, 60000);
 refresh();
 connect();
 refreshLoop = setInterval(refresh, 15000);   // backstop if the stream silently stalls
