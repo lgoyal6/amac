@@ -66,6 +66,7 @@ Phase 1. A full session runs end to end against both agents:
 ```
 amac setup                     install pinned adapters once
 amac hooks -install            wire the agents' own signals into amac
+amac daemon                    the board, on the tailnet
 amac run -agent codex 'task'   start a session, send a prompt, answer it
 amac probe -all                handshake every agent, record capabilities
 amac log -n 20                 recent events
@@ -291,6 +292,76 @@ afterwards without the sessions still being alive.
 Sessions are named `am-<slug>-<role>`, following the convention the rest of the
 machine already uses, so they appear in existing tooling and not only here.
 
+## The board
+
+One page on the tailnet showing every agent session on this machine, whatever
+started it, with the thing you have not answered at the top.
+
+```
+amac daemon                    tailnet only, or it does not start
+                               launchd: com.amac.daemon, restarts itself
+```
+
+Discord is a good delivery channel and a bad control surface. It can tell you a
+session is blocked; it cannot show you what the session is asking, and it
+cannot answer for you. The board is the other half.
+
+**Three tabs, because there were three things worth walking to the machine
+for.** *board* is every ACP and tmux session with its live state; *crew* runs
+the org (below); *health* is the automation sweep the Discord digest already
+sends, read straight out of the log rather than re-derived, because two
+implementations of "is this delivering" that can disagree is worse than one.
+
+**A pane is mirrored, never parsed.** The board can answer a permission prompt
+in a session amac does not own, which sounds like exactly the screen-scraping
+this codebase refuses to do. The rule is about inference, not pixels. Nothing
+reads the pane: the bytes are forwarded to a phone, a human reads the options
+with their own eyes as they would three seconds after `tmux attach`, and presses
+the key they want sent. A mirror cannot be confidently wrong, because it makes
+no claim.
+
+The alternative on offer was a row of Allow/Deny buttons over a parsed pane.
+That is the predecessor's bug in a nicer coat, and its failure mode is worse
+than the predecessor's: a wrong guess about *state* shows a wrong badge, while a
+wrong guess about *which option is which* approves something you rejected.
+
+**State is dated, because state is evidence.** It still comes only from hooks, so
+a session whose agent has no hooks wired reports `unknown`, and that remains the
+correct answer rather than a gap. The subtler case is Codex, which has no signal
+for "the human answered": a session it reported blocked stays blocked on the
+board until its next turn ends, which can be hours. So every card carries when
+its state was established. `blocked, asked 4h ago` hands that judgement to the
+person reading it. `blocked` alone makes a claim about right now that nothing in
+the log supports.
+
+**Every keystroke is an actuation.** Typing into a pane from a phone is
+indistinguishable at the terminal from having typed it there, so the log is the
+only place that can say which one happened. Named keys are an allowlist and
+everything else is sent literally, because `tmux send-keys` reads "Enter" in a
+sentence as a keypress: asking an agent about a keybinding would otherwise press
+it.
+
+**The bind is fail-closed and now tells you why.** The daemon starts agents,
+approves their tool calls and types into panes, so it binds the tailnet or it
+does not start. `tailscale ip` reports this node's address even while the client
+is stopped, because the control plane assigned it rather than this machine, so
+the address is now checked against the local interfaces before it is trusted.
+Without that the daemon passed its own safety check and died inside
+ListenAndServe with EADDRNOTAVAIL, several seconds later, in a message that
+mentioned neither Tailscale nor the reason.
+
+### The org, from the board
+
+`amac crew` lays a task out as a chain of roles and opens each as a session you
+can take over. The board is a second front end to that same mechanism, not a
+second mechanism: type a task, it is graded, the chain is shown with each role's
+state, and one click opens the next role whose input exists.
+
+Roles open one at a time, and a finished role's artifact is readable from the
+same screen. Both follow from the handoff being a file: you can read the plan on
+a phone and decide whether the executor should ever see it, which is the whole
+reason a human is in this loop at all.
+
 ## Measuring the router
 
 The roadmap says the evaluation harness lands *before* the router is trusted,
@@ -343,8 +414,11 @@ would be rebuilding a feature the vendor ships. What is left is what Remote
 Control does not reach: Codex and Gemini sessions, automation health, and cost
 across all of them.
 
-1. **Daemon**: supervise sessions, WebSocket API, widget dashboard on the
-   tailnet
+1. ~~**Daemon**: supervise sessions, API, dashboard on the tailnet~~. Shipped,
+   including the sessions amac did not start, a mirrored pane you can type
+   into, and the org run from the same page. SSE rather than WebSocket: it
+   carries an event id and browsers replay from it, so reconnect-with-replay is
+   the protocol's default instead of something to hand-roll
 2. **Gateway and router**: the gateway (any OpenAI-compatible host, one key
    for all three tiers) and the cascade are in, and the harness that has to
    justify them now measures the cascade without showing it the answer key.

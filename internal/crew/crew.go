@@ -76,6 +76,36 @@ func Exists(name string) bool {
 	return exec.Command("tmux", "has-session", "-t", "="+name).Run() == nil
 }
 
+// Status is where a role is in the chain.
+//
+// Derived entirely from two facts on disk: whether the tmux session exists and
+// whether the artifact does. Nothing here asks an agent how it is doing, which
+// is what makes the same answer available to the CLI, the dashboard, and a run
+// nobody has looked at since yesterday.
+func Status(s Session) string {
+	switch {
+	case Exists(s.Name):
+		return "running"
+	case HasArtifact(s.Output):
+		return "done"
+	case s.Input != "" && !HasArtifact(s.Input):
+		return "waiting"
+	default:
+		return "ready"
+	}
+}
+
+// HasArtifact reports whether a handoff file exists with something in it. An
+// empty file is a role that opened the file and then died, which for the next
+// role in the chain is the same as no file at all.
+func HasArtifact(path string) bool {
+	if path == "" {
+		return false
+	}
+	st, err := os.Stat(path)
+	return err == nil && st.Size() > 0
+}
+
 // Open creates the tmux session and starts the agent with its brief.
 //
 // The brief goes in through a file rather than the command line. A role brief

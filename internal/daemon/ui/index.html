@@ -10,49 +10,60 @@
     --bg:#0d0f13; --card:#171a21; --card2:#1e222b; --line:#272c37;
     --fg:#e6e8ee; --dim:#8b93a7;
     --work:#4ea3ff; --idle:#8b93a7; --block:#ff8a3d; --end:#4b5162; --ok:#3ddc84;
+    --fail:#ff5d5d;
   }
   @media (prefers-color-scheme: light) {
     :root { --bg:#f6f7f9; --card:#fff; --card2:#f0f2f6; --line:#e2e6ee;
             --fg:#12151b; --dim:#5d6577; }
   }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  /* .grid and .bar set display, which outranks the [hidden] attribute in the
+     UA stylesheet. Without this the tab bar changes the underline and leaves
+     the board on screen. */
+  [hidden] { display:none !important; }
   body { margin:0; background:var(--bg); color:var(--fg);
          font:15px/1.45 ui-sans-serif,-apple-system,SF Pro Text,system-ui,sans-serif;
          padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
   header { position:sticky; top:0; z-index:5; background:var(--bg);
-           padding:14px 16px 10px; border-bottom:1px solid var(--line);
-           display:flex; align-items:center; gap:10px; }
+           padding:14px 16px 0; border-bottom:1px solid var(--line); }
+  .brand { display:flex; align-items:center; gap:10px; }
   h1 { font-size:17px; margin:0; letter-spacing:.02em; font-weight:650; }
   .conn { margin-left:auto; font-size:12px; color:var(--dim); display:flex; align-items:center; gap:6px; }
   .dot { width:8px; height:8px; border-radius:50%; background:var(--end); }
   .dot.on { background:var(--ok); }
 
-  main { padding:14px 16px 90px; display:grid; gap:12px;
-         grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); }
+  nav { display:flex; gap:2px; margin-top:11px; }
+  nav button { background:none; border:none; border-bottom:2px solid transparent;
+               color:var(--dim); font-size:14px; font-weight:600; padding:7px 12px 9px;
+               border-radius:0; min-height:0; cursor:pointer; }
+  nav button.on { color:var(--fg); border-bottom-color:var(--work); }
+  nav .badge { display:inline-block; min-width:17px; margin-left:5px; padding:0 5px;
+               border-radius:999px; background:var(--block); color:#1a0d04;
+               font-size:11px; font-weight:700; }
+
+  main { padding:14px 16px 90px; }
+  .grid { display:grid; gap:12px; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); }
 
   .card { background:var(--card); border:1px solid var(--line); border-radius:14px;
-          padding:13px 14px; cursor:pointer; }
-  .card.blocked { border-color:var(--block); background:linear-gradient(var(--card),var(--card)) padding-box; }
+          padding:13px 14px; }
+  .card.blocked { border-color:var(--block); }
+  .card > .top { cursor:pointer; }
   .top { display:flex; align-items:center; gap:8px; }
-  .name { font-weight:620; font-size:15px; }
+  .name { font-weight:620; font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .agent { font-size:11px; color:var(--dim); border:1px solid var(--line);
-           padding:1px 6px; border-radius:999px; }
+           padding:1px 6px; border-radius:999px; flex:none; }
   .state { margin-left:auto; font-size:11px; text-transform:uppercase;
-           letter-spacing:.06em; font-weight:640; }
+           letter-spacing:.06em; font-weight:640; flex:none; }
   .state.working{color:var(--work)} .state.idle{color:var(--idle)}
   .state.blocked{color:var(--block)} .state.ended{color:var(--end)}
-  .state.starting{color:var(--work)}
+  .state.starting{color:var(--work)} .state.unknown{color:var(--end)}
   .detail { color:var(--dim); font-size:13px; margin-top:5px;
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .kind { font-size: 11px; padding: 1px 6px; border-radius: 3px;
-          background: #232323; color: #888; }
-  .kind.on { background: #1d3226; color: #6fcf97; }
-  .attach { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-            font-size: 12px; color: #9aa; background: #1a1a1a;
-            padding: 6px 8px; border-radius: 4px; margin-top: 6px; cursor: pointer; }
-  .attach:hover { background: #202020; }
-  .attach.copied { color: #6fcf97; }
-  .dir { color:var(--dim); font-size:11px; margin-top:6px; font-family:ui-monospace,SFMono-Regular,monospace; }
+  .kind { font-size:11px; padding:1px 6px; border-radius:3px; flex:none;
+          background:var(--card2); color:var(--dim); }
+  .kind.on { background:#1d3226; color:#6fcf97; }
+  .dir { color:var(--dim); font-size:11px; margin-top:6px; font-family:ui-monospace,SFMono-Regular,monospace;
+         overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
   .ask { margin-top:11px; padding-top:11px; border-top:1px solid var(--line); }
   .ask-title { font-size:13px; margin-bottom:9px; }
@@ -61,12 +72,28 @@
            border-radius:9px; border:1px solid var(--line); background:var(--card2);
            color:var(--fg); cursor:pointer; min-height:40px; }
   button:active { transform:scale(.97); }
+  button:disabled { opacity:.5; }
   button.allow { background:var(--ok); border-color:var(--ok); color:#04140a; }
   button.reject { background:transparent; color:var(--block); border-color:var(--block); }
+  button.sm { min-height:34px; padding:6px 10px; font-size:12.5px; }
+  button.go { background:var(--work); border-color:var(--work); color:#03121f; }
+
+  /* The pane mirror. Not a parse of the terminal: the bytes, forwarded, for a
+     human to read exactly as `tmux attach` would show them. */
+  .pane { margin-top:11px; background:#0a0c10; border:1px solid var(--line);
+          border-radius:9px; padding:9px 10px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+          font-size:11px; line-height:1.35; color:#c9cfdd; white-space:pre;
+          overflow:auto; max-height:270px; }
+  @media (prefers-color-scheme: light) { .pane { background:#0d0f13; } }
+  .keys { display:flex; gap:6px; flex-wrap:wrap; margin-top:9px; }
+  .typebar { display:flex; gap:6px; margin-top:8px; }
+  .typebar input { flex:1; min-width:0; font:inherit; font-size:14px; padding:9px 10px;
+                   border-radius:9px; border:1px solid var(--line); background:var(--card2); color:var(--fg); }
+  .note { color:var(--dim); font-size:11.5px; margin-top:7px; }
 
   .log { margin-top:11px; padding-top:11px; border-top:1px solid var(--line);
          font-family:ui-monospace,SFMono-Regular,monospace; font-size:11.5px;
-         color:var(--dim); max-height:210px; overflow-y:auto; }
+         color:var(--dim); max-height:200px; overflow-y:auto; }
   .log div { padding:1.5px 0; word-break:break-word; }
   .empty { color:var(--dim); text-align:center; padding:44px 16px; grid-column:1/-1; }
 
@@ -76,17 +103,83 @@
   .bar select, .bar input { font:inherit; font-size:14px; padding:9px 10px; border-radius:9px;
          border:1px solid var(--line); background:var(--card2); color:var(--fg); }
   .bar input { flex:1; min-width:0; }
+
+  /* crew */
+  .compose { background:var(--card); border:1px solid var(--line); border-radius:14px;
+             padding:13px 14px; margin-bottom:14px; display:grid; gap:8px; }
+  .compose input, .compose select { font:inherit; font-size:14px; padding:9px 10px; border-radius:9px;
+             border:1px solid var(--line); background:var(--card2); color:var(--fg); width:100%; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  /* minmax(0,1fr), not the default: a grid track sizes to max-content, so a
+     long session name made the row wider than the card it sits in and pushed
+     the state off the right edge. */
+  .chain { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; margin-top:10px; }
+  .role { display:flex; align-items:center; gap:9px; background:var(--card2); min-width:0;
+          border:1px solid var(--line); border-radius:10px; padding:9px 11px; font-size:13.5px; }
+  .role .n { color:var(--dim); font-size:12px; width:14px; flex:none; }
+  .role .rn { font-weight:620; width:74px; flex:none; }
+  .role .ra { color:var(--dim); font-size:12px; width:52px; flex:none; }
+  .role .rs { margin-left:auto; font-size:11px; text-transform:uppercase; letter-spacing:.06em;
+              font-weight:640; flex:none; }
+  .rs.running{color:var(--work)} .rs.done{color:var(--ok)}
+  .rs.waiting{color:var(--dim)} .rs.ready{color:var(--block)}
+  .art { margin-top:9px; background:#0a0c10; border:1px solid var(--line); border-radius:9px;
+         padding:10px 11px; font-family:ui-monospace,SFMono-Regular,monospace; font-size:11.5px;
+         color:#c9cfdd; white-space:pre-wrap; max-height:320px; overflow:auto; }
+  .size { font-size:11px; border:1px solid var(--line); border-radius:999px; padding:1px 8px; color:var(--dim); }
+
+  /* health */
+  .hrow { display:flex; align-items:baseline; gap:9px; padding:11px 0; border-bottom:1px solid var(--line); }
+  .hrow:last-child { border-bottom:none; }
+  .hstate { font-size:11px; text-transform:uppercase; letter-spacing:.06em; font-weight:700;
+            width:66px; flex:none; }
+  .hstate.ok{color:var(--ok)} .hstate.failing{color:var(--fail)}
+  .hstate.late{color:var(--block)} .hstate.unknown{color:var(--dim)}
+  .hname { font-weight:600; font-size:14px; }
+  .hdetail { color:var(--dim); font-size:12.5px; margin-top:3px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>amac</h1>
-  <div class="conn"><span class="dot" id="dot"></span><span id="connText">connecting</span></div>
+  <div class="brand">
+    <h1>amac</h1>
+    <div class="conn"><span class="dot" id="dot"></span><span id="connText">connecting</span></div>
+  </div>
+  <nav>
+    <button data-tab="board" class="on">board<span class="badge" id="blockedCount" hidden></span></button>
+    <button data-tab="crew">crew</button>
+    <button data-tab="health">health</button>
+  </nav>
 </header>
 
-<main id="grid"><div class="empty">no sessions yet</div></main>
+<main>
+  <div id="board" class="grid"><div class="empty">no sessions yet</div></div>
 
-<div class="bar">
+  <section id="crew" hidden>
+    <div class="compose">
+      <input id="crewTask" placeholder="what should the org do?" enterkeyhint="go">
+      <input id="crewDir" placeholder="working directory (default: home)">
+      <div class="row">
+        <select id="crewSize">
+          <option value="">triage it</option>
+          <option value="solo">solo</option>
+          <option value="pair">pair</option>
+          <option value="team">team</option>
+        </select>
+        <button id="crewPlan" class="sm">plan</button>
+        <button id="crewOpen" class="sm go">open next role</button>
+      </div>
+      <div id="crewPlanOut"></div>
+    </div>
+    <div id="crewRuns"></div>
+  </section>
+
+  <section id="health" hidden>
+    <div class="card"><div id="healthOut" class="empty">loading</div></div>
+  </section>
+</main>
+
+<div class="bar" id="startBar">
   <select id="agent"></select>
   <input id="prompt" placeholder="start a session..." enterkeyhint="go">
 </div>
@@ -102,26 +195,69 @@ if (url.searchParams.get('token')) {
 }
 const TOKEN = localStorage.getItem('amac_token') || '';
 
-const grid = document.getElementById('grid');
-const dot = document.getElementById('dot');
-const connText = document.getElementById('connText');
-
-let sessions = new Map();
-let logs = new Map();     // session id -> recent lines
-let open = new Set();     // expanded cards
-let lastSeq = 0;
-
+const $ = id => document.getElementById(id);
 const api = (path, opts = {}) => fetch(path, {
   ...opts,
   headers: { 'Content-Type': 'application/json', 'X-Amac-Token': TOKEN, ...(opts.headers || {}) },
 });
+const esc = s => { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; };
+
+function ago(iso) {
+  const secs = (Date.now() - new Date(iso)) / 1000;
+  if (!isFinite(secs) || secs < 0) return '';
+  if (secs < 90) return 'just now';
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.round(mins / 60);
+  return hrs < 48 ? hrs + 'h ago' : Math.round(hrs / 24) + 'd ago';
+}
+
+let sessions = new Map();
+let logs = new Map();      // session id -> recent lines
+let open = new Set();      // expanded cards
+let panes = new Map();     // session id -> last captured pane text
+let paneEls = new Map();   // session id -> the <div class="pane"> showing it
+let lastSeq = 0;
+let tab = 'board';
+// Expanding a blocked card is done for you once, on the first sight of it.
+// Answering the question you have not answered is the entire job of the
+// screen, and making you tap twice to see it is the screen failing at it.
+let autoOpened = new Set();
+
+// ------------------------------------------------------------------ board --
+
+// The stream replays up to 500 events on connect and an active turn emits
+// hundreds more. One list fetch per event is a flood the page inflicts on
+// itself, so both the fetch and the paint coalesce onto the next tick.
+let refreshTimer = null, renderTimer = null;
+function scheduleRefresh() {
+  if (refreshTimer) return;
+  refreshTimer = setTimeout(() => { refreshTimer = null; refresh(); }, 250);
+}
+function scheduleRender() {
+  if (renderTimer) return;
+  renderTimer = setTimeout(() => { renderTimer = null; if (tab === 'board') render(); }, 250);
+}
 
 async function refresh() {
   const r = await api('/api/sessions');
   if (!r.ok) return;
   const list = await r.json();
   sessions = new Map(list.map(s => [s.id, s]));
-  render();
+  // Only the first one. Five blocked sessions each expanded to a full pane is
+  // a page you have to scroll past to reach anything else, and the sort
+  // already guarantees the one opened for you is the one on top.
+  const blockedIds = list.filter(s => s.state === 'blocked').map(s => s.id).sort();
+  if (blockedIds.length && !autoOpened.has(blockedIds[0])) {
+    autoOpened.add(blockedIds[0]);
+    open.add(blockedIds[0]);
+  }
+  for (const s of list) if (s.state !== 'blocked') autoOpened.delete(s.id);
+  const blocked = list.filter(s => s.state === 'blocked').length;
+  const badge = $('blockedCount');
+  badge.hidden = blocked === 0;
+  badge.textContent = blocked;
+  if (tab === 'board') render();
 }
 
 function push(id, line) {
@@ -135,6 +271,7 @@ function push(id, line) {
 }
 
 function render() {
+  const grid = $('board');
   const all = [...sessions.values()];
   if (!all.length) { grid.innerHTML = '<div class="empty">no sessions yet</div>'; return; }
 
@@ -144,105 +281,310 @@ function render() {
   all.sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));
 
   grid.innerHTML = '';
-  for (const s of all) {
-    const card = document.createElement('div');
-    card.className = 'card' + (s.state === 'blocked' ? ' blocked' : '');
-    card.onclick = e => {
-      if (e.target.tagName === 'BUTTON') return;
-      open.has(s.id) ? open.delete(s.id) : open.add(s.id);
-      render();
-    };
+  for (const s of all) grid.appendChild(cardFor(s));
+}
 
-    const head = document.createElement('div');
-    head.className = 'top';
-    head.innerHTML = `<span class="name">${esc(s.id)}</span>
-      <span class="agent">${esc(s.agent || 'shell')}</span>
-      ${s.kind === 'tmux' ? '<span class="kind">tmux</span>' : ''}
-      ${s.attached ? '<span class="kind on">attached</span>' : ''}
-      <span class="state ${s.state}">${s.state}</span>`;
-    card.appendChild(head);
+function cardFor(s) {
+  const card = document.createElement('div');
+  card.className = 'card' + (s.state === 'blocked' ? ' blocked' : '');
 
-    const d = document.createElement('div');
-    d.className = 'detail';
-    d.textContent = s.detail || '';
-    card.appendChild(d);
+  const head = document.createElement('div');
+  head.className = 'top';
+  head.innerHTML = `<span class="name">${esc(s.id)}</span>
+    <span class="agent">${esc(s.agent || 'shell')}</span>
+    ${s.kind === 'tmux' ? '<span class="kind">tmux</span>' : ''}
+    ${s.attached ? '<span class="kind on">attached</span>' : ''}
+    <span class="state ${esc(s.state)}">${esc(s.state)}</span>`;
+  head.onclick = () => { open.has(s.id) ? open.delete(s.id) : open.add(s.id); render(); };
+  card.appendChild(head);
 
-    if (s.pending) {
-      const ask = document.createElement('div');
-      ask.className = 'ask';
-      const t = document.createElement('div');
-      t.className = 'ask-title';
-      t.textContent = s.pending.title;
-      ask.appendChild(t);
+  const d = document.createElement('div');
+  d.className = 'detail';
+  // How old the evidence is, on the same line as what it claims. For a session
+  // amac only watches there is nothing that refutes a state afterwards, so
+  // "blocked" alone asserts more about right now than amac can support.
+  d.textContent = [s.detail, s.since ? ago(s.since) : ''].filter(Boolean).join(' \u00b7 ');
+  card.appendChild(d);
 
-      const opts = document.createElement('div');
-      opts.className = 'opts';
-      for (const o of s.pending.options) {
-        const b = document.createElement('button');
-        b.textContent = o.name;
-        if (o.kind && o.kind.startsWith('allow')) b.className = 'allow';
-        if (o.kind && o.kind.startsWith('reject')) b.className = 'reject';
-        b.onclick = async ev => {
-          ev.stopPropagation();
-          b.disabled = true;
-          await api(`/api/sessions/${s.id}/answer`, {
-            method: 'POST', body: JSON.stringify({ optionId: o.optionId }),
-          });
-          refresh();
-        };
-        opts.appendChild(b);
-      }
-      ask.appendChild(opts);
-      card.appendChild(ask);
+  // An ACP session amac started reports its own options over the protocol, so
+  // these buttons mean exactly what they say.
+  if (s.pending) {
+    const ask = document.createElement('div');
+    ask.className = 'ask';
+    ask.innerHTML = `<div class="ask-title">${esc(s.pending.title)}</div>`;
+    const opts = document.createElement('div');
+    opts.className = 'opts';
+    for (const o of s.pending.options) {
+      const b = document.createElement('button');
+      b.textContent = o.name;
+      if (o.kind && o.kind.startsWith('allow')) b.className = 'allow';
+      if (o.kind && o.kind.startsWith('reject')) b.className = 'reject';
+      b.onclick = async ev => {
+        ev.stopPropagation();
+        b.disabled = true;
+        await api(`/api/sessions/${encodeURIComponent(s.id)}/answer`,
+          { method: 'POST', body: JSON.stringify({ optionId: o.optionId }) });
+        refresh();
+      };
+      opts.appendChild(b);
     }
+    ask.appendChild(opts);
+    card.appendChild(ask);
+  }
 
-    if (open.has(s.id)) {
-      const dir = document.createElement('div');
-      dir.className = 'dir';
-      dir.textContent = s.dir;
-      card.appendChild(dir);
+  if (open.has(s.id)) {
+    const dir = document.createElement('div');
+    dir.className = 'dir';
+    dir.textContent = s.dir || '';
+    card.appendChild(dir);
 
-      // amac owns ACP sessions and can prompt or answer them over the API. A
-      // tmux session belongs to whoever started it, so the only honest
-      // affordance is the command that puts you back in front of it.
-      if (s.kind === 'tmux') {
-        const at = document.createElement('div');
-        at.className = 'attach';
-        at.textContent = `tmux attach -t ${s.id}`;
-        at.title = 'click to copy';
-        at.onclick = ev => {
-          ev.stopPropagation();
-          navigator.clipboard?.writeText(at.textContent);
-          at.classList.add('copied');
-          setTimeout(() => at.classList.remove('copied'), 900);
-        };
-        card.appendChild(at);
-      }
+    if (s.kind === 'tmux') card.appendChild(remote(s));
 
-      const log = document.createElement('div');
-      log.className = 'log';
-      for (const line of (logs.get(s.id) || [])) {
-        const el = document.createElement('div');
-        el.textContent = line;
-        log.appendChild(el);
-      }
+    const log = document.createElement('div');
+    log.className = 'log';
+    for (const line of (logs.get(s.id) || [])) {
+      const el = document.createElement('div');
+      el.textContent = line;
+      log.appendChild(el);
+    }
+    if (log.childNodes.length) {
       card.appendChild(log);
       requestAnimationFrame(() => { log.scrollTop = log.scrollHeight; });
     }
+  }
+  return card;
+}
 
-    grid.appendChild(card);
+// remote is the screen, forwarded, plus the keys that go back.
+//
+// amac never reads this text. It does not know which option is which, and it
+// deliberately does not try: a row of Allow/Deny buttons over a pane it had
+// parsed would be a positional guess, and an approval sent to the wrong option
+// is worse than no button at all. You read the options; amac types the key.
+function remote(s) {
+  const wrap = document.createElement('div');
+
+  const pre = document.createElement('div');
+  pre.className = 'pane';
+  const cached = panes.get(s.id);
+  pre.textContent = cached === undefined ? 'reading the pane...' : (cached || '(nothing on the screen)');
+  wrap.appendChild(pre);
+  // The node is registered rather than re-found, because a capture must update
+  // this one element and never re-render the board. Rendering rebuilds the
+  // pane, which would capture again: the first version of this looped until
+  // the browser ran out of sockets.
+  paneEls.set(s.id, pre);
+  requestAnimationFrame(() => { pre.scrollTop = pre.scrollHeight; });
+  if (cached === undefined) capture(s.id);
+
+  const keys = document.createElement('div');
+  keys.className = 'keys';
+  const send = async body => {
+    const r = await api(`/api/sessions/${encodeURIComponent(s.id)}/keys`,
+      { method: 'POST', body: JSON.stringify(body) });
+    if (!r.ok) { pre.textContent = 'send failed: ' + (await r.text()); return; }
+    const v = await r.json();
+    panes.set(s.id, v.text);
+    pre.textContent = v.text;
+    pre.scrollTop = pre.scrollHeight;
+  };
+  const key = (label, body) => {
+    const b = document.createElement('button');
+    b.className = 'sm';
+    b.textContent = label;
+    b.onclick = ev => { ev.stopPropagation(); send(body); };
+    keys.appendChild(b);
+  };
+  // Numbers first: every agent CLI on this machine numbers its options, and
+  // pressing the number you can see on the screen above is the whole gesture.
+  for (const n of ['1', '2', '3']) key(n, { text: n });
+  key('enter', { key: 'Enter' });
+  key('esc', { key: 'Escape' });
+  key('^C', { key: 'C-c' });
+  key('up', { key: 'Up' });
+  key('down', { key: 'Down' });
+  key('refresh', {});
+  keys.lastChild.onclick = ev => { ev.stopPropagation(); capture(s.id); };
+  wrap.appendChild(keys);
+
+  const bar = document.createElement('div');
+  bar.className = 'typebar';
+  const input = document.createElement('input');
+  input.placeholder = 'type into ' + s.id;
+  input.enterKeyHint = 'send';
+  const go = document.createElement('button');
+  go.className = 'sm go';
+  go.textContent = 'send';
+  const fire = ev => {
+    ev.stopPropagation();
+    const text = input.value;
+    if (!text) return;
+    input.value = '';
+    send({ text, enter: true });
+  };
+  input.onkeydown = ev => { if (ev.key === 'Enter') fire(ev); };
+  go.onclick = fire;
+  bar.append(input, go);
+  wrap.appendChild(bar);
+
+  const note = document.createElement('div');
+  note.className = 'note';
+  note.textContent = 'keys go straight into the pane, exactly as if you had typed them there';
+  wrap.appendChild(note);
+  return wrap;
+}
+
+async function capture(id) {
+  const r = await api(`/api/sessions/${encodeURIComponent(id)}/pane`);
+  if (!r.ok) return;
+  const v = await r.json();
+  panes.set(id, v.text);
+  const el = paneEls.get(id);
+  if (!el || !el.isConnected) return;
+  // Only touch the DOM when the bytes changed. An idle pane captured every
+  // four seconds would otherwise reset the scroll position of a screen someone
+  // is in the middle of reading.
+  if (el.textContent !== v.text) {
+    el.textContent = v.text || '(nothing on the screen)';
+    el.scrollTop = el.scrollHeight;
   }
 }
 
-function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+// Only the open cards are polled, and only on the board. Twenty sessions
+// captured on a timer would be twenty forks a tick for panes nobody is looking
+// at.
+setInterval(() => {
+  if (tab !== 'board' || document.hidden) return;
+  for (const id of open) {
+    const s = sessions.get(id);
+    if (s && s.kind === 'tmux') capture(id);
+  }
+}, 4000);
+
+// ------------------------------------------------------------------- crew --
+
+function chainHTML(plan) {
+  if (!plan.roles) return '';
+  const rows = plan.roles.map((r, i) => `
+    <div class="role" data-role="${esc(r.role)}" data-slug="${esc(plan.slug)}">
+      <span class="n">${i + 1}</span>
+      <span class="rn">${esc(r.role)}</span>
+      <span class="ra">${esc(r.agent)}</span>
+      <span class="detail" style="margin:0;flex:1;min-width:0">${r.bytes ? esc(r.role) + '.md · ' + r.bytes + 'B' : esc(r.session)}</span>
+      <span class="rs ${esc(r.state)}">${esc(r.state)}</span>
+    </div>`).join('');
+  return `<div class="row" style="margin-top:10px;align-items:center">
+            <span class="size">${esc(plan.size)}</span>
+            <span class="detail" style="margin:0">${esc(plan.reason || plan.runDir)}</span>
+          </div>
+          <div class="chain">${rows}</div>`;
+}
+
+// Clicking a finished role shows what it handed on. The artifact is the
+// handoff, so reading it is how you check the chain before letting it run.
+function wireChain(root, plan) {
+  root.querySelectorAll('.role').forEach(el => {
+    el.onclick = async () => {
+      const existing = el.nextElementSibling;
+      if (existing && existing.classList.contains('art')) { existing.remove(); return; }
+      const r = await api(`/api/crew/artifact?slug=${encodeURIComponent(el.dataset.slug)}&role=${encodeURIComponent(el.dataset.role)}`);
+      const art = document.createElement('div');
+      art.className = 'art';
+      art.textContent = r.ok ? (await r.json()).text : 'nothing written yet';
+      el.after(art);
+    };
+  });
+}
+
+let currentPlan = null;
+
+async function crewPlan(openNext) {
+  const task = $('crewTask').value.trim();
+  if (!task) return;
+  const body = { task, dir: $('crewDir').value.trim(), size: $('crewSize').value };
+  const out = $('crewPlanOut');
+  out.innerHTML = '<div class="detail" style="margin-top:10px">grading the task...</div>';
+  const r = await api(openNext ? '/api/crew/open' : '/api/crew/plan',
+    { method: 'POST', body: JSON.stringify(body) });
+  if (!r.ok) {
+    out.innerHTML = `<div class="detail" style="margin-top:10px">${esc((await r.json()).error)}</div>`;
+    return;
+  }
+  currentPlan = await r.json();
+  out.innerHTML = chainHTML(currentPlan);
+  wireChain(out, currentPlan);
+  loadRuns();
+}
+
+async function loadRuns() {
+  const r = await api('/api/crew');
+  if (!r.ok) return;
+  const runs = await r.json();
+  const el = $('crewRuns');
+  if (!runs.length) { el.innerHTML = '<div class="empty">no runs yet</div>'; return; }
+  el.innerHTML = '';
+  for (const run of runs) {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.marginBottom = '12px';
+    card.innerHTML = `<div class="top"><span class="name">${esc(run.task)}</span></div>` + chainHTML(run);
+    wireChain(card, run);
+    el.appendChild(card);
+  }
+}
+
+$('crewPlan').onclick = () => crewPlan(false);
+$('crewOpen').onclick = () => crewPlan(true);
+$('crewTask').addEventListener('keydown', ev => { if (ev.key === 'Enter') crewPlan(false); });
+
+// ----------------------------------------------------------------- health --
+
+async function loadHealth() {
+  const r = await api('/api/health');
+  const el = $('healthOut');
+  if (!r.ok) { el.className = 'empty'; el.textContent = 'could not read the sweep'; return; }
+  const { at, reports } = await r.json();
+  if (!reports || !reports.length) {
+    el.className = 'empty';
+    el.textContent = 'no sweep recorded yet';
+    return;
+  }
+  el.className = '';
+  el.innerHTML = reports.map(rep => `
+    <div class="hrow">
+      <span class="hstate ${esc(rep.state)}">${esc(rep.state)}</span>
+      <div style="min-width:0">
+        <div class="hname">${esc(rep.name)}</div>
+        <div class="hdetail">${esc(rep.detail)}</div>
+        ${(rep.notes || []).map(n => `<div class="hdetail">${esc(n)}</div>`).join('')}
+      </div>
+    </div>`).join('')
+    + `<div class="hdetail" style="margin-top:12px">swept ${esc(new Date(at).toLocaleString())}</div>`;
+}
+
+// ------------------------------------------------------------------- tabs --
+
+document.querySelectorAll('nav button').forEach(b => {
+  b.onclick = () => {
+    tab = b.dataset.tab;
+    document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
+    for (const id of ['board', 'crew', 'health']) $(id).hidden = id !== tab;
+    $('startBar').hidden = tab !== 'board';
+    if (tab === 'board') render();
+    if (tab === 'crew') loadRuns();
+    if (tab === 'health') loadHealth();
+  };
+});
+
+// ------------------------------------------------------------------ stream --
 
 function connect() {
   const es = new EventSource(`/api/stream?since=${lastSeq}&token=${encodeURIComponent(TOKEN)}`);
 
-  es.onopen = () => { dot.classList.add('on'); connText.textContent = 'live'; };
+  es.onopen = () => { $('dot').classList.add('on'); $('connText').textContent = 'live'; };
   es.onerror = () => {
-    dot.classList.remove('on');
-    connText.textContent = 'reconnecting';
+    $('dot').classList.remove('on');
+    $('connText').textContent = 'reconnecting';
     // EventSource retries on its own and replays from Last-Event-ID, so there
     // is nothing to do here but let it.
   };
@@ -263,23 +605,30 @@ function connect() {
     } else if (e.kind === 'permission.answered') {
       push(e.session, `<< ${p.outcome} ${p.optionId || ''}`);
     } else if (e.kind === 'actuation') {
-      push(e.session, `[${p.op}] ${p.path || ''}`);
+      push(e.session, `[${p.op}] ${p.sent || p.path || ''}`);
+    } else if (e.kind === 'session.state') {
+      push(e.session, `-- ${p.state}${p.detail ? ': ' + p.detail : ''}`);
+    } else if (e.kind === 'attention') {
+      push(e.session, `!! ${p.outcome && p.outcome.sent ? 'notified' : 'held: ' + ((p.outcome || {}).why || '')}`);
     }
 
-    // State transitions and lifecycle change the card list, so re-read the
-    // authoritative list rather than trying to mutate it from the event.
-    if (e.kind !== 'session.update' || p.state) refresh(); else render();
+    // Anything that can change the card list re-reads the authoritative list
+    // rather than trying to mutate it from the event.
+    const listChanged = ['session.state', 'session.started', 'session.ended', 'attention'].includes(e.kind)
+      || (e.kind === 'session.update' && p.state);
+    if (listChanged) scheduleRefresh();
+    else scheduleRender();
+    if (e.kind === 'automation.check' && tab === 'health') loadHealth();
   };
 }
 
 async function loadAgents() {
   const r = await api('/api/agents');
   const names = r.ok ? await r.json() : ['claude'];
-  const sel = document.getElementById('agent');
-  sel.innerHTML = names.map(n => `<option>${esc(n)}</option>`).join('');
+  $('agent').innerHTML = names.map(n => `<option>${esc(n)}</option>`).join('');
 }
 
-document.getElementById('prompt').addEventListener('keydown', async ev => {
+$('prompt').addEventListener('keydown', async ev => {
   if (ev.key !== 'Enter') return;
   const input = ev.target;
   const text = input.value.trim();
@@ -288,7 +637,7 @@ document.getElementById('prompt').addEventListener('keydown', async ev => {
   input.blur();
   await api('/api/sessions', {
     method: 'POST',
-    body: JSON.stringify({ agent: document.getElementById('agent').value, prompt: text }),
+    body: JSON.stringify({ agent: $('agent').value, prompt: text }),
   });
   refresh();
 });

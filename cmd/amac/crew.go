@@ -69,7 +69,7 @@ func cmdCrew(args []string) error {
 	fmt.Printf("handoff  %s\n\n", crew.RunDir(crew.Slug(task)))
 
 	for i, s := range sessions {
-		state := statusOf(s)
+		state := crew.Status(s)
 		fmt.Printf("  %d. %-9s %-7s %-9s %s\n", i+1, s.Role, s.Agent, state, s.Name)
 	}
 	fmt.Println()
@@ -86,7 +86,7 @@ func cmdCrew(args []string) error {
 		// A role whose input has not been written yet has nothing to read. In
 		// -all it would sit there burning context waiting for a file, so the
 		// chain only advances as far as the artifacts allow.
-		if s.Input != "" && !fileExists(s.Input) {
+		if s.Input != "" && !crew.HasArtifact(s.Input) {
 			if !*all {
 				break
 			}
@@ -126,25 +126,4 @@ func openOne(ctx context.Context, log *event.Log, orch *orchestrator.Orchestrato
 	}
 	fmt.Printf("  opened %-9s %s\n", s.Role, s.Attach())
 	return nil
-}
-
-func statusOf(s crew.Session) string {
-	switch {
-	case crew.Exists(s.Name):
-		return "running"
-	case fileExists(s.Output):
-		return "done"
-	case s.Input != "" && !fileExists(s.Input):
-		return "waiting"
-	default:
-		return "ready"
-	}
-}
-
-func fileExists(p string) bool {
-	if p == "" {
-		return false
-	}
-	st, err := os.Stat(p)
-	return err == nil && st.Size() > 0
 }
