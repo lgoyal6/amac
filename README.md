@@ -16,10 +16,33 @@ bin/amac daemon             # the board, bound to your tailnet and nothing else
 bin/amac url                # the link, token included, to open on your phone
 ```
 
-**macOS only, and not incidentally.** It reads launchd for job state, resolves
-the frontmost terminal through the window server to decide whether to interrupt
-you, and reads the login keychain. Those are three different macOS-specific
-things with no portable equivalent that would mean the same.
+### Does this run on my machine
+
+**macOS** is what it was built for and where all of it works.
+
+**Linux** runs most of it. The board, the queue, the MCP server, tmux sessions,
+the agent hooks, heartbeats and every hosted probe are all portable. Declare
+local jobs with `systemd_unit` rather than `launchd_marker`; systemd is actually
+the better source, because it records when a run ended and launchd only records
+how it ended.
+
+What Linux loses is one thing, and it fails safe. amac suppresses a notification
+when you are already looking at the session it is about, which it works out
+through the macOS window server. Elsewhere that answer is unavailable, so the
+notification is sent: a spurious ping costs a glance and a missed one costs a
+blocked agent nobody notices, which was the rule anyway.
+
+**Windows** builds and is not worth running. Session watching is most of the
+product and it is built on tmux, so use WSL, where it is Linux.
+
+| | macOS | Linux | Windows |
+| --- | --- | --- | --- |
+| board, queue, MCP, spend | yes | yes | yes |
+| tmux sessions, agent hooks | yes | yes | WSL |
+| local scheduled jobs | launchd | systemd | no |
+| hosted jobs, heartbeats | yes | yes | yes |
+| suppress on focus | yes | always notifies | always notifies |
+| keychain credentials | yes | env vars | env vars |
 
 AGPL-3.0. Use it, change it, run it. If you distribute it **or run a modified
 version as a network service**, that version has to be open source too, and the
