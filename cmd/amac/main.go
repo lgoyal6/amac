@@ -71,6 +71,8 @@ func main() {
 		err = cmdHooks(args)
 	case "daemon":
 		err = cmdDaemon(args)
+	case "mcp":
+		err = cmdMCP(args)
 	case "url":
 		err = cmdURL(args)
 	case "run":
@@ -109,6 +111,8 @@ func usage() {
         Run the control plane and dashboard (tailnet only).
   amac url
         Print the dashboard link, token included, for opening on a phone.
+  amac mcp
+        Serve amac to the agents themselves, over MCP on stdio.
   amac run [-agent NAME] [-dir PATH] [-auto] <prompt...>
         Start a session, send a prompt, answer what it asks.
   amac probe [-agent claude|codex] [-all] [-dir PATH]
