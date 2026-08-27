@@ -48,6 +48,8 @@ func main() {
 		err = cmdDo(args)
 	case "crew":
 		err = cmdCrew(args)
+	case "task":
+		err = cmdTask(args)
 	case "observe":
 		err = cmdWatch(args)
 	case "learn":
@@ -108,6 +110,8 @@ func usage() {
         Triage a task and run the right sized team of agents, headless.
   amac crew [-size S] [-next|-all|-plan] <task...>
         The same org, as tmux sessions you can attach to and take over.
+  amac task add|list|claim|renew|done|release
+        A work queue agents pull from. One claim per task, leases, fencing.
   amac route [-dry] <prompt...>
         Route one prompt through the cascade.
   amac eval [-tasks FILE]

@@ -592,6 +592,65 @@ same screen. Both follow from the handoff being a file: you can read the plan on
 a phone and decide whether the executor should ever see it, which is the whole
 reason a human is in this loop at all.
 
+## A queue, and why it is not the log
+
+The org is a chain: planner, then executor, then verifier, each waiting on the
+one before. That is right when a task has stages and wrong when there are simply
+several unrelated things to do, which is most days. So there is a queue agents
+pull from, and the hard part is not the parallelism.
+
+**A log is the wrong structure for mutual exclusion.** Everything else here is a
+view over the append-only log, and this deliberately is not. Deciding whether a
+task is free by reading the log means reading every claim and release ever
+written and hoping nobody appended between the read and the write. Two agents
+asking at the same moment both see it free, both append a claim, and the log
+faithfully records that the work was done twice. A claim is a conditional
+`UPDATE` in a transaction, which SQLite serialises across processes; the log
+keeps the history. The log answers "what happened", the table answers "who holds
+this right now", and only the second one has to be atomic.
+
+**Leases create the zombie problem, and only a fence closes it.** A worker that
+dies must not hold a task forever, so a claim expires. That introduces the
+failure every lease scheme has: worker A stalls, its lease lapses, B takes the
+task, and A wakes up and reports a result for work B is now doing. A lease alone
+cannot prevent this, because A has no way to know it was declared dead. Every
+claim carries a fencing token that only goes up, and a result is accepted only
+when its token matches the claim the table currently holds, so a revived
+worker's write is rejected on arrival rather than trusted because it arrived.
+
+Proved by causing it rather than by asserting it. Children claim five tasks
+each, are SIGKILLed holding them, and the survivor drains what they abandoned:
+
+```
+120 tasks, 6 kills holding 5 each, 150 attempts, 120 finished exactly once, 0 duplicated
+```
+
+150 attempts over 120 tasks is every one of the thirty abandoned claims
+recovered, which is the number that says the crash path was actually exercised
+rather than stepped around. Sixteen workers racing over 200 tasks produce zero
+overlapping claims.
+
+```
+amac task add <title>            file work
+amac task claim [-open]          take the next one, optionally opening a session
+amac task done -token N <id>     finish it, if you still hold it
+```
+
+That last flag is the whole mechanism showing through. The token is printed
+because every later call needs it, and a worker that has been fenced is told so
+rather than having its result quietly dropped.
+
+### The bug this found
+
+SQLite pragmas are per-connection and `database/sql` opens connections on
+demand, so `db.Exec("PRAGMA busy_timeout=5000")` configures whichever single
+connection happened to serve it and leaves every later one on the default, which
+is zero: fail instantly. The log had carried a comment since it was written
+explaining why that timeout matters, and had not actually been granting it. It
+never showed because amac had one writer per process until sixteen of them
+raced. The pragmas are in the DSN now, where they apply to every connection the
+pool opens.
+
 ## Measuring the router
 
 The roadmap says the evaluation harness lands *before* the router is trusted,
