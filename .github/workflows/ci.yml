@@ -32,9 +32,11 @@ jobs:
         run: go vet ./...
 
       - name: test
-        # The crash tests fork children and SIGKILL them, so a short timeout
-        # turns a slow runner into a red build for no reason.
-        run: go test -timeout 10m ./...
+        # -race because this is a concurrent system: a read loop, a handler per
+        # agent request, and workers racing for one claim. The crash tests fork
+        # children and SIGKILL them, so a short timeout turns a slow runner into
+        # a red build for no reason.
+        run: go test -race -timeout 15m ./...
 
       - name: dead code
         run: |
