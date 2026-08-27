@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="amac">
+<meta name="theme-color" content="#0d0f13">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" type="image/png" href="/icon-192.png">
 <title>amac</title>
 <style>
   :root {
@@ -352,6 +358,7 @@ function cardFor(s) {
     card.appendChild(dir);
 
     if (s.kind === 'tmux') card.appendChild(remote(s));
+    card.appendChild(inspect(s));
 
     const log = document.createElement('div');
     log.className = 'log';
@@ -445,6 +452,51 @@ function remote(s) {
   note.textContent = 'keys go straight into the pane, exactly as if you had typed them there';
   wrap.appendChild(note);
   return wrap;
+}
+
+// The pane shows what an agent is saying; the diff shows what it has done, and
+// an agent that says it fixed the bug looks identical in a terminal to one that
+// has. Read-only, and confined to the session's own directory.
+function inspect(s) {
+  const wrap = document.createElement('div');
+  const bar = document.createElement('div');
+  bar.className = 'keys';
+  const out = document.createElement('div');
+  out.className = 'pane';
+  out.hidden = true;
+
+  const show = (text) => { out.hidden = false; out.textContent = text; };
+  const btn = (label, fn) => {
+    const b = document.createElement('button');
+    b.className = 'sm';
+    b.textContent = label;
+    b.onclick = async ev => { ev.stopPropagation(); b.disabled = true; await fn(); b.disabled = false; };
+    bar.appendChild(b);
+  };
+
+  btn('diff', async () => {
+    const r = await api(`/api/sessions/${encodeURIComponent(s.id)}/diff`);
+    if (!r.ok) return show('could not read it');
+    const d = await r.json();
+    if (!d.repo) return show(d.diff);
+    const body = (d.status || '').trim() + '\n\n' + (d.diff || '').trim();
+    show(body.trim() ? `on ${d.branch}\n\n${body}` : `on ${d.branch}: nothing uncommitted`);
+  });
+
+  btn('files', async () => {
+    await browse(s.id, '', show);
+  });
+
+  wrap.append(bar, out);
+  return wrap;
+}
+
+async function browse(id, path, show) {
+  const r = await api(`/api/sessions/${encodeURIComponent(id)}/files?path=${encodeURIComponent(path)}`);
+  if (!r.ok) return show('could not read it');
+  const d = await r.json();
+  const lines = d.entries.map(e => (e.dir ? 'd ' : '  ') + e.name + (e.dir ? '/' : ` (${e.size}b)`));
+  show((path || '.') + '\n' + (lines.join('\n') || '(empty)'));
 }
 
 async function capture(id) {

@@ -388,6 +388,12 @@ amac daemon                    tailnet only, or it does not start
                                launchd: com.amac.daemon, restarts itself
 ```
 
+It installs to a home screen: a manifest, an icon and `display: standalone`, so
+it opens as an app rather than a tab. Those three files are the only things
+served without a token, because iOS fetches them while adding to the home screen
+from a context that has none of the page's storage, and neither carries any data
+about this machine.
+
 Discord is a good delivery channel and a bad control surface. It can tell you a
 session is blocked; it cannot show you what the session is asking, and it
 cannot answer for you. The board is the other half.
@@ -410,6 +416,29 @@ The alternative on offer was a row of Allow/Deny buttons over a parsed pane.
 That is the predecessor's bug in a nicer coat, and its failure mode is worse
 than the predecessor's: a wrong guess about *state* shows a wrong badge, while a
 wrong guess about *which option is which* approves something you rejected.
+
+**A suppressed duplicate is not evidence.** A finished Codex turn fires both
+signals inside the same second: the notify hook, which knows what the agent
+said, and the terminal bell, which knows only that something happened. amac
+recognises the bell as a duplicate and withholds it, and that was working
+exactly as designed. The board then read the newest attention event regardless,
+so the withheld bell overwrote the turn-complete it duplicated and the card read
+`blocked`. Not for a moment: until the next turn, which for a session waiting on
+a human is indefinitely.
+
+Five of seven cards were claiming to want something. Two actually did. The rule
+now is that a signal held back *because it duplicates another* is skipped and
+the one it duplicated is used; every other suppression is left alone, because
+"you are looking at it" means the session genuinely did ask and amac merely
+declined to interrupt.
+
+**Reading the work, not just the talk.** The pane shows what an agent is saying.
+An agent that says it fixed the bug and one that has fixed the bug look
+identical in a terminal, so the board also reads the uncommitted diff and
+browses the session's directory. Read-only, confined to that directory, with
+both sides of the path symlink-resolved before they are compared: a prefix check
+on the unresolved string passes for a link inside the root pointing anywhere on
+the disk, and this is reachable from a phone.
 
 **State is dated, because state is evidence.** It still comes only from hooks, so
 a session whose agent has no hooks wired reports `unknown`, and that remains the
