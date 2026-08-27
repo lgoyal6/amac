@@ -314,6 +314,15 @@ if (url.searchParams.get('token')) {
 }
 const TOKEN = localStorage.getItem('amac_token') || '';
 
+// iOS reads the manifest when you tap Add to Home Screen, long after load, so
+// pointing it at the tokened copy here is early enough. Without this the icon
+// launches at "/" in the web app's own storage container, which has never seen
+// the token, and every launch lands on "not authorised".
+if (TOKEN) {
+  document.querySelector('link[rel="manifest"]')
+    .setAttribute('href', '/manifest.webmanifest?token=' + encodeURIComponent(TOKEN));
+}
+
 const $ = id => document.getElementById(id);
 // Every API route needs the token, and a device that does not have one gets a
 // page with working chrome and nothing in it. The only feedback used to be the

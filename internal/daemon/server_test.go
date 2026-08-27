@@ -257,3 +257,32 @@ func TestAnUnknownSessionShipsNoTimestamp(t *testing.T) {
 		})
 	}
 }
+
+// The home-screen icon is the credential. iOS gives a standalone web app its
+// own storage container, so a manifest whose start_url is "/" opens a board
+// that has never seen the token, and Safari evicts localStorage on its own
+// schedule anyway. The token goes in start_url - but only back to a request
+// that already proved it has one.
+func TestTheManifestCarriesTheTokenOnlyToWhoeverAlreadyHasIt(t *testing.T) {
+	for _, c := range []struct {
+		name, query, want string
+	}{
+		{"no token", "", `"start_url": "/"`},
+		{"wrong token", "?token=nope", `"start_url": "/"`},
+		{"the token", "?token=" + tok, `"start_url": "/?token=` + tok + `"`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			w := do(t, req("GET", "/manifest.webmanifest"+c.query, ""))
+			if w.Code != 200 {
+				t.Fatalf("code %d, want 200", w.Code)
+			}
+			if !strings.Contains(w.Body.String(), c.want) {
+				t.Fatalf("want %q in body:\n%s", c.want, w.Body.String())
+			}
+			if strings.Contains(w.Header().Get("Cache-Control"), "max-age") {
+				t.Fatalf("a manifest that may carry a credential must not be cached: %q",
+					w.Header().Get("Cache-Control"))
+			}
+		})
+	}
+}
