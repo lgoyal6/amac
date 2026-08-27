@@ -16,6 +16,11 @@ bin/amac daemon             # the board, bound to your tailnet and nothing else
 bin/amac url                # the link, token included, to open on your phone
 ```
 
+**macOS only, and not incidentally.** It reads launchd for job state, resolves
+the frontmost terminal through the window server to decide whether to interrupt
+you, and reads the login keychain. Those are three different macOS-specific
+things with no portable equivalent that would mean the same.
+
 AGPL-3.0. Use it, change it, run it. If you distribute it **or run a modified
 version as a network service**, that version has to be open source too, and the
 licence carries an express patent grant from every contributor. If you want it

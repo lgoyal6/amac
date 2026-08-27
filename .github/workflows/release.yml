@@ -1,0 +1,37 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+# Prebuilt binaries so that trying this does not require a Go toolchain.
+# Apple Silicon and Intel, because a Mac is either.
+jobs:
+  build:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: build
+        run: |
+          for arch in arm64 amd64; do
+            GOOS=darwin GOARCH=$arch go build -trimpath \
+              -ldflags "-s -w -X main.version=${GITHUB_REF_NAME}" \
+              -o "amac-darwin-$arch" ./cmd/amac
+            tar czf "amac-${GITHUB_REF_NAME}-darwin-$arch.tar.gz" "amac-darwin-$arch"
+          done
+          shasum -a 256 *.tar.gz > checksums.txt
+
+      - name: release
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Unsigned, so the first run needs: xattr -d com.apple.quarantine amac-darwin-*" \
+            *.tar.gz checksums.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
