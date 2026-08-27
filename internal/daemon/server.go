@@ -88,6 +88,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/crew/open", s.auth(s.crewOpen))
 	mux.HandleFunc("GET /api/crew/artifact", s.auth(s.crewArtifact))
 	mux.HandleFunc("GET /api/health", s.auth(s.health))
+	mux.HandleFunc("POST /api/beat/{name}", s.auth(s.beat))
 	mux.HandleFunc("POST /api/health/{name}/fix", s.auth(s.healthFix))
 	mux.HandleFunc("POST /api/health/{name}/shell", s.auth(s.healthShell))
 	mux.HandleFunc("GET /api/spend", s.auth(s.spend))
@@ -357,7 +358,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	out := make([]reportView, 0, len(body.Reports))
 	for _, rep := range body.Reports {
 		v := reportView{Report: rep}
-		if a, ok := health.Find(rep.Name); ok {
+		if a, ok := health.Find(s.log, rep.Name); ok {
 			v.Home = a.Home
 		}
 		out = append(out, v)

@@ -72,6 +72,11 @@ const (
 	// cannot be compared against the next one when the models change.
 	KindEvalCompleted Kind = "eval.completed"
 
+	// A job somewhere else saying it ran. The only inbound signal here: every
+	// other probe reads an artifact, which is stronger and only possible for
+	// things amac can reach. This is for the ones it cannot.
+	KindHeartbeat Kind = "heartbeat"
+
 	// Diagnostics from amac itself.
 	KindDaemon Kind = "daemon"
 )

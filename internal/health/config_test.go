@@ -1,7 +1,9 @@
 package health
 
 import (
+	"context"
 	"errors"
+	"github.com/lgoyal6/amac/internal/event"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +25,7 @@ func TestLoadParsesADeclaration(t *testing.T) {
 	  {"name":"backup","what":"nightly","every":"24h","grace":"4h","home":"~/scripts",
 	   "probe":"launchd_marker","with":{"label":"com.example.backup","log":"~/Library/Logs/b.log"}}
 	]}`)
-	list, err := Load(p)
+	list, err := Load(p, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +53,7 @@ func TestServiceNeedsNoCadence(t *testing.T) {
 	p := writeRoster(t, `{"automations":[
 	  {"name":"daemon","probe":"service","with":{"label":"com.amac.daemon","port":7788}}
 	]}`)
-	list, err := Load(p)
+	list, err := Load(p, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +71,7 @@ func TestLoadReportsEveryProblem(t *testing.T) {
 	  {"name":"a","probe":"service","with":{"label":"z","port":1}},
 	  {"name":"d","probe":"launchd_marker","with":{"label":"only-a-label"}}
 	]}`)
-	_, err := Load(p)
+	_, err := Load(p, nil)
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -91,7 +93,7 @@ func TestABadEntryFailsTheWholeRoster(t *testing.T) {
 	  {"name":"good","every":"1h","probe":"service","with":{"label":"a","port":1}},
 	  {"name":"bad","probe":"nonsense"}
 	]}`)
-	if list, err := Load(p); err == nil {
+	if list, err := Load(p, nil); err == nil {
 		t.Fatalf("loaded %d automations from a roster with a bad entry", len(list))
 	}
 }
@@ -99,7 +101,7 @@ func TestABadEntryFailsTheWholeRoster(t *testing.T) {
 // A missing roster is its own error so the CLI can point at `amac init` rather
 // than printing a bare file-not-found at someone who has just cloned this.
 func TestMissingRosterIsNamed(t *testing.T) {
-	_, err := Load(filepath.Join(t.TempDir(), "nope.json"))
+	_, err := Load(filepath.Join(t.TempDir(), "nope.json"), nil)
 	var missing ErrNoConfig
 	if !asErr(err, &missing) {
 		t.Fatalf("got %T: %v", err, err)
@@ -115,15 +117,88 @@ func TestUnknownFieldIsRejected(t *testing.T) {
 	p := writeRoster(t, `{"automations":[
 	  {"name":"a","probe":"service","cadence":"24h","with":{"label":"x","port":1}}
 	]}`)
-	if _, err := Load(p); err == nil {
+	if _, err := Load(p, nil); err == nil {
 		t.Fatal("expected an error for the misspelled field")
 	}
 }
 
 func TestEmptyRosterIsRefused(t *testing.T) {
-	if _, err := Load(writeRoster(t, `{"automations":[]}`)); err == nil {
+	if _, err := Load(writeRoster(t, `{"automations":[]}`), nil); err == nil {
 		t.Fatal("an empty roster must be an error, not a clean bill of health")
 	}
 }
 
 func asErr(err error, target any) bool { return errors.As(err, target) }
+
+// A heartbeat is a different way of learning the same fact, so it gets the same
+// cadence, grace and lateness test as everything else. What it does not get is
+// a weaker rule for never having been heard from.
+func TestHeartbeatProbe(t *testing.T) {
+	log, err := event.Open(filepath.Join(t.TempDir(), "beats.db"), event.Relaxed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+
+	p := writeRoster(t, `{"automations":[
+	  {"name":"vps-backup","every":"24h","grace":"4h","probe":"heartbeat"}
+	]}`)
+	list, err := Load(p, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	// Declared but never heard from is unknown, not late. A job nobody has
+	// wired up yet and a job that has stopped are different problems, and there
+	// is nothing to measure lateness from anyway.
+	r, err := list[0].Check(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State != Unknown {
+		t.Fatalf("never posted = %s, want unknown", r.State)
+	}
+	if !r.Last.IsZero() {
+		t.Error("nothing has been heard from, so there is no last delivery")
+	}
+
+	// A bare beat, which is what `curl -X POST` sends.
+	if err := Record(ctx, log, Beat{Name: "vps-backup"}); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ = list[0].Check(ctx); r.State != OK {
+		t.Fatalf("after a beat = %s, want ok", r.State)
+	}
+	if r.Last.IsZero() {
+		t.Error("a beat is a delivery and has to set Last, or lateness cannot work")
+	}
+
+	// A job may report its own failure.
+	n := 3
+	if err := Record(ctx, log, Beat{Name: "vps-backup", State: "failing", Detail: "disk full", Count: &n}); err != nil {
+		t.Fatal(err)
+	}
+	r, _ = list[0].Check(ctx)
+	if r.State != Failing || r.Detail != "disk full" {
+		t.Fatalf("got %s %q", r.State, r.Detail)
+	}
+	// Last still moves on a failure report. A job that fails and keeps saying
+	// so is in a different situation from one that failed and went quiet, and
+	// collapsing them would hide the second.
+	if r.Last.IsZero() {
+		t.Error("a failure report is still contact")
+	}
+	if len(r.Notes) == 0 {
+		t.Error("a reported count should survive to the report")
+	}
+
+	// A state amac does not understand is refused rather than stored, because
+	// storing it means the probe has to guess later.
+	if err := Record(ctx, log, Beat{Name: "vps-backup", State: "probably-fine"}); err == nil {
+		t.Error("an unknown state must be refused")
+	}
+	if err := Record(ctx, log, Beat{}); err == nil {
+		t.Error("a nameless beat must be refused")
+	}
+}

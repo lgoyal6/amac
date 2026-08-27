@@ -91,7 +91,13 @@ func cmdInit(args []string) error {
 // checkRoster loads the file and says what it found, so a typo surfaces now
 // rather than on the next unattended sweep.
 func checkRoster(path string) error {
-	list, err := health.Load(path)
+	// No log here on purpose. This validates the roster's shape, and opening
+	// the event log to do it would make `amac init` fail on a machine where
+	// the log cannot be created, which is exactly the machine someone is
+	// running init on for the first time. A heartbeat probe built without a
+	// log reports unknown rather than lying, which is the right answer to
+	// "does this file parse".
+	list, err := health.Load(path, nil)
 	if err != nil {
 		return err
 	}

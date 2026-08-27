@@ -90,7 +90,7 @@ func brief(a health.Automation, r health.Report, ok bool) string {
 }
 
 func (s *Server) healthTarget(w http.ResponseWriter, r *http.Request) (health.Automation, bool) {
-	a, ok := health.Find(r.PathValue("name"))
+	a, ok := health.Find(s.log, r.PathValue("name"))
 	if !ok {
 		writeJSON(w, 404, map[string]string{"error": "no such automation"})
 		return a, false
@@ -224,4 +224,31 @@ func (s *Server) spend(w http.ResponseWriter, r *http.Request) {
 		Stale:  snap.Age() > 48*time.Hour,
 		Caveat: "agent figures are equivalent API cost, not spend: on a flat subscription these tokens cost nothing marginal",
 	})
+}
+
+// beat takes a heartbeat from a job amac cannot reach.
+//
+// Every other automation here is watched by reading what it leaves behind,
+// which is stronger: an artifact only exists once work landed, and a ping can
+// be sent by a job that did nothing. It also limits amac to what it can reach,
+// which is this Mac and a GitHub repo. A cron job on a VPS or a pipeline on
+// someone else's runner has no artifact within reach and was therefore
+// invisible.
+//
+// A bare POST with no body is a valid beat, because the common case is a job
+// adding one line to a script and the shape of that line should be `curl -X
+// POST` and nothing else.
+func (s *Server) beat(w http.ResponseWriter, r *http.Request) {
+	b := health.Beat{Name: r.PathValue("name")}
+	// An empty or unparseable body is not an error. A job reporting in is more
+	// useful than a job whose reporting line broke on a JSON typo, and the
+	// name in the path is the only field that matters.
+	_ = json.NewDecoder(r.Body).Decode(&b)
+	b.Name = r.PathValue("name")
+
+	if err := health.Record(r.Context(), s.log, b); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]string{"recorded": b.Name})
 }

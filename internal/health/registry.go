@@ -13,7 +13,11 @@ package health
 // reporting success. Both are worse than refusing to start, so a missing roster
 // is an error that names the file and the command that writes one.
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/lgoyal6/amac/internal/event"
+)
 
 var (
 	rosterOnce sync.Once
@@ -26,9 +30,9 @@ var (
 // Loaded once per process. A sweep runs every fifteen minutes from launchd, so
 // each run is a fresh process and picks up an edited roster without anything
 // having to watch the file.
-func Roster() ([]Automation, error) {
+func Roster(log *event.Log) ([]Automation, error) {
 	rosterOnce.Do(func() {
-		roster, rosterErr = Load(ConfigPath())
+		roster, rosterErr = Load(ConfigPath(), log)
 	})
 	return roster, rosterErr
 }
@@ -40,14 +44,14 @@ func Roster() ([]Automation, error) {
 // a report it already has. Anything that sweeps must use Roster and surface the
 // failure, because a sweep over an empty roster reports every automation as
 // fine by never looking at one.
-func All() []Automation {
-	list, _ := Roster()
+func All(log *event.Log) []Automation {
+	list, _ := Roster(log)
 	return list
 }
 
 // Find returns one declared automation by name.
-func Find(name string) (Automation, bool) {
-	for _, a := range All() {
+func Find(log *event.Log, name string) (Automation, bool) {
+	for _, a := range All(log) {
 		if a.Name == name {
 			return a, true
 		}
