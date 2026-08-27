@@ -24,6 +24,11 @@ import (
 	"github.com/lgoyal6/amac/internal/event"
 )
 
+// version is set at build time with -ldflags "-X main.version=...". The default
+// says where the binary came from rather than pretending to a number: a build
+// from a working tree is not a release and should not claim to be one.
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
@@ -79,6 +84,8 @@ func main() {
 			a, _ := agent.Get(n)
 			fmt.Printf("%-8s %s\n         %s\n", a.Name, strings.Join(a.Argv(), " "), a.Note)
 		}
+	case "version", "-version", "--version":
+		fmt.Println("amac", version)
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -137,6 +144,8 @@ func usage() {
         Show recent events.
   amac agents
         List known adapters.
+  amac version
+        Which build this is.
 `)
 }
 
