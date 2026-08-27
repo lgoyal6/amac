@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lgoyal6/amac/internal/event"
+	"github.com/lgoyal6/amac/internal/queue"
 	"github.com/lgoyal6/amac/internal/supervisor"
 )
 
@@ -17,7 +18,11 @@ func testServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { log.Close() })
-	return New(supervisor.New(log), log, nil, "tok")
+	q, err := queue.Open(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return New(supervisor.New(log), log, nil, q, "tok")
 }
 
 // A pane is mostly blank padding below the prompt. Showing it verbatim puts
