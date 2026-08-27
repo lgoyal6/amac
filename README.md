@@ -464,6 +464,26 @@ everything else is sent literally, because `tmux send-keys` reads "Enter" in a
 sentence as a keypress: asking an agent about a keybinding would otherwise press
 it.
 
+**Forcing a locale on tmux, which is not the kind of bug you expect.** The board
+went live on the tailnet and showed nothing, with seventeen sessions running.
+tmux sanitises control characters out of its own `-F` output when the locale is
+not UTF-8, so the tab separator comes back as an underscore:
+
+```
+am-amac_1787595768_1787596187_1
+```
+
+Every line then has one field instead of four, every session is dropped, and the
+caller is handed an empty list and no error. An interactive shell sets `LANG`, so
+it never happens while you are testing; launchd gives an agent none, which is
+exactly where the daemon runs. The locale is forced at the point tmux is read
+rather than in the plist, because it is a property of reading tmux and not of
+how amac happens to be started.
+
+The second half of that bug was `List` swallowing every error into an empty
+result. An empty board and an unreadable tmux look identical on screen, so the
+failure is now returned and recorded.
+
 **The bind is fail-closed and now tells you why.** The daemon starts agents,
 approves their tool calls and types into panes, so it binds the tailnet or it
 does not start. `tailscale ip` reports this node's address even while the client
