@@ -295,3 +295,72 @@ func DevSpend(ctx context.Context) (Report, error) {
 	}
 	return r, nil
 }
+
+var pressureRe = regexp.MustCompile(`swap (\d+)%, disk (\d+)%`)
+
+// Pressure thresholds. Deliberately the same numbers the weekly sweep already
+// gates its own notification on: two definitions of "this machine is
+// struggling" that can disagree is one more than is useful.
+const (
+	swapLimit = 80
+	diskLimit = 85
+)
+
+// MachinePressure reports whether the machine is inside its own limits.
+//
+// It shares a source with TmuxReaper and answers a different question, which is
+// why it is a separate line rather than a note on that one. "The reaper script
+// is healthy" and "the machine is drowning" have different fixes, and a single
+// red line covering both would send you to read a shell script when what is
+// needed is closing something.
+//
+// The reading rides on the reaper's tick because that tick already exists and
+// runs every thirty minutes. The numbers were previously computed only by the
+// weekly cache job, which is the wrong clock for a condition that arrives over
+// an afternoon: swap crossed 90% here on a Tuesday and the next machine that
+// would have noticed was Sunday's.
+//
+// If the reaper stops, this goes Late rather than silent, which is correct.
+// Pressure detection having stopped is itself worth knowing.
+func MachinePressure(ctx context.Context) (Report, error) {
+	r := Report{State: OK}
+
+	ms := allMarkers(os.Getenv("HOME") + "/Library/Logs/tmux-idle-reaper.log")
+	if len(ms) == 0 {
+		r.State = Unknown
+		r.Detail = "no reading yet: the 30-minute sweep has not written one"
+		return r, nil
+	}
+	last := ms[len(ms)-1]
+	m := pressureRe.FindStringSubmatch(last.note)
+	if m == nil {
+		// Markers written before the reaper carried these numbers. Not a
+		// failure, just nothing to report yet.
+		r.State = Unknown
+		r.Detail = "the last sweep did not record swap or disk"
+		return r, nil
+	}
+	swap, _ := strconv.Atoi(m[1])
+	disk, _ := strconv.Atoi(m[2])
+	r.Last = last.at
+	r.Detail = fmt.Sprintf("swap %d%%, disk %d%% (read %s ago)", swap, disk, short(time.Since(last.at)))
+
+	var over []string
+	if swap >= swapLimit {
+		over = append(over, fmt.Sprintf("swap %d%%", swap))
+	}
+	if disk >= diskLimit {
+		over = append(over, fmt.Sprintf("disk %d%%", disk))
+	}
+	if len(over) > 0 {
+		r.State = Failing
+		r.Detail = strings.Join(over, " and ") + ", read " + short(time.Since(last.at)) + " ago"
+		// Said explicitly because the obvious response to disk pressure is to
+		// run the cache job, and the obvious response to swap pressure is not.
+		// Caches are on disk. Nothing the sweep deletes is in memory.
+		if swap >= swapLimit {
+			r.Notes = append(r.Notes, "swap is memory, not disk: clearing caches will not move it, closing sessions will")
+		}
+	}
+	return r, nil
+}

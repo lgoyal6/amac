@@ -3,6 +3,7 @@ package health
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -305,5 +306,60 @@ func TestSplitURLKeepsTrailingProse(t *testing.T) {
 	}
 	if text, link := splitURL("no link here"); text != "no link here" || link != "" {
 		t.Errorf("plain detail mangled: %q %q", text, link)
+	}
+}
+
+// Pressure is read off the reaper's marker, and the two conditions it can
+// report have different fixes. Saying "over limit" without saying which would
+// send you to delete caches when the number that moved was memory.
+func TestMachinePressure(t *testing.T) {
+	for _, tc := range []struct {
+		marker    string
+		wantState State
+		wantNote  bool
+	}{
+		{"done (0 reaped, swap 12%, disk 40%)", OK, false},
+		{"done (0 reaped, swap 92%, disk 91%)", Failing, true},
+		// Disk alone is the case the cache job actually fixes, so it must not
+		// carry the note telling him caches will not help.
+		{"done (2 reaped, swap 10%, disk 91%)", Failing, false},
+		{"done (0 reaped, swap 92%, disk 40%)", Failing, true},
+		// Written before the reaper recorded these numbers: nothing to report,
+		// which is not the same as nothing wrong.
+		{"done (0 reaped)", Unknown, false},
+	} {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, "Library", "Logs"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		line := "=== 2026-08-26 19:42:14 " + tc.marker + " ===\n"
+		if err := os.WriteFile(filepath.Join(dir, "Library", "Logs", "tmux-idle-reaper.log"), []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("HOME", dir)
+
+		r, err := MachinePressure(context.Background())
+		if err != nil {
+			t.Fatalf("%s: %v", tc.marker, err)
+		}
+		if r.State != tc.wantState {
+			t.Errorf("%s: state = %s, want %s", tc.marker, r.State, tc.wantState)
+		}
+		if got := len(r.Notes) > 0; got != tc.wantNote {
+			t.Errorf("%s: swap note present = %v, want %v (%v)", tc.marker, got, tc.wantNote, r.Notes)
+		}
+	}
+}
+
+// No reading at all is unknown, never ok. The reaper being gone is exactly when
+// a green line would be worst.
+func TestMachinePressureWithNoReadingIsUnknown(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	r, err := MachinePressure(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.State != Unknown {
+		t.Fatalf("state = %s, want unknown", r.State)
 	}
 }
