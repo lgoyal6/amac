@@ -1,6 +1,32 @@
 # amac
 
-A control plane for the AI agents running on my Mac.
+A control plane for the AI coding agents running on your Mac. Every session and
+every automation on one page, on your phone, over Tailscale. Written for one
+machine, mine, and made to run on yours.
+
+[![ci](https://github.com/lgoyal6/amac/actions/workflows/ci.yml/badge.svg)](https://github.com/lgoyal6/amac/actions/workflows/ci.yml)
+
+```bash
+git clone https://github.com/lgoyal6/amac && cd amac
+go build -o bin/amac ./cmd/amac
+
+bin/amac hooks -install     # so your agents tell amac what they are doing
+bin/amac init               # declare what your automations are meant to deliver
+bin/amac daemon             # the board, bound to your tailnet and nothing else
+bin/amac url                # the link, token included, to open on your phone
+```
+
+macOS, Go 1.26+, tmux. Tailscale for the board; Discord only if you want a phone
+notification, and everything works without it. Nothing runs in a cloud you pay
+for.
+
+**What it does that the terminal cannot.** Which session is blocked and for how
+long. Which automation stopped delivering, as opposed to stopped running. A
+queue agents pull from, one claim per task, proved against SIGKILL. The
+uncommitted diff an agent has actually produced, as opposed to what it says.
+What all of it costs.
+
+---
 
 Agents are not scarce any more; attention is. At any moment there are several
 Claude Code and Codex sessions running here, and the hard part is no longer

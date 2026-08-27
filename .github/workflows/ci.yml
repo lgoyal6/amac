@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    # macOS because that is what amac controls. The tmux, launchd and window
+    # server paths are the parts most likely to break, and testing them on Linux
+    # would prove the parts that were never in doubt.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+
+      - name: install tmux
+        run: brew install tmux
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "not gofmt'd:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: vet
+        run: go vet ./...
+
+      - name: test
+        # The crash tests fork children and SIGKILL them, so a short timeout
+        # turns a slow runner into a red build for no reason.
+        run: go test -timeout 10m ./...
+
+      - name: dead code
+        run: |
+          go install golang.org/x/tools/cmd/deadcode@latest
+          found=$("$(go env GOPATH)"/bin/deadcode ./...)
+          if [ -n "$found" ]; then
+            echo "unreachable:"; echo "$found"; exit 1
+          fi
