@@ -202,3 +202,96 @@ func failureCount(note string) int {
 	n, _ := strconv.Atoi(m[1])
 	return n
 }
+
+var reapedRe = regexp.MustCompile(`done \((\d+) reaped\)`)
+
+// TmuxReaper checks com.laksh.tmux-idle-reaper, the job that keeps agent
+// sessions from accumulating.
+//
+// This is the first automation here whose normal run does nothing, and that
+// changes what the probe has to read. The others deliver an artifact; this one
+// delivers the absence of a problem. Before it wrote a marker on every run,
+// "no log" meant either "nothing needed reaping" or "the reaper stopped", and
+// there was no way to tell which from outside. Since a prevention that has
+// quietly stopped preventing is exactly the failure it exists to avoid, it now
+// records every run and the count with it.
+//
+// The count is worth surfacing when it is non-zero. A reap is a session that
+// was killed on this machine without anyone asking, which is a thing to know
+// about even when it was correct.
+func TmuxReaper(ctx context.Context) (Report, error) {
+	r, note, err := localJob(ctx, "com.laksh.tmux-idle-reaper",
+		os.Getenv("HOME")+"/Library/Logs/tmux-idle-reaper.log")
+	if err != nil || r.State != OK {
+		return r, err
+	}
+	if m := reapedRe.FindStringSubmatch(note); m != nil {
+		if n, _ := strconv.Atoi(m[1]); n > 0 {
+			r.Detail = fmt.Sprintf("%d session(s) reaped %s ago", n, short(time.Since(r.Last)))
+			return r, nil
+		}
+	}
+	r.Detail = "last swept " + short(time.Since(r.Last)) + " ago, nothing to reap"
+	return r, nil
+}
+
+// DiskSweep checks com.user.sweep, the weekly cache and idle-session clean.
+//
+// Its log carries two kinds of marker: a banner written before any work starts
+// and a completion line written after it. Reading the newest one blindly would
+// report a run that died halfway as a delivery, which is the exact mistake the
+// hosted probes avoid by reading committed artifacts instead of run history. So
+// the newest marker has to actually say the run finished.
+func DiskSweep(ctx context.Context) (Report, error) {
+	r, note, err := localJob(ctx, "com.user.sweep",
+		os.Getenv("HOME")+"/Library/Logs/sweep.log")
+	if err != nil || r.State != OK {
+		return r, err
+	}
+	if !strings.Contains(note, "done") {
+		r.State = Failing
+		r.Detail = "started " + short(time.Since(r.Last)) + " ago and never finished"
+		return r, nil
+	}
+	r.Detail = "last completed " + short(time.Since(r.Last)) + " ago: " + strings.TrimSpace(note)
+	return r, nil
+}
+
+// DevSpend checks com.laksh.devspend, the daily spend digest.
+//
+// It is the weakest probe in this file and says so in its own output. The
+// script writes no completion marker, so the only evidence a run finished is
+// launchd's exit status plus when the log was last appended to. A job that dies
+// after its first line of output leaves the same trace as one that finished,
+// which is precisely the failure mode mtime cannot see. Reported anyway,
+// because an unwatched automation is worse than a weakly watched one, and
+// labelled so the report never claims more than it proved.
+func DevSpend(ctx context.Context) (Report, error) {
+	const label = "com.laksh.devspend"
+	r := Report{State: OK}
+
+	loaded, exit, err := launchdStatus(ctx, label)
+	if err != nil {
+		return r, err
+	}
+	if !loaded {
+		r.State = Down
+		r.Detail = label + " is not loaded in launchd"
+		return r, nil
+	}
+
+	fi, err := os.Stat("/tmp/devspend.log")
+	if err != nil {
+		r.State = Unknown
+		r.Detail = "loaded, but /tmp/devspend.log is not there to read"
+		r.Err = err.Error()
+		return r, nil
+	}
+	r.Last = fi.ModTime()
+	r.Detail = "last wrote " + short(time.Since(r.Last)) + " ago (log mtime, not a completion marker)"
+	if exit != 0 {
+		r.State = Failing
+		r.Detail = fmt.Sprintf("last run exited %d, see /tmp/devspend.log", exit)
+	}
+	return r, nil
+}

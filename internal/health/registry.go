@@ -51,5 +51,44 @@ func All() []Automation {
 			Grace: 24 * time.Hour,
 			Check: BrewUpgrade,
 		},
+		{
+			Name:  "tmux-idle-reaper",
+			What:  "kills detached agent sessions idle over 8h (launchd, every 30m)",
+			Every: 30 * time.Minute,
+			// One skipped tick is a laptop that slept. Two is the prevention
+			// having stopped, and a prevention that has stopped preventing is
+			// invisible by construction: the symptom is sessions accumulating
+			// over days, not an error anywhere.
+			Grace: 30 * time.Minute,
+			Check: TmuxReaper,
+		},
+		{
+			Name:  "disk-sweep",
+			What:  "weekly clean of regenerable caches (launchd, Sun 11:00)",
+			Every: 7 * 24 * time.Hour,
+			// A Sunday with the lid shut pushes it to Monday. Missing two
+			// Sundays is the signal, and on a weekly cadence there is no rush.
+			Grace: 48 * time.Hour,
+			Check: DiskSweep,
+		},
+		{
+			Name:  "devspend",
+			What:  "daily spend digest (launchd, 09:15)",
+			Every: 24 * time.Hour,
+			Grace: 24 * time.Hour,
+			Check: DevSpend,
+		},
+		{
+			Name: "amac-daemon",
+			What: "the board, served on the tailnet (launchd, always on)",
+			// A service, not a schedule. Its probe proves liveness directly and
+			// leaves Last zero, which suppresses the cadence test. Declaring a
+			// fake cadence here would be declaring a fake delivery: the honest
+			// statement is that "when did it last deliver" is the wrong
+			// question about something that is either up or down right now.
+			Every: 0,
+			Grace: 0,
+			Check: AmacDaemon,
+		},
 	}
 }

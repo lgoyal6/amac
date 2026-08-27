@@ -96,3 +96,29 @@ func TestSkippedIsNotAlarming(t *testing.T) {
 		t.Fatal("ok and failed must look different")
 	}
 }
+
+// The reaper runs 48 times a day and almost every run correctly does nothing.
+// Reporting each one would be 48 lines a day saying nothing happened, which is
+// how a channel gets muted, which is how nothing reached the phone for nine
+// days. Only a run that actually killed a session is a run worth a line.
+func TestReaperReportsOnlyTheRunsThatKilledSomething(t *testing.T) {
+	for _, tc := range []struct {
+		name, note string
+		want       bool
+	}{
+		{"tmux-idle-reaper", "done (0 reaped)", false},
+		{"tmux-idle-reaper", "done (1 reaped)", true},
+		{"tmux-idle-reaper", "done (12 reaped)", true},
+		// The sweep writes a banner before it does any work, so a run that
+		// died halfway still leaves a marker. Only the completion line counts.
+		{"disk-sweep", "sweep --auto", false},
+		{"disk-sweep", "done (2 sessions, 1.4GB reclaimed)", true},
+		// Everything else reports every completion marker it has.
+		{"brew-autoupgrade", "done (0 failures)", true},
+		{"hacklist-local-passes", "local passes done", true},
+	} {
+		if got := reportableRun(tc.name, tc.note); got != tc.want {
+			t.Errorf("reportableRun(%q, %q) = %v, want %v", tc.name, tc.note, got, tc.want)
+		}
+	}
+}

@@ -105,7 +105,7 @@ do.
 
 ## Automation health
 
-The first subsystem that runs unattended. Five automations are declared with
+The first subsystem that runs unattended. Nine automations are declared with
 the cadence they are expected to *deliver* at, and a launchd sweep every 15
 minutes records a verdict for each into the log.
 
@@ -134,6 +134,68 @@ automation and the lateness test is applied centrally, so an automation that
 dies quietly still produces a finding, and no probe has to remember to check.
 
 A probe that fails reports `unknown`, never `ok`.
+
+### Preventions, and services
+
+Three of the nine are not deliveries in the sense above, and each needed the
+probe to answer a different question.
+
+**A prevention delivers the absence of a problem.** `tmux-idle-reaper` kills
+detached agent sessions idle beyond eight hours, and its normal run correctly
+does nothing, so its log was silent whether it was working or had stopped. A
+prevention that has quietly stopped preventing is invisible by construction:
+the symptom is sessions accumulating over days, not an error anywhere. It now
+writes a completion marker on every run with the count on it, so "nothing
+needed reaping" and "the reaper is gone" are finally different facts.
+
+Declaring it caught a real fault within the hour, which is the argument for
+declaring things. Its log lived under `~/Desktop`, which is TCC-protected, so a
+launchd agent writing there fails with `operation not permitted`. The kill
+worked and the record of it did not, and while the script only logged on a kill
+there was nothing to notice: the reaper could have ended sessions and left no
+trace at all. It logs to `~/Library/Logs` now, where the other local jobs
+already write successfully.
+
+The count is why the reaper is the one job whose *runs* are filtered rather than
+reported. Forty-eight a day saying nothing happened is how a channel gets muted,
+and this system already paid for that lesson. A run that actually killed a
+session is a session ended on this machine without anyone asking, so that one
+gets a line.
+
+**A banner is not a delivery.** `disk-sweep` writes one line before it does any
+work and another after, so reading the newest marker would report a run that
+died halfway as a success. The completion line is the only one that counts,
+which is the same rule the hosted probes follow by reading committed artifacts
+instead of run history.
+
+Declaring both jobs in one registry is what made their overlap visible.
+`disk-sweep` also killed idle sessions, on a weekly tick and a seven-day
+threshold, and the reaper kills anything detached and idle past eight hours. So
+the only sessions the weekly rule could still reach were the ones the reaper had
+spared on purpose for being active: it could not do its stated job and could
+kill a working agent. Worse, it measured `session_created` while its own header
+said idle, and age is not idleness for the one case that matters, a session
+started nine days ago and working right now. Sessions now have one owner. The
+weekly pass measures idleness, and only when run by hand.
+
+**A service is either up or it is not.** `amac-daemon` serves the board, and
+"when did it last deliver" is the wrong question about it, so its probe checks
+liveness directly and leaves `Last` zero, which suppresses the cadence test
+rather than inventing a delivery to satisfy it. That is the stronger check: a
+silent job is only detectable after cadence plus grace, a dead service on the
+next sweep. It separates the three failures because they are fixed differently,
+one of which is not a failure of the daemon at all:
+
+```
+amac-daemon  down  not serving: Tailscale is not up, and the daemon binds
+                   the tailnet or nothing
+```
+
+`devspend` is the weakest probe here and labels itself so. The script writes no
+completion marker, so the only evidence is launchd's exit status and the log's
+mtime, which cannot see a job that died after its first line of output. Watched
+anyway, because an unwatched automation is worse than a weakly watched one, and
+the report never claims more than it proved.
 
 ### Every run, not just the newest
 
