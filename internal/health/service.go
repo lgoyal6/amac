@@ -37,7 +37,7 @@ func AmacDaemon(ctx context.Context) (Report, error) {
 	const label = "com.amac.daemon"
 	r := Report{State: OK}
 
-	loaded, _, err := launchdStatus(ctx, label)
+	loaded, _, _, err := launchdStatus(ctx, label)
 	if err != nil {
 		return r, err
 	}

@@ -363,3 +363,51 @@ func TestMachinePressureWithNoReadingIsUnknown(t *testing.T) {
 		t.Fatalf("state = %s, want unknown", r.State)
 	}
 }
+
+// These logs carry a start marker and a completion marker, and the difference
+// between them is the difference between "it ran" and "it delivered". Reading
+// only the newest reported a run in flight as having completed at the moment it
+// began, and reported a run that died as a delivery.
+func TestReadDeliveryTellsStartingFromFinishing(t *testing.T) {
+	write := func(lines ...string) string {
+		p := filepath.Join(t.TempDir(), "job.log")
+		if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	// A clean history: the newest done is the delivery, nothing outstanding.
+	d := readDelivery(write(
+		"=== 2026-08-24 20:30:00 local passes starting",
+		"=== 2026-08-24 20:33:00 local passes done",
+		"=== 2026-08-25 20:30:00 local passes starting",
+		"=== 2026-08-25 20:34:00 local passes done",
+	))
+	if !d.found || d.at.Day() != 25 {
+		t.Errorf("newest completion = %v, want the 25th", d.at)
+	}
+	if !d.unfinished.IsZero() {
+		t.Errorf("nothing should be outstanding, got %v", d.unfinished)
+	}
+
+	// A run that started and never finished. The delivery is still the earlier
+	// one, and the start is outstanding: the lateness test upstream must keep
+	// measuring deliveries, not attempts.
+	d = readDelivery(write(
+		"=== 2026-08-25 20:30:00 local passes starting",
+		"=== 2026-08-25 20:34:00 local passes done",
+		"=== 2026-08-26 20:30:04 local passes starting",
+	))
+	if !d.found || d.at.Day() != 25 {
+		t.Errorf("delivery = %v, want the 25th, not the unfinished run", d.at)
+	}
+	if d.unfinished.IsZero() {
+		t.Error("the unfinished run must be visible")
+	}
+
+	// Nothing has ever completed. Unknown, never ok.
+	if d := readDelivery(write("=== 2026-08-26 20:30:04 local passes starting")); d.found {
+		t.Error("a log with no completion must not report a delivery")
+	}
+}

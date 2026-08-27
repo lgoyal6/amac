@@ -68,10 +68,42 @@ func tailMarker(path string) (time.Time, string, error) {
 
 // localJob is the shared shape of both launchd probes: loaded, then last
 // completed run, then whatever that run reported.
+// delivery is what a job's log says about it, once the difference between
+// starting and finishing is taken seriously.
+//
+// These logs carry both: "local passes starting" and "local passes done". The
+// newest marker was being read as the last completed run, which is wrong in the
+// two states that matter. While a run is in flight it reported the job as
+// having completed at the moment it began, and after a crash it reported the
+// start of the run that died as a delivery. A job that dies halfway still
+// writes to its log, which is the whole reason this package reads committed
+// artifacts elsewhere rather than run history.
+type delivery struct {
+	at         time.Time // newest completed run
+	note       string    // its marker text
+	found      bool
+	unfinished time.Time // a start with no completion after it, zero if none
+}
+
+func readDelivery(path string) delivery {
+	var d delivery
+	for _, m := range allMarkers(path) {
+		if strings.Contains(m.note, "done") {
+			d.at, d.note, d.found = m.at, m.note, true
+			d.unfinished = time.Time{}
+			continue
+		}
+		// A start marker. It only means something if nothing completes after
+		// it, which the loop settles by clearing this on the next done.
+		d.unfinished = m.at
+	}
+	return d
+}
+
 func localJob(ctx context.Context, label, logPath string) (Report, string, error) {
 	r := Report{State: OK}
 
-	loaded, exit, err := launchdStatus(ctx, label)
+	loaded, exit, running, err := launchdStatus(ctx, label)
 	if err != nil {
 		return r, "", err
 	}
@@ -81,22 +113,39 @@ func localJob(ctx context.Context, label, logPath string) (Report, string, error
 		return r, "", nil
 	}
 
-	ts, note, err := tailMarker(logPath)
-	if err != nil {
+	d := readDelivery(logPath)
+	if !d.found {
 		// Loaded but never completed a run we can see. Unknown, not OK: the
 		// job may be fine and merely new, but we have not proved it.
 		r.State = Unknown
 		r.Detail = "loaded, but no completed run in " + logPath
-		r.Err = err.Error()
 		return r, "", nil
 	}
-	r.Last = ts
-	r.Detail = "last completed " + short(time.Since(ts)) + " ago"
+
+	// Last stays the newest real delivery whatever else is going on, so the
+	// lateness test upstream keeps measuring deliveries rather than attempts.
+	r.Last = d.at
+	r.Detail = "last completed " + short(time.Since(d.at)) + " ago"
+
+	if !d.unfinished.IsZero() {
+		if running {
+			r.Detail = "running since " + short(time.Since(d.unfinished)) + " ago, last completed " +
+				short(time.Since(d.at)) + " ago"
+			return r, d.note, nil
+		}
+		// Started, not running, never finished. That is a death mid-run, and
+		// it is invisible to anything that reads only the newest marker.
+		r.State = Failing
+		r.Detail = fmt.Sprintf("started %s ago and never finished, see %s",
+			short(time.Since(d.unfinished)), logPath)
+		return r, d.note, nil
+	}
+
 	if exit != 0 {
 		r.State = Failing
-		r.Detail = fmt.Sprintf("last run exited %d (%s ago), see %s", exit, short(time.Since(ts)), logPath)
+		r.Detail = fmt.Sprintf("last run exited %d (%s ago), see %s", exit, short(time.Since(d.at)), logPath)
 	}
-	return r, note, nil
+	return r, d.note, nil
 }
 
 // LocalPasses checks com.hacklist.local-passes, the nightly job that writes
@@ -140,20 +189,24 @@ var lastExitRe = regexp.MustCompile(`"LastExitStatus"\s*=\s*(-?\d+)`)
 // `launchctl list <label>` prints a plist-ish block, not JSON, and exits
 // non-zero when the label is unknown, which is the "not loaded" answer rather
 // than an error.
-func launchdStatus(ctx context.Context, label string) (loaded bool, exit int, err error) {
+func launchdStatus(ctx context.Context, label string) (loaded bool, exit int, running bool, err error) {
 	bin, err := exec.LookPath("launchctl")
 	if err != nil {
-		return false, 0, err
+		return false, 0, false, err
 	}
 	out, err := exec.CommandContext(ctx, bin, "list", label).Output()
 	if err != nil {
-		return false, 0, nil
+		return false, 0, false, nil
 	}
 	if m := lastExitRe.FindSubmatch(out); m != nil {
 		exit, _ = strconv.Atoi(string(m[1]))
 	}
-	return strings.Contains(string(out), label), exit, nil
+	// launchd prints a PID key only while the job is actually executing, which
+	// is how an in-flight run is told from one that died at the same point.
+	return strings.Contains(string(out), label), exit, pidRe.Match(out), nil
 }
+
+var pidRe = regexp.MustCompile(`"PID"\s*=\s*\d+`)
 
 // marker is one completed run recorded in a job's log.
 type marker struct {
@@ -250,11 +303,9 @@ func DiskSweep(ctx context.Context) (Report, error) {
 	if err != nil || r.State != OK {
 		return r, err
 	}
-	if !strings.Contains(note, "done") {
-		r.State = Failing
-		r.Detail = "started " + short(time.Since(r.Last)) + " ago and never finished"
-		return r, nil
-	}
+	// The started-and-never-finished case is handled in localJob now, for every
+	// job rather than only this one: hacklist-local-passes writes the same pair
+	// of markers and was reporting a run that died as a delivery.
 	r.Detail = "last completed " + short(time.Since(r.Last)) + " ago: " + strings.TrimSpace(note)
 	return r, nil
 }
@@ -274,7 +325,7 @@ func DevSpend(ctx context.Context) (Report, error) {
 	const label = "com.laksh.devspend"
 	r := Report{State: OK}
 
-	loaded, exit, err := launchdStatus(ctx, label)
+	loaded, exit, _, err := launchdStatus(ctx, label)
 	if err != nil {
 		return r, err
 	}

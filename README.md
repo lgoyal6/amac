@@ -186,11 +186,19 @@ That note exists because the obvious response to pressure is to run the cache
 job, and for swap that response does nothing at all. Nothing the sweep deletes
 is in memory.
 
-**A banner is not a delivery.** `disk-sweep` writes one line before it does any
-work and another after, so reading the newest marker would report a run that
-died halfway as a success. The completion line is the only one that counts,
-which is the same rule the hosted probes follow by reading committed artifacts
-instead of run history.
+**A banner is not a delivery, and this applied to more than it looked like.**
+These logs carry two markers, `local passes starting` and `local passes done`,
+and reading the newest one conflated them. The rule went in for `disk-sweep` and
+then `hacklist-local-passes` was caught by it live: the fix for its crash landed,
+the 20:30 run started, and the probe reported "last completed 2m ago" about a job
+that had started 2m ago and was still running. The same reading after a crash
+reports the start of the run that died as a delivery.
+
+So every local probe now separates them. The last completion stays the delivery,
+which keeps the lateness test measuring deliveries rather than attempts, and a
+start with nothing after it is read against launchd: still executing is
+`running since`, no longer executing is a death mid-run, which is invisible to
+anything that reads only the newest line.
 
 Declaring both jobs in one registry is what made their overlap visible.
 `disk-sweep` also killed idle sessions, on a weekly tick and a seven-day
