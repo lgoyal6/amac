@@ -269,7 +269,7 @@ func TestTheManifestCarriesTheTokenOnlyToWhoeverAlreadyHasIt(t *testing.T) {
 	}{
 		{"no token", "", `"start_url": "/"`},
 		{"wrong token", "?token=nope", `"start_url": "/"`},
-		{"the token", "?token=" + tok, `"start_url": "/?token=` + tok + `"`},
+		{"the token", "?token=" + tok, `"start_url": "/app/` + tok + `"`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			w := do(t, req("GET", "/manifest.webmanifest"+c.query, ""))
@@ -284,5 +284,41 @@ func TestTheManifestCarriesTheTokenOnlyToWhoeverAlreadyHasIt(t *testing.T) {
 					w.Header().Get("Cache-Control"))
 			}
 		})
+	}
+}
+
+// The <link rel="manifest"> is in <head>, so Safari fetches it while parsing
+// and has start_url cached before any script in the body runs. A JS rewrite is
+// too late by construction - the manifest iOS installs is whichever one the
+// head fetch returned - so the token has to be in the bytes the server sends.
+func TestThePagePointsAtAManifestThatKnowsTheToken(t *testing.T) {
+	plain := `<link rel="manifest" href="/manifest.webmanifest">`
+	tokened := `<link rel="manifest" href="/manifest.webmanifest?token=` + tok + `">`
+	for _, c := range []struct {
+		name, path, want, absent string
+	}{
+		{"a bare visit", "/", plain, tokened},
+		{"the link amac url prints", "/?token=" + tok, tokened, plain},
+		{"where the icon lands", "/app/" + tok, tokened, plain},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			w := do(t, req("GET", c.path, ""))
+			if w.Code != 200 {
+				t.Fatalf("code %d, want 200", w.Code)
+			}
+			if !strings.Contains(w.Body.String(), c.want) {
+				t.Fatalf("want %q in the page", c.want)
+			}
+			if strings.Contains(w.Body.String(), c.absent) {
+				t.Fatalf("did not want %q in the page", c.absent)
+			}
+		})
+	}
+}
+
+// The icon's launch URL is a credential, so a wrong one is not a page.
+func TestTheAppPathRefusesAWrongToken(t *testing.T) {
+	if w := do(t, req("GET", "/app/nope", "")); w.Code != 401 {
+		t.Fatalf("code %d, want 401", w.Code)
 	}
 }
