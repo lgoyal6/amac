@@ -34,6 +34,11 @@ the event log's durability guarantee that way, and the queue tests prove that
 work held by a killed worker is recovered exactly once. They are slower than
 unit tests and they are the ones worth keeping green.
 
+Tests run under `-race` in CI, because this is a concurrent system: a read loop
+per agent, a goroutine per agent-initiated request, and workers racing for one
+claim. A race that only shows up on a loaded machine at 2am is not a race you
+want to debug from a phone.
+
 CI runs on macOS, and fails on unformatted code, on `go vet`, and on any
 unreachable function. That last one is deliberate: dead code here has always
 turned out to be a feature that was half-removed.

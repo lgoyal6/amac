@@ -287,9 +287,14 @@ func errString(err error) string {
 	return err.Error()
 }
 
-// Call issues a request and waits for its reply. ctx cancellation abandons the
-// wait; the id stays registered so a late reply is discarded rather than
-// mismatched onto a future request.
+// Call issues a request and waits for its reply.
+//
+// Cancellation releases the slot. The original reasoning for keeping it was
+// that a late reply might otherwise be mismatched onto a future request, which
+// cannot happen: nextID only ever increments, so an id is never reused and a
+// reply arriving for a forgotten one finds nothing waiting and is dropped. What
+// keeping it did instead was grow the map by one entry per abandoned call, for
+// the life of a process that is meant to run for weeks.
 func (c *Client) Call(ctx context.Context, method string, params any, out any) error {
 	c.mu.Lock()
 	if c.closed {
@@ -311,6 +316,9 @@ func (c *Client) Call(ctx context.Context, method string, params any, out any) e
 
 	select {
 	case <-ctx.Done():
+		c.mu.Lock()
+		delete(c.pending, id)
+		c.mu.Unlock()
 		return ctx.Err()
 	case resp := <-ch:
 		if resp.Error != nil {
