@@ -24,10 +24,14 @@ const tailscaleCLI = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 // physical interface a 100.x address. Trusting that would bind the daemon to
 // the phone network. When the CLI is unavailable, only a utun interface counts.
 func TailnetIP() (string, error) {
+	reported := ""
 	if out, err := exec.Command(tailscaleCLI, "ip", "-4").Output(); err == nil {
 		ip := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
 		if strings.HasPrefix(ip, "100.") {
-			return ip, nil
+			reported = ip
+			if assigned(ip) {
+				return ip, nil
+			}
 		}
 	}
 
@@ -53,7 +57,35 @@ func TailnetIP() (string, error) {
 			}
 		}
 	}
+	if reported != "" {
+		// The distinction is worth spelling out because the two failures look
+		// identical and are fixed differently. Tailscale not installed is a
+		// setup problem; Tailscale installed and switched off is a toggle.
+		return "", fmt.Errorf("Tailscale reports %s but it is not up on this machine: connect it from the menu bar", reported)
+	}
 	return "", fmt.Errorf("no tailnet address: is Tailscale running?")
+}
+
+// assigned reports whether an address is actually on a local interface.
+//
+// `tailscale ip` answers "what is this node's address in the tailnet", and it
+// keeps answering while the client is stopped, because the address is assigned
+// by the control plane rather than by this machine. Binding it in that state
+// fails with EADDRNOTAVAIL, from ListenAndServe, several seconds later, with a
+// message that mentions neither Tailscale nor the reason. The question the
+// daemon actually has is not what this node is called on the tailnet but
+// whether that address exists here right now.
+func assigned(ip string) bool {
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok && ipnet.IP.String() == ip {
+			return true
+		}
+	}
+	return false
 }
 
 // WaitForTailnet blocks until the mesh is up. A daemon started at login before

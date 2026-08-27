@@ -17,7 +17,9 @@ import (
 
 	"github.com/lgoyal6/amac/internal/agent"
 	"github.com/lgoyal6/amac/internal/apply"
+	"github.com/lgoyal6/amac/internal/attention"
 	"github.com/lgoyal6/amac/internal/event"
+	"github.com/lgoyal6/amac/internal/orchestrator"
 	"github.com/lgoyal6/amac/internal/supervisor"
 	"github.com/lgoyal6/amac/internal/tmux"
 )
@@ -28,11 +30,12 @@ var uiFS embed.FS
 type Server struct {
 	sup   *supervisor.Supervisor
 	log   *event.Log
+	orch  *orchestrator.Orchestrator
 	token string
 }
 
-func New(sup *supervisor.Supervisor, log *event.Log, token string) *Server {
-	return &Server{sup: sup, log: log, token: token}
+func New(sup *supervisor.Supervisor, log *event.Log, orch *orchestrator.Orchestrator, token string) *Server {
+	return &Server{sup: sup, log: log, orch: orch, token: token}
 }
 
 // Token returns the shared secret, creating it on first run.
@@ -72,6 +75,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/prompt", s.auth(s.promptSession))
 	mux.HandleFunc("POST /api/sessions/{id}/answer", s.auth(s.answerSession))
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.auth(s.stopSession))
+	mux.HandleFunc("GET /api/sessions/{id}/pane", s.auth(s.pane))
+	mux.HandleFunc("POST /api/sessions/{id}/keys", s.auth(s.sendKeys))
+	mux.HandleFunc("GET /api/crew", s.auth(s.crewRuns))
+	mux.HandleFunc("POST /api/crew/plan", s.auth(s.crewPlan))
+	mux.HandleFunc("POST /api/crew/open", s.auth(s.crewOpen))
+	mux.HandleFunc("GET /api/crew/artifact", s.auth(s.crewArtifact))
+	mux.HandleFunc("GET /api/health", s.auth(s.health))
 	mux.HandleFunc("GET /api/events", s.auth(s.events))
 	mux.HandleFunc("GET /api/stream", s.auth(s.stream))
 	mux.HandleFunc("GET /api/agents", s.auth(s.agents))
@@ -157,6 +167,14 @@ type sessionView struct {
 	Detail   string       `json:"detail"`
 	Started  time.Time    `json:"started"`
 	Pending  *pendingView `json:"pending,omitempty"`
+	// Since is when the state was last established. It is on the card because
+	// for a session amac only watches, the state is the newest thing an agent
+	// said about itself and nothing refutes it afterwards. Codex has no signal
+	// for "the human answered", so a session it reported blocked stays blocked
+	// on the board until its next turn ends. Saying "blocked, asked 40m ago"
+	// hands that judgement to the person reading it; saying "blocked" alone
+	// makes a claim about now that amac cannot support.
+	Since time.Time `json:"since,omitempty"`
 }
 
 type pendingView struct {
@@ -209,6 +227,7 @@ func (s *Server) tmuxSessions(ctx context.Context) []sessionView {
 		return nil
 	}
 	last := s.lastAttention(ctx)
+	states := attention.States(ctx, s.log)
 
 	out := make([]sessionView, 0, len(list))
 	for _, t := range list {
@@ -217,21 +236,73 @@ func (s *Server) tmuxSessions(ctx context.Context) []sessionView {
 			Attached: t.Attached, Started: t.Created,
 			State: "unknown", Detail: t.Command,
 		}
+		// Two sources, and the better one wins where it exists. An attention
+		// event is raised only when a session wants something, so on its own
+		// it leaves a session reading "blocked" long after the ask was
+		// answered. Claude's hooks report every transition including the one
+		// that clears it, so where they exist they are authoritative.
 		if a, ok := last[t.Name]; ok {
-			v.State, v.Detail = a.state, a.detail
+			v.State, v.Detail, v.Since = a.state, a.detail, a.at
+		}
+		if st, ok := states[t.Name]; ok {
+			v.State, v.Since = st.State, st.At
+			if st.Detail != "" {
+				v.Detail = st.Detail
+			}
+			// The pane command is a fact, but a wrapper or a resumed session
+			// shows up as its interpreter. A hook that named itself knows
+			// better than the process table does.
+			if st.Agent != "" && (v.Agent == "" || v.Agent == "node") {
+				v.Agent = st.Agent
+			}
 		}
 		out = append(out, v)
 	}
 	return out
 }
 
-type attnState struct{ state, detail string }
+// health hands back the newest automation sweep exactly as it was recorded.
+//
+// The dashboard exists to replace a Discord channel, and the automation digest
+// is the part of that channel that works. Re-deriving the verdicts here would
+// mean two implementations of "is this automation delivering" that can
+// disagree, so this is a read of what the sweep already decided.
+func (s *Server) health(w http.ResponseWriter, r *http.Request) {
+	// at is TEXT in the store, so it is parsed here rather than scanned into a
+	// time.Time. The driver does not convert it, and a failed scan would look
+	// exactly like "no sweep has ever run".
+	var at string
+	var payload []byte
+	err := s.log.DB().QueryRowContext(r.Context(),
+		`SELECT at, payload FROM events WHERE kind = ? ORDER BY seq DESC LIMIT 1`,
+		string(event.KindAutomationCheck)).Scan(&at, &payload)
+	if err != nil {
+		// No sweep on record is not an error. It means the launchd job has
+		// not run yet, and the board should say so rather than show a failure.
+		writeJSON(w, 200, map[string]any{"reports": []any{}})
+		return
+	}
+	var body struct {
+		Reports json.RawMessage `json:"reports"`
+	}
+	if json.Unmarshal(payload, &body) != nil {
+		writeJSON(w, 200, map[string]any{"reports": []any{}})
+		return
+	}
+	swept, _ := time.Parse(time.RFC3339Nano, at)
+	writeJSON(w, 200, map[string]any{"at": swept, "reports": body.Reports})
+}
+
+type attnState struct {
+	state, detail string
+	at            time.Time
+}
 
 // lastAttention reads the newest attention event per session in one query.
 // One query per session would be twenty round trips for a page that refreshes.
 func (s *Server) lastAttention(ctx context.Context) map[string]attnState {
 	rows, err := s.log.DB().QueryContext(ctx, `
-		SELECT session, payload FROM events
+		SELECT session, at, payload FROM events
 		 WHERE kind = ? AND seq IN (
 		       SELECT MAX(seq) FROM events WHERE kind = ? AND session != '' GROUP BY session)`,
 		string(event.KindAttention), string(event.KindAttention))
@@ -242,9 +313,9 @@ func (s *Server) lastAttention(ctx context.Context) map[string]attnState {
 
 	out := map[string]attnState{}
 	for rows.Next() {
-		var sess string
+		var sess, at string
 		var payload []byte
-		if err := rows.Scan(&sess, &payload); err != nil {
+		if err := rows.Scan(&sess, &at, &payload); err != nil {
 			continue
 		}
 		var body struct {
@@ -264,6 +335,7 @@ func (s *Server) lastAttention(ctx context.Context) map[string]attnState {
 		if a.detail == "" {
 			a.detail = "finished its turn"
 		}
+		a.at, _ = time.Parse(time.RFC3339Nano, at)
 		out[sess] = a
 	}
 	return out

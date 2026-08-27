@@ -14,6 +14,9 @@ import (
 
 	"github.com/lgoyal6/amac/internal/daemon"
 	"github.com/lgoyal6/amac/internal/event"
+	"github.com/lgoyal6/amac/internal/model"
+	"github.com/lgoyal6/amac/internal/orchestrator"
+	"github.com/lgoyal6/amac/internal/router"
 	"github.com/lgoyal6/amac/internal/supervisor"
 )
 
@@ -35,6 +38,10 @@ func cmdDaemon(args []string) error {
 	if *localhost {
 		host = "127.0.0.1"
 	} else {
+		// Said before the wait, not after. Under launchd this is the whole
+		// log for two minutes, and an empty log while a process sits there
+		// looks exactly like a hang with no cause.
+		fmt.Printf("waiting up to %s for the tailnet...\n", *wait)
 		ip, err := daemon.WaitForTailnet(*wait)
 		if err != nil {
 			return fmt.Errorf("refusing to start without a tailnet address: %w", err)
@@ -54,9 +61,16 @@ func cmdDaemon(args []string) error {
 	defer log.Close()
 
 	sup := supervisor.New(log)
+	// The board can convene the org, so the daemon carries an orchestrator.
+	// A missing model key is not fatal: triage falls back to heuristics, and a
+	// dashboard that refuses to start because a grading model is unreachable
+	// would be trading the whole feature for one of its parts.
+	reg, _ := model.FromEnv()
+	orch := orchestrator.New(sup, router.New(reg, log), log)
+
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(host, fmt.Sprint(*port)),
-		Handler:           daemon.New(sup, log, token).Handler(),
+		Handler:           daemon.New(sup, log, orch, token).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		// No WriteTimeout: /api/stream is a long-lived SSE connection and a
 		// write deadline would sever it on a fixed schedule. Idle connections
