@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -9,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -108,8 +110,37 @@ func (s *Server) Handler() http.Handler {
 	// from a context that has none of the page's storage. Neither carries data
 	// about this machine, so there is nothing to protect. The tailnet is still
 	// the outer gate.
+	// The manifest is generated rather than served flat, because start_url is
+	// the credential. A home-screen icon pointing at "/" opens the board with
+	// no token: iOS gives a standalone web app its own storage container, so
+	// the token Safari stashed in localStorage is not there and the first
+	// launch from the icon is always unauthorised. Worse, Safari evicts
+	// script-writable storage after about a week of not opening the site, so
+	// even once it works it logs you out again on its own schedule.
+	//
+	// Baking the token into start_url makes the icon itself the credential, so
+	// a cleared localStorage cannot log anyone out. It is only echoed back to a
+	// request that already presented the right token, so the open manifest
+	// route still gives nothing away.
+	mux.HandleFunc("GET /manifest.webmanifest", func(w http.ResponseWriter, r *http.Request) {
+		b, err := uiFS.ReadFile("ui/manifest.webmanifest")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		q := r.URL.Query().Get("token")
+		if subtle.ConstantTimeCompare([]byte(q), []byte(s.token)) == 1 {
+			b = bytes.Replace(b, []byte(`"start_url": "/"`),
+				[]byte(`"start_url": "/?token=`+url.QueryEscape(q)+`"`), 1)
+		}
+		w.Header().Set("Content-Type", "application/manifest+json")
+		// Never cached: one copy carries a credential and one does not, and a
+		// proxy holding the wrong one installs an icon that cannot log in.
+		w.Header().Set("Cache-Control", "no-store")
+		w.Write(b)
+	})
+
 	for _, asset := range []struct{ path, mime string }{
-		{"manifest.webmanifest", "application/manifest+json"},
 		{"icon-180.png", "image/png"},
 		{"icon-192.png", "image/png"},
 		{"icon-512.png", "image/png"},
