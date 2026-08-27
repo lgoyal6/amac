@@ -122,8 +122,8 @@ func TestAlertOnBadToBadTransition(t *testing.T) {
 	}
 }
 
-func TestSweepTime(t *testing.T) {
-	ts, ok := sweepTime("sweep-2026-08-23T00-44-21-214Z.json")
+func TestStampedName(t *testing.T) {
+	ts, ok := stampedName("sweep-2026-08-23T00-44-21-214Z.json", "sweep-", ".json")
 	if !ok {
 		t.Fatal("failed to parse a real sweep filename")
 	}
@@ -138,7 +138,7 @@ func TestSweepTime(t *testing.T) {
 		"sweep-2026-08-23T00-44-21-214Z.txt", // wrong extension
 		"",
 	} {
-		if _, ok := sweepTime(bad); ok {
+		if _, ok := stampedName(bad, "sweep-", ".json"); ok {
 			t.Fatalf("%q parsed but should not have", bad)
 		}
 	}
@@ -172,7 +172,7 @@ func contains(s, sub string) bool {
 
 // The local jobs are judged by their completion marker rather than the log's
 // mtime, because a job that dies halfway still writes to its log.
-func TestTailMarker(t *testing.T) {
+func TestReadDelivery(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/job.log"
 
@@ -191,42 +191,37 @@ func TestTailMarker(t *testing.T) {
 		"upgrading something",
 		"a stack trace that never finished",
 	}, "\n"))
-	ts, note, err := tailMarker(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	d := readDelivery(path)
 	want := time.Date(2026, 8, 22, 16, 10, 38, 0, time.Local)
-	if !ts.Equal(want) {
-		t.Fatalf("got %s, want %s", ts, want)
+	if !d.found || !d.at.Equal(want) {
+		t.Fatalf("got %s (found=%v), want %s", d.at, d.found, want)
 	}
-	if !contains(note, "0 failures") {
-		t.Fatalf("note %q lost the failure count", note)
+	if !contains(d.note, "0 failures") {
+		t.Fatalf("note %q lost the failure count", d.note)
 	}
 
 	// local-passes uses a different tail and no closing ===.
 	write("=== 2026-08-21 21:39:23 local passes done\n")
-	if ts, _, err = tailMarker(path); err != nil {
-		t.Fatalf("local-passes format: %v", err)
-	}
-	if ts.Hour() != 21 || ts.Minute() != 39 {
-		t.Fatalf("got %s", ts)
+	d = readDelivery(path)
+	if !d.found || d.at.Hour() != 21 || d.at.Minute() != 39 {
+		t.Fatalf("local-passes format: %s (found=%v)", d.at, d.found)
 	}
 
-	// A log with output but no completed run must be an error, which the probe
-	// turns into Unknown. Reporting the file's mtime here would claim a
+	// A log with output but no completed run reports no delivery, which the
+	// probe turns into Unknown. Reporting the file's mtime here would claim a
 	// delivery that never happened.
 	write("started\nstill going\n")
-	if _, _, err = tailMarker(path); err == nil {
-		t.Fatal("a log with no marker must not yield a timestamp")
+	if readDelivery(path).found {
+		t.Fatal("a log with no marker must not yield a delivery")
 	}
-	if _, _, err = tailMarker(dir + "/missing.log"); err == nil {
-		t.Fatal("a missing log must error")
+	if readDelivery(dir + "/missing.log").found {
+		t.Fatal("a missing log must not yield a delivery")
 	}
 }
 
 // Only the last 64KB is read, so a marker buried behind megabytes of output
 // still has to be found.
-func TestTailMarkerReadsOnlyTheTail(t *testing.T) {
+func TestReadDeliveryReadsOnlyTheTail(t *testing.T) {
 	path := t.TempDir() + "/big.log"
 	var b strings.Builder
 	b.WriteString("=== 2020-01-01 00:00:00 done (9 failures) ===\n") // far past the window
@@ -237,9 +232,10 @@ func TestTailMarkerReadsOnlyTheTail(t *testing.T) {
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	ts, note, err := tailMarker(path)
-	if err != nil {
-		t.Fatal(err)
+	d := readDelivery(path)
+	ts, note := d.at, d.note
+	if !d.found {
+		t.Fatal("no delivery found")
 	}
 	if ts.Year() != 2026 {
 		t.Fatalf("read the wrong marker: %s", ts)
@@ -328,17 +324,17 @@ func TestMachinePressure(t *testing.T) {
 		// which is not the same as nothing wrong.
 		{"done (0 reaped)", Unknown, false},
 	} {
-		dir := t.TempDir()
-		if err := os.MkdirAll(filepath.Join(dir, "Library", "Logs"), 0o755); err != nil {
-			t.Fatal(err)
-		}
+		log := filepath.Join(t.TempDir(), "reaper.log")
 		line := "=== 2026-08-26 19:42:14 " + tc.marker + " ===\n"
-		if err := os.WriteFile(filepath.Join(dir, "Library", "Logs", "tmux-idle-reaper.log"), []byte(line), 0o644); err != nil {
+		if err := os.WriteFile(log, []byte(line), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		t.Setenv("HOME", dir)
 
-		r, err := MachinePressure(context.Background())
+		check, err := newMarkerFields(pressureDecl(log))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := check(context.Background())
 		if err != nil {
 			t.Fatalf("%s: %v", tc.marker, err)
 		}
@@ -354,8 +350,11 @@ func TestMachinePressure(t *testing.T) {
 // No reading at all is unknown, never ok. The reaper being gone is exactly when
 // a green line would be worst.
 func TestMachinePressureWithNoReadingIsUnknown(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	r, err := MachinePressure(context.Background())
+	check, err := newMarkerFields(pressureDecl(filepath.Join(t.TempDir(), "absent.log")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := check(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,5 +408,24 @@ func TestReadDeliveryTellsStartingFromFinishing(t *testing.T) {
 	// Nothing has ever completed. Unknown, never ok.
 	if d := readDelivery(write("=== 2026-08-26 20:30:04 local passes starting")); d.found {
 		t.Error("a log with no completion must not report a delivery")
+	}
+}
+
+// pressureDecl is the roster entry this machine actually uses, pointed at a
+// temporary log. Building the probe the way Load does means these tests cover
+// the declaration as well as the reading.
+func pressureDecl(log string) Declaration {
+	return Declaration{
+		Name: "machine-pressure", Probe: "marker_fields",
+		With: map[string]any{
+			"log": log,
+			"fields": []any{
+				map[string]any{
+					"name": "swap", "pattern": `swap (\d+)%`, "limit": float64(80),
+					"note": "swap is memory, not disk: clearing caches will not move it, closing sessions will",
+				},
+				map[string]any{"name": "disk", "pattern": `disk (\d+)%`, "limit": float64(85)},
+			},
+		},
 	}
 }

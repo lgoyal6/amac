@@ -93,35 +93,45 @@ func failureNote(runs []ghRun) (string, bool) {
 	return "", false
 }
 
-// ---------------------------------------------------------- morning brief ---
+// ------------------------------------------------------------- delivery file --
 
-// MorningBrief reads briefs/.delivery.json, which the workflow commits only
-// after Discord confirms the send. That file is the only artifact in the repo
-// that means "he actually received today's brief"; every other signal (run
-// green, PDF committed) can be true while delivery failed.
-func MorningBrief(ctx context.Context) (Report, error) {
-	const repo = "lgoyal6/morning-brief"
+// githubDeliveryFile reads a marker a workflow commits only once the work
+// landed.
+//
+// morning-brief writes briefs/.delivery.json after Discord confirms the send.
+// That file is the only artifact in the repo meaning "he actually received
+// today's brief"; run green and PDF committed can both be true while delivery
+// failed. The repo, the path and the field come from the roster, because this
+// shape is not specific to one pipeline even though the interpretation is.
+func githubDeliveryFile(ctx context.Context, repo, path, field string, anchorHour int) (Report, error) {
 	r := Report{State: OK}
 
-	raw, err := ghFile(ctx, repo, "briefs/.delivery.json")
+	raw, err := ghFile(ctx, repo, path)
 	if err != nil {
 		return r, err
 	}
-	var marker struct {
-		ScheduledDate string `json:"scheduled_date"`
-	}
+	var marker map[string]any
 	if err := json.Unmarshal(raw, &marker); err != nil {
 		return r, fmt.Errorf("delivery marker: %w", err)
 	}
-	day, err := time.Parse("2006-01-02", marker.ScheduledDate)
-	if err != nil {
-		return r, fmt.Errorf("delivery marker date %q: %w", marker.ScheduledDate, err)
+	v, ok := marker[field].(string)
+	if !ok {
+		return r, fmt.Errorf("delivery marker has no string %q", field)
 	}
-	// The marker carries a date, not a timestamp. Anchor it at 16:00 UTC,
-	// roughly when the brief lands, so lateness is measured from when delivery
-	// was due rather than from midnight.
-	r.Last = day.Add(16 * time.Hour)
-	r.Detail = "delivered " + marker.ScheduledDate
+
+	// Either a full timestamp or a bare date. A bare date is anchored at the
+	// hour delivery is due, so lateness is measured from then and not from
+	// midnight, which would report every morning as late until lunchtime.
+	ts, err := time.Parse(time.RFC3339, v)
+	if err != nil {
+		day, dayErr := time.Parse("2006-01-02", v)
+		if dayErr != nil {
+			return r, fmt.Errorf("delivery marker %s=%q: %w", field, v, err)
+		}
+		ts = day.Add(time.Duration(anchorHour) * time.Hour)
+	}
+	r.Last = ts
+	r.Detail = "delivered " + v
 
 	runs, err := lastRuns(ctx, repo, 8)
 	if err != nil {
@@ -137,35 +147,35 @@ func MorningBrief(ctx context.Context) (Report, error) {
 	return r, nil
 }
 
-// -------------------------------------------------------------- hacklist ----
+// ------------------------------------------------------------- newest file ---
 
-// Hacklist reads data/history/, where each real sweep writes one
-// sweep-<ISO>.json. The workflow fires four crons a day but its gate lets one
-// through, so a suppressed run exits green in about 15 seconds. Counting runs
-// would report a healthy pipeline that had not swept in a week; counting sweep
-// files cannot.
-func Hacklist(ctx context.Context) (Report, error) {
-	const repo = "lgoyal6/hacklist-sf"
+// githubNewestFile reads a directory where each real run writes one file, and
+// takes the newest timestamp out of the filenames.
+//
+// hacklist-sf fires four crons a day and a gate lets one through, so a
+// suppressed run exits green in about fifteen seconds. Counting runs would
+// report a healthy pipeline that had not swept in a week; counting the files a
+// sweep leaves behind cannot.
+func githubNewestFile(ctx context.Context, repo, dir, prefix, suffix, noun, issueLabel string) (Report, error) {
 	r := Report{State: OK}
 
 	var files []struct {
 		Name string `json:"name"`
 	}
-	if err := gh(ctx, "repos/"+repo+"/contents/data/history", &files); err != nil {
+	if err := gh(ctx, "repos/"+repo+"/contents/"+dir, &files); err != nil {
 		return r, err
 	}
 	var newest time.Time
 	for _, f := range files {
-		ts, ok := sweepTime(f.Name)
-		if ok && ts.After(newest) {
+		if ts, ok := stampedName(f.Name, prefix, suffix); ok && ts.After(newest) {
 			newest = ts
 		}
 	}
 	if newest.IsZero() {
-		return r, fmt.Errorf("no sweep files in data/history (%d entries)", len(files))
+		return r, fmt.Errorf("no %s files in %s (%d entries)", noun, dir, len(files))
 	}
 	r.Last = newest
-	r.Detail = "last sweep " + short(time.Since(newest)) + " ago"
+	r.Detail = "last " + noun + " " + short(time.Since(newest)) + " ago"
 
 	runs, err := lastRuns(ctx, repo, 8)
 	if err != nil {
@@ -175,30 +185,36 @@ func Hacklist(ctx context.Context) (Report, error) {
 		r.Detail = note
 	}
 
-	// The pipeline files its own issue when it goes red and closes it on
-	// recovery, so an issue still open is an incident nobody closed.
-	var issues []struct {
-		Number    int       `json:"number"`
-		Title     string    `json:"title"`
-		CreatedAt time.Time `json:"created_at"`
-	}
-	if err := gh(ctx, "repos/"+repo+"/issues?labels=pipeline-red&state=open", &issues); err == nil {
-		for _, is := range issues {
-			r.Notes = append(r.Notes, fmt.Sprintf("open pipeline-red issue #%d %q, %s old",
-				is.Number, is.Title, short(time.Since(is.CreatedAt))))
+	// A pipeline that files its own issue when it goes red and closes it on
+	// recovery leaves an open issue as an incident nobody closed. The label
+	// comes from the roster; empty means the pipeline has no such convention
+	// and there is nothing to look for.
+	if issueLabel != "" {
+		var issues []struct {
+			Number    int       `json:"number"`
+			Title     string    `json:"title"`
+			CreatedAt time.Time `json:"created_at"`
+		}
+		if err := gh(ctx, "repos/"+repo+"/issues?labels="+issueLabel+"&state=open", &issues); err == nil {
+			for _, is := range issues {
+				r.Notes = append(r.Notes, fmt.Sprintf("open %s issue #%d %q, %s old",
+					issueLabel, is.Number, is.Title, short(time.Since(is.CreatedAt))))
+			}
 		}
 	}
 	return r, nil
 }
 
-// sweepTime parses "sweep-2026-08-23T00-44-21-214Z.json". The filename uses
-// dashes where a timestamp uses colons and a dot, because colons are not legal
-// in paths on every filesystem the repo gets cloned to.
-func sweepTime(name string) (time.Time, bool) {
-	if !strings.HasPrefix(name, "sweep-") || !strings.HasSuffix(name, ".json") {
+// stampedName parses a filename whose middle is a timestamp, as in
+// "sweep-2026-08-23T00-44-21-214Z.json". The filename uses dashes where a
+// timestamp uses colons and a dot, because colons are not legal in paths on
+// every filesystem the repo gets cloned to. Prefix and suffix come from the
+// roster; the dashed shape does not, because it is what the writer produces.
+func stampedName(name, prefix, suffix string) (time.Time, bool) {
+	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
 		return time.Time{}, false
 	}
-	s := strings.TrimSuffix(strings.TrimPrefix(name, "sweep-"), ".json")
+	s := strings.TrimSuffix(strings.TrimPrefix(name, prefix), suffix)
 	date, clock, ok := strings.Cut(s, "T")
 	if !ok {
 		return time.Time{}, false

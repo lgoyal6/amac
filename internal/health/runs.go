@@ -113,7 +113,7 @@ func base(r ghRun, automation string, status RunStatus, detail string) Run {
 // is whether a delivery commit landed inside the run's own window, which is
 // the same artifact the health sweep already trusts.
 func morningBriefRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
-	const repo, name = "lgoyal6/morning-brief", "morning-brief"
+	repo, name := withOf("morning-brief", "repo"), "morning-brief"
 	fresh, err := ghRunsSince(ctx, repo, name, seen)
 	if err != nil || len(fresh) == 0 {
 		return nil, err
@@ -173,7 +173,7 @@ func deliveredIn(commits []time.Time, start, end time.Time) bool {
 // hacklistRuns reads the gate directly. Unlike morning-brief, this workflow
 // suppresses by skipping a whole job, which GitHub reports as such.
 func hacklistRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
-	const repo, name = "lgoyal6/hacklist-sf", "hacklist-sf"
+	repo, name := withOf("hacklist-sf", "repo"), "hacklist-sf"
 	fresh, err := ghRunsSince(ctx, repo, name, seen)
 	if err != nil || len(fresh) == 0 {
 		return nil, err
@@ -219,7 +219,7 @@ func jobDiscoveryRuns(ctx context.Context, seen map[string]bool) ([]Run, error) 
 	if k == "" {
 		return nil, nil
 	}
-	list, err := n8nGet(ctx, k, fmt.Sprintf("/api/v1/executions?workflowId=%s&limit=15", n8nWorkflowID))
+	list, err := n8nGet(ctx, k, fmt.Sprintf("/api/v1/executions?workflowId=%s&limit=15", withOf("job-discovery", "workflow_id")))
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +249,7 @@ func jobDiscoveryRuns(ctx context.Context, seen map[string]bool) ([]Run, error) 
 		r := Run{
 			Automation: name, ID: id, Started: e.StartedAt,
 			Duration: end.Sub(e.StartedAt),
-			URL:      fmt.Sprintf("https://%s/execution/%s", n8nHost, id),
+			URL:      fmt.Sprintf("https://%s/execution/%s", withOf("job-discovery", "host"), id),
 		}
 		if e.Status != "success" {
 			r.Status, r.Detail = RunFailed, "execution "+e.Status
@@ -320,7 +320,7 @@ func digestSent(ctx context.Context, key, id string) (bool, string, error) {
 }
 
 func n8nGet(ctx context.Context, key, path string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, "GET", "https://"+n8nHost+path, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://"+withOf("job-discovery", "host")+path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +358,7 @@ func launchdRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
 				continue
 			}
 			r := Run{Automation: j.name, ID: id, Started: m.at, Status: RunOK, Detail: "completed"}
-			if n := failureCount(m.note); n > 0 {
+			if n := markerCount(m.note); n > 0 {
 				r.Status = RunFailed
 				r.Detail = fmt.Sprintf("%d step(s) failed", n)
 			}

@@ -41,8 +41,8 @@ func TestFailureCount(t *testing.T) {
 		{"local passes done", 0}, // the other job has no tally at all
 		{"", 0},
 	} {
-		if got := failureCount(tc.note); got != tc.want {
-			t.Errorf("failureCount(%q) = %d, want %d", tc.note, got, tc.want)
+		if got := markerCount(tc.note); got != tc.want {
+			t.Errorf("markerCount(%q) = %d, want %d", tc.note, got, tc.want)
 		}
 	}
 }

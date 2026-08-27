@@ -50,7 +50,15 @@ func cmdHealth(args []string) error {
 		return err
 	}
 
-	reports := health.Sweep(ctx, health.All())
+	// The roster is loaded before anything else runs. A sweep over an empty
+	// roster reports every automation as fine by never looking at one, which is
+	// the exact failure this command exists to prevent, so a bad or missing
+	// roster stops the command rather than producing a clean bill of health.
+	roster, err := health.Roster()
+	if err != nil {
+		return err
+	}
+	reports := health.Sweep(ctx, roster)
 
 	if !*quiet {
 		for _, r := range reports {
