@@ -60,10 +60,6 @@ type Handler interface {
 	Handle(ctx context.Context, req IncomingRequest)
 }
 
-type HandlerFunc func(ctx context.Context, req IncomingRequest)
-
-func (f HandlerFunc) Handle(ctx context.Context, req IncomingRequest) { f(ctx, req) }
-
 // Client speaks ACP to one agent subprocess.
 //
 // A single read loop owns the pipe. Callers never read; they park on a channel

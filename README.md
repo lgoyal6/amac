@@ -436,6 +436,56 @@ Without that the daemon passed its own safety check and died inside
 ListenAndServe with EADDRNOTAVAIL, several seconds later, in a message that
 mentioned neither Tailscale nor the reason.
 
+### Acting on a red line
+
+A health tab that can only tell you something is broken is a page you read on
+your phone and then act on somewhere else, and the gap between those two is
+where things stay broken. So a finding can be handed to the org: it is graded,
+the chain is laid out, and the first role opens as a session you can take over,
+in the directory the automation actually lives in.
+
+Where that is comes from the registry, declared alongside the cadence, never
+inferred from the name. An agent sent to fix a pipeline in the wrong tree is
+worse than no agent. Two of the ten have no home and say so rather than opening
+something to have an answer: `job-discovery` runs on Railway and
+`machine-pressure` is a reading, not a program.
+
+The brief is built on the server from what the sweep actually saw, not from a
+fresh probe. Those differ exactly when the failure is intermittent, which is
+when the brief matters most. It states the verdict and stops; telling an agent
+what is probably wrong hands it a conclusion, and a wrong conclusion stated with
+authority costs more than none, because it will spend its context confirming the
+guess instead of reading the log.
+
+Not everything wants an agent. Half of these are a shell script and a log file,
+so the same row also opens a plain terminal there.
+
+### Spend, read rather than recomputed
+
+`amac cost` can only see sessions amac started, priced from whatever the adapter
+reported, which for Codex is nothing. [looseapi](https://github.com/lgoyal6/LooseAPI)
+reads the session logs both CLIs write whoever started them, and the billing mail
+that is the only source in existence for a credit balance falling to zero. No
+card statement can see that, because no transaction happens.
+
+So the board reads looseapi's snapshot instead of growing a second answer.
+Two implementations of "what am I spending" that can disagree is worse than one
+that lives in another repo, and that one has more inputs. The snapshot is a fair
+thing to read rather than a cache to distrust: it is written only after the mail
+scan, the provider poll and the usage read have all completed, so a run that
+died halfway leaves the previous one in place.
+
+That artifact also upgraded the weakest probe in the health registry. `devspend`
+used to be judged on its log's mtime, which cannot tell a finished run from one
+that died after its first line. It now reads `generatedAt` out of the snapshot,
+which is a real delivery marker. Finding the artifact was cheaper than adding
+one.
+
+The agent figure keeps looseapi's label: equivalent API cost, not spend. On a
+flat subscription those tokens cost nothing marginal, and quietly upgrading the
+number into money on the way across a repo boundary is exactly the kind of
+overstatement a cost report must never make.
+
 ### The org, from the board
 
 `amac crew` lays a task out as a chain of roles and opens each as a session you

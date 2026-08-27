@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/lgoyal6/amac/internal/spend"
 )
 
 // The two local automations both close a run by appending a marker line to
@@ -257,15 +259,17 @@ func DiskSweep(ctx context.Context) (Report, error) {
 	return r, nil
 }
 
-// DevSpend checks com.laksh.devspend, the daily spend digest.
+// DevSpend checks com.laksh.devspend, the daily spend scan.
 //
-// It is the weakest probe in this file and says so in its own output. The
-// script writes no completion marker, so the only evidence a run finished is
-// launchd's exit status plus when the log was last appended to. A job that dies
-// after its first line of output leaves the same trace as one that finished,
-// which is precisely the failure mode mtime cannot see. Reported anyway,
-// because an unwatched automation is worse than a weakly watched one, and
-// labelled so the report never claims more than it proved.
+// This was the weakest probe here and no longer is. It used to read the log's
+// mtime, which cannot tell a run that finished from one that died after its
+// first line of output. looseapi turns out to write its snapshot only after the
+// mail scan, the provider poll and the usage read have all completed, so
+// generatedAt inside it is a real delivery marker: a half-dead run leaves the
+// previous snapshot in place rather than a partial one.
+//
+// That is the same rule the hosted probes follow, and finding the artifact was
+// cheaper than adding one.
 func DevSpend(ctx context.Context) (Report, error) {
 	const label = "com.laksh.devspend"
 	r := Report{State: OK}
@@ -280,18 +284,26 @@ func DevSpend(ctx context.Context) (Report, error) {
 		return r, nil
 	}
 
-	fi, err := os.Stat("/tmp/devspend.log")
+	snap, err := spend.Read()
 	if err != nil {
 		r.State = Unknown
-		r.Detail = "loaded, but /tmp/devspend.log is not there to read"
+		r.Detail = "loaded, but no snapshot at " + spend.Path()
 		r.Err = err.Error()
 		return r, nil
 	}
-	r.Last = fi.ModTime()
-	r.Detail = "last wrote " + short(time.Since(r.Last)) + " ago (log mtime, not a completion marker)"
+	r.Last = snap.GeneratedAt
+	r.Detail = fmt.Sprintf("last scan %s ago, tracking %s/mo",
+		short(time.Since(r.Last)), spend.USD(int64(snap.MonthlyCents)))
 	if exit != 0 {
 		r.State = Failing
 		r.Detail = fmt.Sprintf("last run exited %d, see /tmp/devspend.log", exit)
+		return r, nil
+	}
+	// looseapi's own findings ride along. They are its judgement, not a second
+	// one made here: a credit balance falling to zero is the case no card
+	// statement can see, which is the entire reason that repo exists.
+	for _, a := range snap.Worst(2) {
+		r.Notes = append(r.Notes, a.Message)
 	}
 	return r, nil
 }
