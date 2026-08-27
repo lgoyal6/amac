@@ -57,28 +57,30 @@ CREATE INDEX IF NOT EXISTS idx_events_at      ON events(at);
 `
 
 func Open(path string, d Durability) (*Log, error) {
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		return nil, fmt.Errorf("open %s: %w", path, err)
-	}
-
 	sync := "FULL"
 	if d == Relaxed {
 		sync = "NORMAL"
 	}
-	// busy_timeout matters even single-writer: WAL checkpoints and concurrent
-	// readers can still briefly hold locks, and the default is to fail
-	// instantly rather than wait.
-	for _, pragma := range []string{
-		"PRAGMA journal_mode=WAL",
-		"PRAGMA synchronous=" + sync,
-		"PRAGMA busy_timeout=5000",
-		"PRAGMA foreign_keys=ON",
-	} {
-		if _, err := db.Exec(pragma); err != nil {
-			db.Close()
-			return nil, fmt.Errorf("%s: %w", pragma, err)
-		}
+
+	// The pragmas go in the DSN, not into db.Exec, and the difference is not
+	// cosmetic. Every one of these except journal_mode is per-connection state,
+	// and database/sql opens connections on demand: an Exec at startup
+	// configures whichever single connection happens to serve it and leaves
+	// every later one with SQLite's defaults. busy_timeout defaults to zero,
+	// meaning fail instantly, so the moment anything wrote concurrently the
+	// second writer got SQLITE_BUSY rather than waiting the five seconds this
+	// was supposed to grant. In the DSN they apply to every connection the pool
+	// ever opens.
+	dsn := fmt.Sprintf("file:%s?_pragma=journal_mode(WAL)&_pragma=synchronous(%s)"+
+		"&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)", path, sync)
+
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
+	}
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 	if _, err := db.Exec(schema); err != nil {
 		db.Close()

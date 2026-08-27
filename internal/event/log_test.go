@@ -2,6 +2,7 @@ package event
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -322,5 +323,44 @@ func benchAppend(b *testing.B, d Durability) {
 		if _, err := l.Append(ctx, ev); err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+// Pragmas are per-connection state and database/sql opens connections on
+// demand. Setting them with db.Exec configures whichever one served the call
+// and leaves every later connection on SQLite's defaults, where busy_timeout is
+// zero and a second concurrent writer fails instantly instead of waiting.
+//
+// The symptom was SQLITE_BUSY under sixteen concurrent writers on a database
+// whose configuration claimed to allow five seconds of contention.
+func TestEveryConnectionGetsThePragmas(t *testing.T) {
+	l, err := Open(filepath.Join(t.TempDir(), "pragma.db"), Full)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+
+	// Force the pool to hand out several distinct connections at once, then ask
+	// each what it thinks the timeout is.
+	const conns = 8
+	l.DB().SetMaxOpenConns(conns)
+	ctx := context.Background()
+	held := make([]*sql.Conn, 0, conns)
+	for i := 0; i < conns; i++ {
+		c, err := l.DB().Conn(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = append(held, c)
+	}
+	for i, c := range held {
+		var timeout int
+		if err := c.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&timeout); err != nil {
+			t.Fatalf("connection %d: %v", i, err)
+		}
+		if timeout != 5000 {
+			t.Errorf("connection %d has busy_timeout=%d, want 5000", i, timeout)
+		}
+		c.Close()
 	}
 }
