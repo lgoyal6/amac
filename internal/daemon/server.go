@@ -19,6 +19,7 @@ import (
 	"github.com/lgoyal6/amac/internal/apply"
 	"github.com/lgoyal6/amac/internal/attention"
 	"github.com/lgoyal6/amac/internal/event"
+	"github.com/lgoyal6/amac/internal/health"
 	"github.com/lgoyal6/amac/internal/orchestrator"
 	"github.com/lgoyal6/amac/internal/supervisor"
 	"github.com/lgoyal6/amac/internal/tmux"
@@ -82,6 +83,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/crew/open", s.auth(s.crewOpen))
 	mux.HandleFunc("GET /api/crew/artifact", s.auth(s.crewArtifact))
 	mux.HandleFunc("GET /api/health", s.auth(s.health))
+	mux.HandleFunc("POST /api/health/{name}/fix", s.auth(s.healthFix))
+	mux.HandleFunc("POST /api/health/{name}/shell", s.auth(s.healthShell))
+	mux.HandleFunc("GET /api/spend", s.auth(s.spend))
 	mux.HandleFunc("GET /api/events", s.auth(s.events))
 	mux.HandleFunc("GET /api/stream", s.auth(s.stream))
 	mux.HandleFunc("GET /api/agents", s.auth(s.agents))
@@ -283,14 +287,32 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Reports json.RawMessage `json:"reports"`
+		Reports []health.Report `json:"reports"`
 	}
 	if json.Unmarshal(payload, &body) != nil {
 		writeJSON(w, 200, map[string]any{"reports": []any{}})
 		return
 	}
+
+	// Home is joined in from the registry rather than read back from the log.
+	// It is static configuration, so recording a copy of it on every sweep
+	// would be storing the same string 96 times a day, and a log that repeats
+	// itself is a log with less signal in it.
+	type reportView struct {
+		health.Report
+		Home string `json:"home,omitempty"`
+	}
+	out := make([]reportView, 0, len(body.Reports))
+	for _, rep := range body.Reports {
+		v := reportView{Report: rep}
+		if a, ok := health.Find(rep.Name); ok {
+			v.Home = a.Home
+		}
+		out = append(out, v)
+	}
+
 	swept, _ := time.Parse(time.RFC3339Nano, at)
-	writeJSON(w, 200, map[string]any{"at": swept, "reports": body.Reports})
+	writeJSON(w, 200, map[string]any{"at": swept, "reports": out})
 }
 
 type attnState struct {

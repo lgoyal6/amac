@@ -85,6 +85,24 @@ type Automation struct {
 	Every time.Duration
 	Grace time.Duration
 	Check func(context.Context) (Report, error)
+
+	// Home is where someone would go to fix this, and it is declared rather
+	// than inferred for the same reason the cadence is: guessing which repo a
+	// failing pipeline lives in is exactly the kind of confident wrong answer
+	// that sends an agent to edit the wrong tree. Empty means there is nothing
+	// local to open, which is the honest answer for a hosted pipeline whose
+	// fix is a click on someone else's dashboard.
+	Home string
+}
+
+// Find returns one declared automation by name.
+func Find(name string) (Automation, bool) {
+	for _, a := range All() {
+		if a.Name == name {
+			return a, true
+		}
+	}
+	return Automation{}, false
 }
 
 // Sweep probes every automation and applies the lateness test.
