@@ -95,16 +95,6 @@ type Automation struct {
 	Home string
 }
 
-// Find returns one declared automation by name.
-func Find(name string) (Automation, bool) {
-	for _, a := range All() {
-		if a.Name == name {
-			return a, true
-		}
-	}
-	return Automation{}, false
-}
-
 // Sweep probes every automation and applies the lateness test.
 //
 // Probes run sequentially. There are four of them and each is a couple of HTTP

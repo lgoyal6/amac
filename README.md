@@ -65,6 +65,7 @@ Phase 1. A full session runs end to end against both agents:
 
 ```
 amac setup                     install pinned adapters once
+amac init                      write and validate the health roster
 amac hooks -install            wire the agents' own signals into amac
 amac daemon                    the board, on the tailnet
 amac run -agent codex 'task'   start a session, send a prompt, answer it
@@ -105,9 +106,35 @@ do.
 
 ## Automation health
 
-The first subsystem that runs unattended. Ten automations are declared with
-the cadence they are expected to *deliver* at, and a launchd sweep every 15
-minutes records a verdict for each into the log.
+The first subsystem that runs unattended. Automations are declared in
+`~/.amac/health.json` with the cadence they are expected to *deliver* at, and a
+launchd sweep every 15 minutes records a verdict for each into the log. Ten are
+declared on this machine.
+
+```
+amac init                   write a starter roster, then validate it
+```
+
+The roster used to be ten Go constants: my repos, my launchd labels, my log
+paths, compiled in. That was the single reason nobody else could run the part of
+amac that watches automations, which is most of what it does when nobody is
+looking at it. There is deliberately no built-in fallback: a default list of
+someone else's automations would probe paths that do not exist and report a
+healthy machine as broken, and an empty fallback would sweep nothing while
+reporting success. A missing roster is an error naming the file and the command
+that writes one.
+
+Seven probe shapes cover the ten, and the split is honest rather than tidy. Four
+are a launchd job with a completion marker in a log, and they shared an
+implementation before the roster made that visible. What stayed separate is how
+a given pipeline reports itself: a marker carrying a date and no time,
+timestamps encoded in filenames, an n8n API. Those take their repo or workflow
+as a parameter, because flattening them into one shape would describe the world
+less accurately than naming three does.
+
+A bad roster reports every problem it has at once rather than the first, and one
+bad entry fails the whole load. An automation silently dropped is an automation
+nobody is watching.
 
 ```
 amac health                 check now and print

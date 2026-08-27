@@ -17,10 +17,8 @@ import (
 // through a TCP proxy for routine administration. So this probe reads n8n's
 // own REST API over the public host instead, which reports the same executions
 // without opening the database to the internet.
-const (
-	n8nHost       = "n8n-production-a322.up.railway.app"
-	n8nWorkflowID = "LakshJobDiscovery2h"
-)
+// The host and workflow come from the roster. They were constants, which is
+// how the whole health subsystem ended up unusable by anyone but its author.
 
 var httpc = &http.Client{Timeout: 20 * time.Second}
 
@@ -45,12 +43,12 @@ func n8nKey() string {
 // workflow is firing, so it reports Unknown rather than OK. A monitor that
 // says "green" when it only checked that the web server answers is worse than
 // no monitor, because it converts an unknown into a false assurance.
-func JobDiscovery(ctx context.Context) (Report, error) {
+func n8nPipeline(ctx context.Context, n8nHost, n8nWorkflowID string) (Report, error) {
 	r := Report{State: OK}
 
 	key := n8nKey()
 	if key == "" {
-		alive, err := n8nAlive(ctx)
+		alive, err := n8nAlive(ctx, n8nHost)
 		if err != nil || !alive {
 			r.State = Down
 			r.Detail = "n8n /healthz unreachable"
@@ -130,7 +128,7 @@ func JobDiscovery(ctx context.Context) (Report, error) {
 	return r, nil
 }
 
-func n8nAlive(ctx context.Context) (bool, error) {
+func n8nAlive(ctx context.Context, n8nHost string) (bool, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://"+n8nHost+"/healthz", nil)
 	if err != nil {
 		return false, err

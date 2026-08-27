@@ -36,6 +36,8 @@ func main() {
 	switch cmd {
 	case "setup":
 		err = cmdSetup(args)
+	case "init":
+		err = cmdInit(args)
 	case "models":
 		err = cmdModels(args)
 	case "route":
@@ -92,6 +94,8 @@ func usage() {
 
   amac setup
         Install the pinned ACP adapters locally (run once).
+  amac init
+        Write a starter health roster, then validate it.
   amac daemon [-port N] [-localhost]
         Run the control plane and dashboard (tailnet only).
   amac url

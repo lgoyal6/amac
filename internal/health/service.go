@@ -20,21 +20,17 @@ import (
 	"time"
 )
 
-// daemonPort is the default in cmd/amac/daemon.go and what com.amac.daemon
-// runs with. Stated here rather than read from the plist: a mismatch would
-// make this probe report a healthy daemon as down, which is worse than a
-// constant that has to be changed in two places if the port ever moves.
-const daemonPort = "7788"
-
-// AmacDaemon checks that the board is actually being served.
+// serviceOnTailnet checks that a tailnet-bound service is actually serving.
 //
-// The daemon binds the tailnet or refuses to start, so there are three
-// distinguishable states and they are fixed differently: not loaded is a setup
-// problem, loaded with no tailnet is a Tailscale toggle, and loaded with a
-// tailnet but nothing answering is a crash. A single "down" for all three would
-// send you looking in the wrong place.
-func AmacDaemon(ctx context.Context) (Report, error) {
-	const label = "com.amac.daemon"
+// The label and port come from the roster rather than from constants, because a
+// port stated in two places is a probe that reports a healthy daemon as down
+// the day someone moves it.
+//
+// A service binding the tailnet has three distinguishable states and they are
+// fixed differently: not loaded is a setup problem, loaded with no tailnet is a
+// Tailscale toggle, and loaded with a tailnet but nothing answering is a crash.
+// A single "down" for all three sends you looking in the wrong place.
+func serviceOnTailnet(ctx context.Context, label, daemonPort string) (Report, error) {
 	r := Report{State: OK}
 
 	loaded, _, _, err := launchdStatus(ctx, label)
