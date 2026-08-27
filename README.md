@@ -16,6 +16,11 @@ bin/amac daemon             # the board, bound to your tailnet and nothing else
 bin/amac url                # the link, token included, to open on your phone
 ```
 
+AGPL-3.0. Use it, change it, run it. If you distribute it **or run a modified
+version as a network service**, that version has to be open source too, and the
+licence carries an express patent grant from every contributor. If you want it
+under other terms, ask.
+
 macOS, Go 1.26+, tmux. Tailscale for the board; Discord only if you want a phone
 notification, and everything works without it. Nothing runs in a cloud you pay
 for.
