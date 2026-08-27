@@ -14,6 +14,10 @@
 package tmux
 
 import (
+	"bytes"
+	"errors"
+	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -47,13 +51,47 @@ func (s Session) Agent() string {
 	return ""
 }
 
-// List returns every tmux session, newest activity first. A missing tmux
-// server is not an error: it means there are no sessions.
+// run invokes tmux with a UTF-8 locale forced on.
+//
+// Without one, tmux sanitises control characters out of its own -F output and
+// the tab separator comes back as an underscore:
+//
+//	am-amac_1787595768_1787596187_1
+//
+// Every line then has one field instead of four, every session is dropped, and
+// the caller is handed an empty list with no error. An interactive shell has
+// LANG set so this is invisible there; launchd gives an agent none, so the
+// daemon showed a board with nothing on it while seventeen sessions were
+// running. Forced here rather than in the plist because it is a property of
+// reading tmux, not of how amac happens to be started.
+func run(args ...string) ([]byte, error) {
+	cmd := exec.Command("tmux", args...)
+	cmd.Env = append(os.Environ(), "LC_ALL=en_US.UTF-8", "LANG=en_US.UTF-8")
+	return cmd.Output()
+}
+
+// noServer reports the one failure that is not a failure: tmux exits non-zero
+// when no server is running, and "there are no sessions" is the right answer
+// rather than an error.
+func noServer(err error) bool {
+	var ee *exec.ExitError
+	return errors.As(err, &ee) && bytes.Contains(ee.Stderr, []byte("no server running"))
+}
+
+// List returns every tmux session, newest activity first.
+//
+// A missing tmux server gives an empty list and no error. Anything else is
+// returned: an empty board and an unreadable tmux look identical from outside,
+// and telling them apart is the difference between "nothing is running" and
+// "this screen has stopped working".
 func List() ([]Session, error) {
-	out, err := exec.Command("tmux", "list-sessions", "-F",
-		"#{session_name}\t#{session_created}\t#{session_activity}\t#{?session_attached,1,0}").Output()
+	out, err := run("list-sessions", "-F",
+		"#{session_name}\t#{session_created}\t#{session_activity}\t#{?session_attached,1,0}")
 	if err != nil {
-		return nil, nil
+		if noServer(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("tmux list-sessions: %w", err)
 	}
 
 	panes := activePanes()
@@ -83,8 +121,8 @@ type pane struct{ dir, command string }
 // every session in one call; asking per session would be one fork each and
 // there are routinely twenty of them.
 func activePanes() map[string]pane {
-	out, err := exec.Command("tmux", "list-panes", "-a", "-F",
-		"#{session_name}\t#{pane_current_path}\t#{pane_current_command}\t#{?pane_active,1,0}").Output()
+	out, err := run("list-panes", "-a", "-F",
+		"#{session_name}\t#{pane_current_path}\t#{pane_current_command}\t#{?pane_active,1,0}")
 	if err != nil {
 		return nil
 	}

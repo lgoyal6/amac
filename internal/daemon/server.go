@@ -253,7 +253,20 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 // point. The predecessor guessed with a regex and was confidently wrong.
 func (s *Server) tmuxSessions(ctx context.Context) []sessionView {
 	list, err := tmux.List()
-	if err != nil || len(list) == 0 {
+	if err != nil {
+		// Recorded, not swallowed. An empty board and an unreadable tmux look
+		// identical on screen, and this exact confusion cost an hour: the
+		// daemon showed nothing while seventeen sessions were running, because
+		// launchd gives an agent no locale and tmux quietly mangled its own
+		// output. A board that cannot read tmux has to say so.
+		if ev, e := event.New(event.KindDaemon, "daemon", "", map[string]any{
+			"op": "tmux.list", "error": err.Error(),
+		}); e == nil {
+			_, _ = s.log.Append(ctx, ev)
+		}
+		return nil
+	}
+	if len(list) == 0 {
 		return nil
 	}
 	last := s.lastAttention(ctx)
