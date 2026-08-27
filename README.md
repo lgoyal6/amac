@@ -65,6 +65,7 @@ Phase 1. A full session runs end to end against both agents:
 
 ```
 amac setup                     install pinned adapters once
+amac hooks -install            wire the agents' own signals into amac
 amac run -agent codex 'task'   start a session, send a prompt, answer it
 amac probe -all                handshake every agent, record capabilities
 amac log -n 20                 recent events
@@ -166,13 +167,64 @@ converts an unknown into a false assurance.
 
 ## Attention
 
-Remote Control covers Claude Code sessions. It does not cover Codex, which is
-half of what runs here, so this does.
+Every signal that means "this session wants you" lands on `amac attention`,
+which decides whether to interrupt, delivers it if so, and records the decision
+either way.
 
 ```
+amac attention -claude                     from Claude Code's hooks, payload on stdin
 amac attention -codex '<notify payload>'   from Codex's notify hook
 amac attention -bell -session S            from tmux's alert-bell hook
+amac hooks [-install]                      report which of those actually reach amac
 ```
+
+**Claude was out of scope, and that was wrong for two weeks.** The reasoning
+was sound in the abstract: Remote Control covers Claude Code, and rebuilding a
+feature the vendor ships is waste. What it missed is that Claude Code's hooks
+on this machine were still pointing at the predecessor, whose suppression rule
+was the one documented below as having produced nine days of silence. Codex
+came through, Claude did not, and nothing anywhere said so. The log settles it:
+94 attention events on record and every single one of them Codex.
+
+Two failures look identical from a phone, and this was the second kind: not a
+subsystem that broke, a wire that was never connected. So the fix is not only
+the `-claude` path but `amac hooks`, which reports per agent which signals
+actually reach amac and which do not. A control plane that cannot say whether
+its own inputs are connected will lie by omission, and it will do it quietly.
+
+```
+claude
+  ok  Notification       blocked: waiting on you, and says what for
+  ok  Stop               idle: turn finished, carries what it said
+  ok  PostToolUse        working: clears blocked once you approve
+codex
+  ok  notify             idle: turn finished, carries what it said
+  ok  alert-bell         blocked: the only signal Codex has for it
+```
+
+**Claude's hooks are the shape Codex's should have been.** Everything below
+about bells and four-second races is a workaround for a signal that does not
+say what it means. `Notification` fires exactly when Claude is waiting on a
+human *and says what it is waiting for*; `Stop` fires when a turn ends. Each
+means one thing, so neither is coalesced and no bell is involved. What Claude
+does not hand over is the assistant's last message, so it is read out of the
+transcript the hook names: a file the agent wrote, not a rendering of a
+terminal, which is the same class of source as the ACP wire.
+
+**Most hooks are worth showing and not worth interrupting anyone over.** State
+and delivery are decided separately: `UserPromptSubmit`, `PostToolUse`,
+`SessionStart` and `SessionEnd` update the board and ring nothing. That split
+is what finally gives the board a live state for sessions amac did not start,
+and `PostToolUse` in particular is the only thing that clears `blocked` before
+the turn ends. Without it a session reads as waiting on you for the whole run
+after you have already approved the tool, which is exactly the confidently
+wrong state this system exists to stop producing. Since it fires on every tool
+call, an unchanged state writes nothing: a heartbeat in the log is a log nobody
+can read.
+
+agentmon's hooks were left in place rather than replaced. They feed tooling
+still in daily use, their own presence check suppresses their push nearly
+always, and breaking a working tool to install a new one is not an upgrade.
 
 **Two signals, because Codex only offers one and it is the less useful one.**
 The `notify` hook fires solely on `agent-turn-complete`, so a request for

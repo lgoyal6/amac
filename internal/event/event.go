@@ -53,6 +53,13 @@ const (
 	// told apart from a stretch where nothing happened.
 	KindAttention Kind = "attention"
 
+	// What a session amac does not own is doing, as reported by the agent's
+	// own hooks. Separate from session.update, which carries ACP traffic for
+	// sessions amac started: this is the only state available for the twenty
+	// tmux sessions it merely watches, and it is written only when the state
+	// changes so a busy session does not bury the log in its own heartbeat.
+	KindSessionState Kind = "session.state"
+
 	// One individual execution of an automation, reported exactly once
 	// whatever happened after it. Separate from automation.check, which is a
 	// verdict on the newest state and deliberately says nothing about a
