@@ -5,6 +5,8 @@ every automation on one page, on your phone, over Tailscale. Written for one
 machine, mine, and made to run on yours.
 
 [![ci](https://github.com/lgoyal6/amac/actions/workflows/ci.yml/badge.svg)](https://github.com/lgoyal6/amac/actions/workflows/ci.yml)
+[![licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
+[![go](https://img.shields.io/badge/go-1.26%2B-00ADD8.svg)](go.mod)
 
 ```bash
 git clone https://github.com/lgoyal6/amac && cd amac
@@ -238,7 +240,9 @@ elsewhere the notification is simply sent.
   subsystem is guarding against, and the bug that put it there
 - [Contributing](CONTRIBUTING.md)
 
-AGPL-3.0. Use it, change it, run it. If you distribute it **or run a modified
+## Licence
+
+[AGPL-3.0](LICENSE). Use it, change it, run it. If you distribute it **or run a modified
 version as a network service**, that version has to be open source too, and the
 licence carries an express patent grant from every contributor. If you want it
 under other terms, ask.
