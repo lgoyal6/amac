@@ -128,10 +128,12 @@ func (s *Server) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		q := r.URL.Query().Get("token")
-		if subtle.ConstantTimeCompare([]byte(q), []byte(s.token)) == 1 {
+		if s.tokenOK(r.URL.Query().Get("token")) {
+			// A path segment rather than ?token=. Query strings on start_url
+			// are the part of the manifest spec platforms are least consistent
+			// about preserving, and there is no way to test that from here.
 			b = bytes.Replace(b, []byte(`"start_url": "/"`),
-				[]byte(`"start_url": "/?token=`+url.QueryEscape(q)+`"`), 1)
+				[]byte(`"start_url": "/app/`+url.PathEscape(s.token)+`"`), 1)
 		}
 		w.Header().Set("Content-Type", "application/manifest+json")
 		// Never cached: one copy carries a credential and one does not, and a
@@ -157,21 +159,57 @@ func (s *Server) Handler() http.Handler {
 		})
 	}
 
+	// Where the home-screen icon lands. The token is in the path because that
+	// is what start_url points at, and because a launch URL that carries the
+	// credential is the only thing an evicted localStorage cannot undo.
+	mux.HandleFunc("GET /app/{token}", func(w http.ResponseWriter, r *http.Request) {
+		if !s.tokenOK(r.PathValue("token")) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		s.page(w, true)
+	})
+
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
-		b, err := uiFS.ReadFile("ui/index.html")
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(b)
+		s.page(w, s.tokenOK(r.URL.Query().Get("token")))
 	})
 
 	return mux
+}
+
+func (s *Server) tokenOK(got string) bool {
+	return subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) == 1
+}
+
+// page serves the board, pointing the manifest link at a manifest that knows
+// the token when the caller has proved they have one.
+//
+// The link lives in <head>, so Safari fetches it while parsing and has the
+// answer cached before any script in the body runs. Rewriting the href from JS
+// was therefore too late by construction: the manifest iOS installed was always
+// the untokened one, and the icon always opened a board that had never seen a
+// token. It has to be right in the bytes that go out.
+func (s *Server) page(w http.ResponseWriter, tokened bool) {
+	b, err := uiFS.ReadFile("ui/index.html")
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if tokened {
+		b = bytes.Replace(b,
+			[]byte(`<link rel="manifest" href="/manifest.webmanifest">`),
+			[]byte(`<link rel="manifest" href="/manifest.webmanifest?token=`+
+				url.QueryEscape(s.token)+`">`), 1)
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// The page can carry a manifest link with the token in it, so it is never
+	// a shared cache's to hold.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write(b)
 }
 
 // auth accepts the token in a header or a query parameter. The query form is

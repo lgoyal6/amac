@@ -308,16 +308,22 @@
 // so a refresh or a home-screen bookmark keeps working, then strip it from the
 // address bar so it does not sit in screenshots or shoulder-view.
 const url = new URL(location.href);
-if (url.searchParams.get('token')) {
-  localStorage.setItem('amac_token', url.searchParams.get('token'));
-  history.replaceState({}, '', url.pathname);
+// Two ways in. ?token= is the link amac url prints; /app/<token> is where the
+// home-screen icon lands, because start_url is the one place a credential
+// survives Safari deciding to clear the site's storage.
+const fromPath = url.pathname.startsWith('/app/') ? decodeURIComponent(url.pathname.slice(5)) : '';
+const given = url.searchParams.get('token') || fromPath;
+if (given) {
+  localStorage.setItem('amac_token', given);
+  history.replaceState({}, '', '/');
 }
 const TOKEN = localStorage.getItem('amac_token') || '';
 
-// iOS reads the manifest when you tap Add to Home Screen, long after load, so
-// pointing it at the tokened copy here is early enough. Without this the icon
-// launches at "/" in the web app's own storage container, which has never seen
-// the token, and every launch lands on "not authorised".
+// A fallback, not the mechanism. The server writes the tokened href into <head>
+// for anyone who arrived with a token, which is the only version that runs
+// early enough for Safari's manifest fetch. This catches the case where you
+// came back to a bare "/" on a stashed token and then tapped Add to Home
+// Screen, where there is no request for the server to have seen a token on.
 if (TOKEN) {
   document.querySelector('link[rel="manifest"]')
     .setAttribute('href', '/manifest.webmanifest?token=' + encodeURIComponent(TOKEN));
