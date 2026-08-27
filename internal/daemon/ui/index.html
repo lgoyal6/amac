@@ -43,6 +43,7 @@
                color:var(--dim); font-size:14px; font-weight:600; padding:7px 12px 9px;
                border-radius:0; min-height:0; cursor:pointer; }
   nav button.on { color:var(--fg); border-bottom-color:var(--work); }
+  nav .badge.ready { background:var(--work); color:#03121f; }
   nav .badge { display:inline-block; min-width:17px; margin-left:5px; padding:0 5px;
                border-radius:999px; background:var(--block); color:#1a0d04;
                font-size:11px; font-weight:700; }
@@ -161,6 +162,7 @@
   </div>
   <nav>
     <button data-tab="board" class="on">board<span class="badge" id="blockedCount" hidden></span></button>
+    <button data-tab="queue">queue<span class="badge ready" id="readyCount" hidden></span></button>
     <button data-tab="crew">crew</button>
     <button data-tab="health">health</button>
     <button data-tab="spend">spend</button>
@@ -169,6 +171,19 @@
 
 <main>
   <div id="board" class="grid"><div class="empty">no sessions yet</div></div>
+
+  <section id="queue" hidden>
+    <div class="compose">
+      <input id="taskTitle" placeholder="what needs doing?" enterkeyhint="go">
+      <input id="taskDir" placeholder="working directory (default: home)">
+      <div class="row">
+        <button id="taskFile" class="sm">file it</button>
+        <button id="taskClaim" class="sm go">claim next and open a session</button>
+        <span class="hdetail" id="taskSaid"></span>
+      </div>
+    </div>
+    <div id="queueOut"></div>
+  </section>
 
   <section id="crew" hidden>
     <div class="compose">
@@ -704,6 +719,83 @@ async function dispatch(btn, what, name) {
   refresh();
 }
 
+// ------------------------------------------------------------------ queue --
+
+// The board never finishes work on a worker's behalf. A task is done when the
+// thing doing it says so, and a button that closed a task the moment a session
+// opened would be reporting an intention as a result. What it offers instead is
+// the fencing token, because every later call needs it and nobody can guess it.
+async function loadQueue() {
+  const r = await api('/api/tasks');
+  if (!r.ok) return;
+  const list = await r.json();
+  const el = $('queueOut');
+
+  const ready = list.filter(t => t.state === 'ready').length;
+  const badge = $('readyCount');
+  badge.hidden = ready === 0;
+  badge.textContent = ready;
+
+  if (!list.length) { el.className = 'empty'; el.textContent = 'nothing queued'; return; }
+  el.className = 'card';
+  el.innerHTML = list.map(t => `
+    <div class="hrow">
+      <span class="hstate ${esc(qstate(t))}">${esc(t.state)}</span>
+      <div style="min-width:0;flex:1">
+        <div class="hname">${esc(t.title)}</div>
+        <div class="hdetail">${esc(t.dir || '')}</div>
+        ${t.state === 'claimed' ? `<div class="hdetail">${esc(t.owner)} · token ${t.token} · lease ${ago(t.lease)}</div>` : ''}
+        ${t.attempt > 1 ? `<div class="hdetail">attempt ${t.attempt}: earlier ones did not finish</div>` : ''}
+        ${t.result ? `<div class="hdetail">${esc(t.result)}</div>` : ''}
+        ${t.state === 'claimed' ? `<div class="acts">
+            <button class="sm" data-id="${esc(t.id)}" data-token="${t.token}" data-state="done">done</button>
+            <button class="sm" data-id="${esc(t.id)}" data-token="${t.token}" data-state="released">release</button>
+          </div>` : ''}
+      </div>
+    </div>`).join('');
+
+  el.querySelectorAll('.acts button').forEach(b => {
+    b.onclick = async () => {
+      b.disabled = true;
+      const r = await api(`/api/tasks/${encodeURIComponent(b.dataset.id)}/finish`, {
+        method: 'POST',
+        body: JSON.stringify({ token: Number(b.dataset.token), state: b.dataset.state }),
+      });
+      if (!r.ok) $('taskSaid').textContent = (await r.json()).error;
+      loadQueue();
+    };
+  });
+}
+
+// A task's state is not a health verdict, but the same four colours read the
+// same way at a glance, which is worth more than a fifth vocabulary.
+const qstate = t => ({ ready: 'late', claimed: 'ok', done: 'ok', failed: 'failing', canceled: 'unknown' })[t.state] || 'unknown';
+
+async function fileTask() {
+  const title = $('taskTitle').value.trim();
+  if (!title) return;
+  const r = await api('/api/tasks', {
+    method: 'POST',
+    body: JSON.stringify({ title, dir: $('taskDir').value.trim() }),
+  });
+  $('taskSaid').textContent = r.ok ? 'filed' : (await r.json()).error;
+  if (r.ok) $('taskTitle').value = '';
+  loadQueue();
+}
+
+async function claimNext() {
+  $('taskSaid').textContent = 'claiming...';
+  const r = await api('/api/tasks/claim', { method: 'POST', body: JSON.stringify({ owner: 'board' }) });
+  const d = await r.json();
+  $('taskSaid').textContent = r.ok ? d.attach : d.error;
+  loadQueue();
+  refresh();
+}
+
+$('taskFile').onclick = fileTask;
+$('taskClaim').onclick = claimNext;
+$('taskTitle').addEventListener('keydown', ev => { if (ev.key === 'Enter') fileTask(); });
+
 // ------------------------------------------------------------------ spend --
 
 // Read from looseapi rather than recomputed. amac can only see the sessions it
@@ -742,9 +834,10 @@ document.querySelectorAll('nav button').forEach(b => {
   b.onclick = () => {
     tab = b.dataset.tab;
     document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
-    for (const id of ['board', 'crew', 'health', 'spend']) $(id).hidden = id !== tab;
+    for (const id of ['board', 'queue', 'crew', 'health', 'spend']) $(id).hidden = id !== tab;
     $('startBar').hidden = tab !== 'board';
     if (tab === 'board') render();
+    if (tab === 'queue') loadQueue();
     if (tab === 'crew') loadRuns();
     if (tab === 'health') loadHealth();
     if (tab === 'spend') loadSpend();

@@ -21,6 +21,7 @@ import (
 	"github.com/lgoyal6/amac/internal/event"
 	"github.com/lgoyal6/amac/internal/health"
 	"github.com/lgoyal6/amac/internal/orchestrator"
+	"github.com/lgoyal6/amac/internal/queue"
 	"github.com/lgoyal6/amac/internal/supervisor"
 	"github.com/lgoyal6/amac/internal/tmux"
 )
@@ -32,11 +33,12 @@ type Server struct {
 	sup   *supervisor.Supervisor
 	log   *event.Log
 	orch  *orchestrator.Orchestrator
+	queue *queue.Queue
 	token string
 }
 
-func New(sup *supervisor.Supervisor, log *event.Log, orch *orchestrator.Orchestrator, token string) *Server {
-	return &Server{sup: sup, log: log, orch: orch, token: token}
+func New(sup *supervisor.Supervisor, log *event.Log, orch *orchestrator.Orchestrator, q *queue.Queue, token string) *Server {
+	return &Server{sup: sup, log: log, orch: orch, queue: q, token: token}
 }
 
 // Token returns the shared secret, creating it on first run.
@@ -89,6 +91,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/health/{name}/fix", s.auth(s.healthFix))
 	mux.HandleFunc("POST /api/health/{name}/shell", s.auth(s.healthShell))
 	mux.HandleFunc("GET /api/spend", s.auth(s.spend))
+	mux.HandleFunc("GET /api/tasks", s.auth(s.tasks))
+	mux.HandleFunc("POST /api/tasks", s.auth(s.fileTask))
+	mux.HandleFunc("POST /api/tasks/claim", s.auth(s.claimTask))
+	mux.HandleFunc("POST /api/tasks/{id}/finish", s.auth(s.finishTask))
 	mux.HandleFunc("GET /api/events", s.auth(s.events))
 	mux.HandleFunc("GET /api/stream", s.auth(s.stream))
 	mux.HandleFunc("GET /api/agents", s.auth(s.agents))

@@ -16,6 +16,7 @@ import (
 	"github.com/lgoyal6/amac/internal/event"
 	"github.com/lgoyal6/amac/internal/model"
 	"github.com/lgoyal6/amac/internal/orchestrator"
+	"github.com/lgoyal6/amac/internal/queue"
 	"github.com/lgoyal6/amac/internal/router"
 	"github.com/lgoyal6/amac/internal/supervisor"
 )
@@ -68,9 +69,14 @@ func cmdDaemon(args []string) error {
 	reg, _ := model.FromEnv()
 	orch := orchestrator.New(sup, router.New(reg, log), log)
 
+	q, err := queue.Open(log)
+	if err != nil {
+		return err
+	}
+
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(host, fmt.Sprint(*port)),
-		Handler:           daemon.New(sup, log, orch, token).Handler(),
+		Handler:           daemon.New(sup, log, orch, q, token).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		// No WriteTimeout: /api/stream is a long-lived SSE connection and a
 		// write deadline would sever it on a fixed schedule. Idle connections
