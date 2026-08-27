@@ -79,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/answer", s.auth(s.answerSession))
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.auth(s.stopSession))
 	mux.HandleFunc("GET /api/sessions/{id}/pane", s.auth(s.pane))
+	mux.HandleFunc("GET /api/panes", s.auth(s.panes))
 	mux.HandleFunc("POST /api/sessions/{id}/keys", s.auth(s.sendKeys))
 	mux.HandleFunc("GET /api/sessions/{id}/files", s.auth(s.files))
 	mux.HandleFunc("GET /api/sessions/{id}/file", s.auth(s.file))
