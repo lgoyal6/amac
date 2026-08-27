@@ -96,3 +96,35 @@ func TestArtifactRejectsAnythingItDidNotProduce(t *testing.T) {
 		}
 	}
 }
+
+// The bug this guards, in the log that produced it:
+//
+//	23:32:25  turn-complete    sent=1
+//	23:32:29  wants-attention  sent=0  "already notified 4s ago"
+//
+// A finished Codex turn fires the notify hook and the terminal bell inside the
+// same second. amac correctly recognised the bell as a duplicate and withheld
+// it. The board then read the newest event regardless, so the withheld bell
+// overwrote the turn-complete it duplicated and the card read blocked for four
+// hours about a session that had finished and said so.
+func TestSuppressedDuplicateIsNotEvidence(t *testing.T) {
+	if !isDuplicateSignal(false, "already notified 4s ago") {
+		t.Error("a bell withheld for duplicating a notify must be skipped")
+	}
+	// Every other suppression describes a real signal amac merely declined to
+	// deliver. The session did want attention; not interrupting is not the same
+	// as it not having asked.
+	for _, why := range []string{
+		"you are looking at am-mint",
+		"AMAC_QUIET=1",
+		"discord failed: 500",
+	} {
+		if isDuplicateSignal(false, why) {
+			t.Errorf("%q is a real signal held back, not a duplicate", why)
+		}
+	}
+	// A delivered signal is always evidence.
+	if isDuplicateSignal(true, "") {
+		t.Error("a delivered signal must count")
+	}
+}

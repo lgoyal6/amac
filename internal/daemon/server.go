@@ -78,6 +78,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.auth(s.stopSession))
 	mux.HandleFunc("GET /api/sessions/{id}/pane", s.auth(s.pane))
 	mux.HandleFunc("POST /api/sessions/{id}/keys", s.auth(s.sendKeys))
+	mux.HandleFunc("GET /api/sessions/{id}/files", s.auth(s.files))
+	mux.HandleFunc("GET /api/sessions/{id}/file", s.auth(s.file))
+	mux.HandleFunc("GET /api/sessions/{id}/diff", s.auth(s.diff))
 	mux.HandleFunc("GET /api/crew", s.auth(s.crewRuns))
 	mux.HandleFunc("POST /api/crew/plan", s.auth(s.crewPlan))
 	mux.HandleFunc("POST /api/crew/open", s.auth(s.crewOpen))
@@ -91,6 +94,29 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/agents", s.auth(s.agents))
 	mux.HandleFunc("POST /api/applications", s.auth(s.recordApplication))
 	mux.HandleFunc("OPTIONS /api/", s.preflight)
+
+	// The manifest and its icons are the only things served without a token,
+	// and they have to be: iOS fetches both while adding to the home screen,
+	// from a context that has none of the page's storage. Neither carries data
+	// about this machine, so there is nothing to protect. The tailnet is still
+	// the outer gate.
+	for _, asset := range []struct{ path, mime string }{
+		{"manifest.webmanifest", "application/manifest+json"},
+		{"icon-180.png", "image/png"},
+		{"icon-192.png", "image/png"},
+		{"icon-512.png", "image/png"},
+	} {
+		mux.HandleFunc("GET /"+asset.path, func(w http.ResponseWriter, r *http.Request) {
+			b, err := uiFS.ReadFile("ui/" + asset.path)
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", asset.mime)
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+			w.Write(b)
+		})
+	}
 
 	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -320,14 +346,36 @@ type attnState struct {
 	at            time.Time
 }
 
-// lastAttention reads the newest attention event per session in one query.
-// One query per session would be twenty round trips for a page that refreshes.
+// lastAttention reads the newest usable attention event per session.
+//
+// Usable is doing real work here. A finished Codex turn fires both signals
+// within the same second: the notify hook, which knows what the agent said, and
+// the terminal bell, which knows only that something happened. The bell arrives
+// second, amac recognises it as a duplicate and withholds it, and that decision
+// is correct and was working.
+//
+// The board then read the newest event regardless, so the withheld bell
+// overwrote the turn-complete it duplicated and the card read blocked. Not for a
+// moment: until the next turn, which for a session waiting on a human is
+// indefinitely. Sessions sat there claiming to want something four hours after
+// they had finished and said so.
+//
+// A signal suppressed *because it duplicates another* is not independent
+// evidence of anything, so it is skipped and the one it duplicated is used.
+// Suppression for any other reason is left alone: "you are looking at it" means
+// the session genuinely did want attention and amac merely declined to
+// interrupt, which is a real block and should still show as one.
+//
+// Five per session rather than one, because the duplicate can itself be
+// preceded by another. One query still, for a page that refreshes constantly.
 func (s *Server) lastAttention(ctx context.Context) map[string]attnState {
 	rows, err := s.log.DB().QueryContext(ctx, `
-		SELECT session, at, payload FROM events
-		 WHERE kind = ? AND seq IN (
-		       SELECT MAX(seq) FROM events WHERE kind = ? AND session != '' GROUP BY session)`,
-		string(event.KindAttention), string(event.KindAttention))
+		SELECT session, at, payload FROM (
+		  SELECT session, at, payload, seq,
+		         ROW_NUMBER() OVER (PARTITION BY session ORDER BY seq DESC) AS rn
+		    FROM events WHERE kind = ? AND session != ''
+		) WHERE rn <= 5 ORDER BY session, seq DESC`,
+		string(event.KindAttention))
 	if err != nil {
 		return nil
 	}
@@ -340,11 +388,21 @@ func (s *Server) lastAttention(ctx context.Context) map[string]attnState {
 		if err := rows.Scan(&sess, &at, &payload); err != nil {
 			continue
 		}
+		if _, taken := out[sess]; taken {
+			continue // rows are newest-first, so the first usable one wins
+		}
 		var body struct {
 			Reason  string `json:"reason"`
 			Message string `json:"message"`
+			Outcome struct {
+				Sent bool   `json:"sent"`
+				Why  string `json:"why"`
+			} `json:"outcome"`
 		}
 		if err := json.Unmarshal(payload, &body); err != nil {
+			continue
+		}
+		if isDuplicateSignal(body.Outcome.Sent, body.Outcome.Why) {
 			continue
 		}
 		a := attnState{state: "idle", detail: body.Message}
@@ -361,6 +419,16 @@ func (s *Server) lastAttention(ctx context.Context) map[string]attnState {
 		out[sess] = a
 	}
 	return out
+}
+
+// dedupePrefix is the reason attention.Handle records when it withholds a
+// signal for being the same event it has already reported. Matching on the
+// string is not ideal and is still better than the alternative on offer, which
+// was a board that says blocked about sessions that are not.
+const dedupePrefix = "already notified"
+
+func isDuplicateSignal(sent bool, why string) bool {
+	return !sent && strings.HasPrefix(why, dedupePrefix)
 }
 
 func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
