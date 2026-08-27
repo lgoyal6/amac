@@ -215,10 +215,51 @@ if (url.searchParams.get('token')) {
 const TOKEN = localStorage.getItem('amac_token') || '';
 
 const $ = id => document.getElementById(id);
-const api = (path, opts = {}) => fetch(path, {
-  ...opts,
-  headers: { 'Content-Type': 'application/json', 'X-Amac-Token': TOKEN, ...(opts.headers || {}) },
-});
+// Every API route needs the token, and a device that does not have one gets a
+// page with working chrome and nothing in it. The only feedback used to be the
+// connection pill saying "reconnecting", which points at the network and not at
+// the actual problem: opening the dashboard by hostname instead of from the
+// link that carries the token. An empty board and an unauthorised board looked
+// identical, which is the same failure this system keeps finding elsewhere.
+let unauthorized = false;
+
+const api = async (path, opts = {}) => {
+  const r = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'X-Amac-Token': TOKEN, ...(opts.headers || {}) },
+  });
+  if (r.status === 401 && !unauthorized) {
+    unauthorized = true;
+    showUnauthorized();
+  }
+  return r;
+};
+
+function showUnauthorized() {
+  $('dot').classList.remove('on');
+  $('connText').textContent = 'no token';
+  const msg = TOKEN
+    ? 'The token this device has was rejected. It may have been rotated on the Mac.'
+    : 'This device has no token, so every API call is refused.';
+  document.querySelector('main').innerHTML = `
+    <div class="card" style="max-width:520px;margin:0 auto">
+      <div class="top"><span class="name">not authorised</span></div>
+      <div class="detail" style="white-space:normal">${esc(msg)}</div>
+      <div class="detail" style="white-space:normal;margin-top:9px">
+        Open the dashboard from the full link, which carries the token once and
+        stores it on this device:
+      </div>
+      <div class="pane" style="white-space:pre-wrap">${esc(location.origin)}/?token=&lt;token&gt;</div>
+      <div class="detail" style="white-space:normal;margin-top:9px">
+        On the Mac: <code>cat ~/.amac/token</code>, or run <code>amac daemon</code>
+        and it prints the whole link.
+      </div>
+    </div>`;
+  // Nothing below this point can succeed, and a page that keeps retrying while
+  // showing an explanation is a page that will overwrite the explanation.
+  clearInterval(refreshLoop);
+  if (stream) stream.close();
+}
 const esc = s => { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; };
 
 function ago(iso) {
@@ -259,6 +300,7 @@ function scheduleRender() {
 }
 
 async function refresh() {
+  if (unauthorized) return;
   const r = await api('/api/sessions');
   if (!r.ok) return;
   const list = await r.json();
@@ -711,11 +753,18 @@ document.querySelectorAll('nav button').forEach(b => {
 
 // ------------------------------------------------------------------ stream --
 
+let stream = null;
+let refreshLoop = null;
+
 function connect() {
+  // No token at all: say so without a round trip that can only 401.
+  if (!TOKEN) { unauthorized = true; showUnauthorized(); return; }
   const es = new EventSource(`/api/stream?since=${lastSeq}&token=${encodeURIComponent(TOKEN)}`);
+  stream = es;
 
   es.onopen = () => { $('dot').classList.add('on'); $('connText').textContent = 'live'; };
   es.onerror = () => {
+    if (unauthorized) { es.close(); return; }
     $('dot').classList.remove('on');
     $('connText').textContent = 'reconnecting';
     // EventSource retries on its own and replays from Last-Event-ID, so there
@@ -778,7 +827,7 @@ $('prompt').addEventListener('keydown', async ev => {
 loadAgents();
 refresh();
 connect();
-setInterval(refresh, 15000);   // backstop if the stream silently stalls
+refreshLoop = setInterval(refresh, 15000);   // backstop if the stream silently stalls
 </script>
 </body>
 </html>

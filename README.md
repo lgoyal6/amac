@@ -396,6 +396,16 @@ amac daemon                    tailnet only, or it does not start
                                launchd: com.amac.daemon, restarts itself
 ```
 
+`amac url` prints the link with the token in it, because assembling it by hand
+meant knowing the port, finding the tailnet address and catting the token, and
+the device that needs the link is the one that cannot do any of those.
+
+A device that opens the board without a token gets a page that says so. It used
+to get working chrome, an empty board and a connection pill reading
+`reconnecting`, which points at the network rather than at the actual cause. An
+empty board and an unauthorised one looked identical, which is this system's
+recurring bug wearing a different hat.
+
 It installs to a home screen: a manifest, an icon and `display: standalone`, so
 it opens as an app rather than a tab. Those three files are the only things
 served without a token, because iOS fetches them while adding to the home screen
