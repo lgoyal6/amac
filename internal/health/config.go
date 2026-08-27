@@ -29,6 +29,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/lgoyal6/amac/internal/event"
 )
 
 // ConfigPath is where the roster lives.
@@ -74,14 +76,20 @@ func (e ErrNoConfig) Error() string {
 // the valid ones, never a skipped automation: an automation silently dropped
 // from the roster is an automation nobody is watching, which is the one outcome
 // this package exists to prevent.
-var probeKinds = map[string]probeMaker{
-	"launchd_marker":       newLaunchdMarker,
-	"service":              newService,
-	"marker_fields":        newMarkerFields,
-	"spend_snapshot":       newSpendSnapshot,
-	"github_delivery_file": newGitHubDeliveryFile,
-	"github_newest_file":   newGitHubNewestFile,
-	"n8n":                  newN8N,
+// kinds are built per load rather than held in a package variable, because one
+// of them needs the event log and reaching for a global to avoid threading it
+// would be trading a parameter for a thing nobody can see.
+func kinds(log *event.Log) map[string]probeMaker {
+	return map[string]probeMaker{
+		"launchd_marker":       newLaunchdMarker,
+		"service":              newService,
+		"marker_fields":        newMarkerFields,
+		"spend_snapshot":       newSpendSnapshot,
+		"github_delivery_file": newGitHubDeliveryFile,
+		"github_newest_file":   newGitHubNewestFile,
+		"n8n":                  newN8N,
+		"heartbeat":            newHeartbeat(log),
+	}
 }
 
 // probeMaker turns one declaration into the check that reads it. It returns an
@@ -89,9 +97,9 @@ var probeKinds = map[string]probeMaker{
 // fails to load instead of failing at sweep time.
 type probeMaker func(Declaration) (func(context.Context) (Report, error), error)
 
-func kindNames() string {
-	names := make([]string, 0, len(probeKinds))
-	for k := range probeKinds {
+func kindNames(probes map[string]probeMaker) string {
+	names := make([]string, 0, len(probes))
+	for k := range probes {
 		names = append(names, k)
 	}
 	sort.Strings(names)
@@ -103,7 +111,7 @@ func kindNames() string {
 // Validation is strict and complete: it reports every problem it finds rather
 // than the first, because someone editing this file by hand should not have to
 // run the command five times to learn about five typos.
-func Load(path string) ([]Automation, error) {
+func Load(path string, log *event.Log) ([]Automation, error) {
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return nil, ErrNoConfig{Path: path}
@@ -122,6 +130,7 @@ func Load(path string) ([]Automation, error) {
 		return nil, fmt.Errorf("%s declares no automations", path)
 	}
 
+	probes := kinds(log)
 	var problems []string
 	seen := map[string]bool{}
 	out := make([]Automation, 0, len(cfg.Automations))
@@ -155,9 +164,9 @@ func Load(path string) ([]Automation, error) {
 			}
 		}
 
-		mk, ok := probeKinds[d.Probe]
+		mk, ok := probes[d.Probe]
 		if !ok {
-			problems = append(problems, fmt.Sprintf("%s: unknown probe %q (have: %s)", where, d.Probe, kindNames()))
+			problems = append(problems, fmt.Sprintf("%s: unknown probe %q (have: %s)", where, d.Probe, kindNames(probes)))
 			continue
 		}
 		check, err := mk(d)

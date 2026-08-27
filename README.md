@@ -198,6 +198,43 @@ dies quietly still produces a finding, and no probe has to remember to check.
 
 A probe that fails reports `unknown`, never `ok`.
 
+### Jobs amac cannot reach
+
+Every probe above pulls: it reads the artifact a job commits, the marker it
+appends, the file it writes. Pulling is the stronger design and it is why this
+counts deliveries rather than runs, because an artifact only exists once work
+landed and a ping can be sent by a job that did nothing.
+
+It is also why amac could only watch this Mac and a GitHub repo. A cron job on a
+VPS, a pipeline on a runner somewhere else, a script on a Linux box: invisible,
+not because watching them is hard but because there is no artifact within reach.
+
+So a job can post instead, and one line is the whole integration:
+
+```bash
+curl -X POST -H "X-Amac-Token: $TOKEN" https://your-mac:7788/api/beat/vps-backup
+```
+
+It gets the same cadence, the same grace and the same lateness test as
+everything else, because a heartbeat is a different way of learning the same
+fact rather than a different kind of automation with weaker rules. A job may say
+more if it has more to say:
+
+```
+vps-backup   failing   disk full
+                       · reported count 3
+```
+
+Declared but never heard from is `unknown`, not `late`: a job nobody has wired
+up yet and a job that has stopped are different problems, and there is nothing
+to measure lateness from anyway. A failure report still counts as contact, so
+`Last` moves, because a job that fails and keeps saying so is in a different
+situation from one that failed and went quiet.
+
+The weakness is stated rather than designed away. A push says a job ran; it
+cannot say the job delivered. Where an artifact is reachable, read the artifact.
+This is for where one is not.
+
 ### Preventions, and services
 
 Three of the nine are not deliveries in the sense above, and each needed the

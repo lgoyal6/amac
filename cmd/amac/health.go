@@ -54,7 +54,7 @@ func cmdHealth(args []string) error {
 	// roster reports every automation as fine by never looking at one, which is
 	// the exact failure this command exists to prevent, so a bad or missing
 	// roster stops the command rather than producing a clean bill of health.
-	roster, err := health.Roster()
+	roster, err := health.Roster(log)
 	if err != nil {
 		return err
 	}
