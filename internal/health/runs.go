@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -343,10 +344,15 @@ func launchdRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
 	jobs := []struct{ name, log string }{
 		{"hacklist-local-passes", home + "/luma-hackathon-calendar/logs/local-passes.log"},
 		{"brew-autoupgrade", home + "/Library/Logs/brew-upgrade.log"},
+		{"disk-sweep", home + "/Library/Logs/sweep.log"},
+		{"tmux-idle-reaper", home + "/Library/Logs/tmux-idle-reaper.log"},
 	}
 	var out []Run
 	for _, j := range jobs {
 		for _, m := range allMarkers(j.log) {
+			if !reportableRun(j.name, m.note) {
+				continue
+			}
 			id := m.at.UTC().Format(time.RFC3339)
 			if seen[key(j.name, id)] {
 				continue
@@ -356,8 +362,37 @@ func launchdRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
 				r.Status = RunFailed
 				r.Detail = fmt.Sprintf("%d step(s) failed", n)
 			}
+			if note := strings.TrimSpace(m.note); j.name == "tmux-idle-reaper" || j.name == "disk-sweep" {
+				r.Detail = note
+			}
 			out = append(out, r)
 		}
 	}
 	return out, nil
+}
+
+// reportableRun decides whether a completion marker is worth reporting as its
+// own run.
+//
+// Two jobs need filtering, for opposite reasons.
+//
+// The reaper runs every thirty minutes and almost every run correctly does
+// nothing. Reporting each one is forty-eight lines a day saying nothing
+// happened, and the digest already learned this lesson: a channel that pings
+// that often gets muted, and a muted channel is how nothing reached the phone
+// for nine days. The state sweep already answers "is it still reaping". What
+// belongs in a per-run report is the run that actually killed something, which
+// is a session ended on this machine without anyone asking for it.
+//
+// The sweep writes a banner before it does any work, so its log contains
+// markers that are not runs at all. Only the line that says the run finished
+// counts as one.
+func reportableRun(name, note string) bool {
+	switch name {
+	case "tmux-idle-reaper":
+		return !strings.Contains(note, "(0 reaped)")
+	case "disk-sweep":
+		return strings.Contains(note, "done")
+	}
+	return true
 }
