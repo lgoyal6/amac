@@ -1,8 +1,9 @@
 # amac
 
-A control plane for the AI coding agents running on your Mac. Every session and
-every automation on one page, on your phone, over Tailscale. Written for one
-machine, mine, and made to run on yours.
+A local-first control plane for the AI coding agents and automations running on
+your Mac. Every session, delivery, permission prompt and action item lives on
+one page, on your phone, over Tailscale. Written for one machine, mine, and made
+to run on yours.
 
 [![ci](https://github.com/lgoyal6/amac/actions/workflows/ci.yml/badge.svg)](https://github.com/lgoyal6/amac/actions/workflows/ci.yml)
 [![licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
@@ -19,7 +20,8 @@ bin/amac url                # the link, token included, to open on your phone
 ```
 
 Go 1.26+, tmux, and Tailscale for the board. Discord only if you want a phone
-notification; everything works without it. Nothing runs in a cloud you pay for.
+notification; everything works without it. Notion and LooseAPI are optional
+data sources for Jobs and Money. Nothing runs in a cloud you pay for.
 
 ## What it does that the terminal cannot
 
@@ -29,6 +31,8 @@ notification; everything works without it. Nothing runs in a cloud you pay for.
 - The uncommitted diff an agent has actually produced, as opposed to what it
   says it produced.
 - What all of it costs.
+- Which job follow-up, service alert or credit balance needs action without
+  waiting for another dashboard to load.
 
 Agents are not scarce any more; attention is. At any moment there are several
 Claude Code and Codex sessions running here, and the hard part is no longer
@@ -39,30 +43,36 @@ amac is the layer macOS does not have for that. It is called an OS in the sense
 ROS is: not a kernel, but the process model, scheduler, permission system and
 journal for a class of thing the host does not manage.
 
-**The one design decision: everything is an event.** Every subsystem appends to
-one append-only log and subscribes to it; nothing queries another subsystem
-directly. The board is a view over the log, automations are subscribers, and
-"why did it do that" is answered by replay rather than by guessing.
+**The core design decision: every transition is an event.** Agent and
+automation activity is appended to one journal, so "why did it do that" is
+answered by replay rather than by guessing. Small transactional tables hold
+state that must be current or atomic—queue ownership and the local Jobs cache—
+while external systems enter through explicit adapters rather than screen
+scraping.
 
-## The board
+## The dashboard
 
 One page on the tailnet showing every agent session on this machine, whatever
-started it, with the thing you have not answered at the top. It installs to a
-phone's home screen and opens as an app.
+started it, plus the automations and personal systems those agents maintain. It
+installs to a phone's home screen and opens as an app.
 
 ```
 amac daemon      tailnet only, or it does not start
 amac url         the link with the token in it
 ```
 
-- **board** — every session, its live state, and when that state was
-  established. `blocked, asked 4h ago` hands the judgement to you; `blocked`
-  alone claims something about right now that the log cannot support.
-- **wall** — every session's pane at once, for when the question is which of
-  twelve is doing something.
-- **queue** and **crew** — work agents pull from, and the org (both below).
-- **health** — the automation sweep, read out of the log rather than re-derived.
-- **spend** — what the agents cost, by project and by model.
+- **Home** — only things that need action. Machine capacity is shown separately
+  from automation failure, so a busy Mac does not make a healthy job look red.
+- **Agents** — board, wall, queue and crew. Every session's live state, panes,
+  work and handoffs are together without crowding the top-level navigation.
+- **Automations** — delivery health, schedule and host for every declared job.
+- **Money** — agent cost plus LooseAPI services, trials, credits, provider
+  health, alerts and recent billing events.
+- **Jobs** — a fast local view of submitted applications, with search, status,
+  follow-up dates and Notion sync.
+
+`blocked, asked 4h ago` hands the judgement to you; `blocked` alone claims
+something about right now that the log cannot support.
 
 A pane is **mirrored, never parsed**. The board can answer a permission prompt
 in a session amac does not own, but nothing infers what the prompt says: the
@@ -74,6 +84,25 @@ rejected.
 It also reads the uncommitted diff and browses the session's directory, because
 an agent that says it fixed the bug and one that has fixed the bug look
 identical in a terminal.
+
+## Jobs and Money
+
+These are real workloads on the same control plane, not separate dashboards
+embedded in it.
+
+**Jobs is local first.** Browser and email sensors reconcile into one SQLite
+row by company and role. The dashboard reads that cache immediately; it never
+waits for Notion to render or for its API on an ordinary page load. An explicit
+sync imports submitted applications from the existing Notion tracker, while
+discovery states such as `New` and `Collected` remain outside the application
+view. Status and follow-up changes save locally first and mirror to Notion. If
+Notion is unavailable, the edit succeeds and AMAC shows that the backup still
+needs to sync.
+
+**Money is a safe projection of LooseAPI.** It shows service totals, trials,
+credit balances, alerts, provider health and recent events alongside agent cost
+by project and model. Gmail message IDs and subjects never enter the AMAC API;
+detailed provider errors stay in LooseAPI's own logs.
 
 ## Automation health
 
@@ -214,7 +243,8 @@ ships it. What is left is what Remote Control does not reach.
    models rather than stubs
 3. **Orchestrator**: grade the prompt, convene as many agents as it warrants,
    with a per-task token budget
-4. **Sensors**: browser extension and email parsing for an application tracker
+4. ~~**Sensors**: browser extension and email parsing for an application
+   tracker, with a local cache and Notion backup~~ — shipped
 5. **Observer**: what I am working on, metadata first, pixels only for
    allowlisted apps
 6. **Miner**: patterns in the log become suggested automations
