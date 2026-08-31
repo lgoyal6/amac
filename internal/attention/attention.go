@@ -136,19 +136,7 @@ func render(n Notice) string {
 	if name == "" {
 		name = n.Agent
 	}
-	head := "🔴 **" + name + "** needs you"
-	if n.Reason == TurnComplete {
-		head = "🟡 **" + name + "** finished its turn"
-	}
-	body := strings.TrimSpace(n.Message)
-	if body == "" {
-		body = "Waiting on you."
-	}
-	// Keep the preview short: this is a phone banner, not a transcript.
-	if len(body) > 400 {
-		body = body[:400] + "…"
-	}
-	message := head + " · " + n.Agent + "\n" + body
+	message := "🔔 **" + name + "** needs you"
 	if link := discord.BoardURL(n.Session); link != "" {
 		message += "\n" + link
 	}

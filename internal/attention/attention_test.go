@@ -125,20 +125,9 @@ func TestRender(t *testing.T) {
 	if !contains(got, "**mint** needs you") {
 		t.Fatalf("the am- prefix is noise on a phone: %q", got)
 	}
-	if !contains(got, "Waiting on you.") {
-		t.Fatalf("a bell carries no message, so say something: %q", got)
-	}
 	got = render(Notice{Session: "am-mint", Agent: "codex", Reason: TurnComplete, Message: "all 47 tests pass"})
-	if !contains(got, "finished its turn") || !contains(got, "all 47 tests pass") {
-		t.Fatalf("turn-complete should lead with the result: %q", got)
-	}
-	// A phone banner, not a transcript.
-	long := make([]byte, 900)
-	for i := range long {
-		long[i] = 'x'
-	}
-	if got = render(Notice{Session: "s", Reason: TurnComplete, Message: string(long)}); len(got) > 500 {
-		t.Fatalf("message not truncated, length %d", len(got))
+	if !contains(got, "**mint** needs you") || contains(got, "all 47 tests pass") {
+		t.Fatalf("all session alerts should be the same small call to action: %q", got)
 	}
 }
 

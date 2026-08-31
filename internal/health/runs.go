@@ -371,26 +371,13 @@ func launchdRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
 	return out, nil
 }
 
-// reportableRun decides whether a completion marker is worth reporting as its
-// own run.
-//
-// Two jobs need filtering, for opposite reasons.
-//
-// The reaper runs every thirty minutes and almost every run correctly does
-// nothing. Reporting each one is forty-eight lines a day saying nothing
-// happened, and the digest already learned this lesson: a channel that pings
-// that often gets muted, and a muted channel is how nothing reached the phone
-// for nine days. The state sweep already answers "is it still reaping". What
-// belongs in a per-run report is the run that actually killed something, which
-// is a session ended on this machine without anyone asking for it.
-//
-// The sweep writes a banner before it does any work, so its log contains
-// markers that are not runs at all. Only the line that says the run finished
-// counts as one.
+// reportableRun decides whether a marker is a completed run. Reaper ticks are
+// deliberately all reportable, including "0 reaped": this installation uses
+// Discord as an activity journal and the operator explicitly wants to see each
+// thirty-minute tick. The disk sweep also writes a start banner, which is not
+// a completion and must still be filtered out.
 func reportableRun(name, note string) bool {
 	switch name {
-	case "tmux-idle-reaper":
-		return !strings.Contains(note, "(0 reaped)")
 	case "disk-sweep":
 		return strings.Contains(note, "done")
 	}

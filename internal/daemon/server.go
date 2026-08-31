@@ -642,6 +642,9 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request) {
 	if body.PermissionMode == "" {
 		body.PermissionMode = supervisor.PermissionAsk
 	}
+	if strings.TrimSpace(body.Name) == "" {
+		body.Name = defaultSessionName(body.Agent, time.Now())
+	}
 
 	// Spawning is slow enough (adapter start plus handshake) that holding the
 	// request open would look like a hang on a phone. Detach from the request
@@ -661,6 +664,10 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request) {
 		go func() { _, _ = sess.Prompt(context.Background(), body.Prompt) }()
 	}
 	writeJSON(w, 200, view(sess))
+}
+
+func defaultSessionName(agentName string, now time.Time) string {
+	return fmt.Sprintf("%s %s", agentName, now.Local().Format("15:04:05"))
 }
 
 func (s *Server) updateSession(w http.ResponseWriter, r *http.Request) {

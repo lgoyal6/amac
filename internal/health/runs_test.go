@@ -67,15 +67,16 @@ func TestRunFailureIsSelfContained(t *testing.T) {
 }
 
 func TestRunBatch(t *testing.T) {
+	started := time.Date(2026, 8, 30, 9, 15, 0, 0, time.Local)
 	runs := []Run{
-		{Automation: "morning-brief", Status: RunOK, Detail: "delivered the brief", Duration: 44 * time.Second},
+		{Automation: "morning-brief", Status: RunOK, Detail: "delivered the brief", Started: started, Duration: 44 * time.Second},
 		{Automation: "hacklist-sf", Status: RunSkipped, Detail: "gate: swept recently enough", Duration: 8 * time.Second},
 	}
 	got := RunBatch(runs)
 	if !strings.HasPrefix(got, "**Runs** · 2") {
 		t.Errorf("should lead with the count:\n%s", got)
 	}
-	for _, want := range []string{"morning-brief", "delivered", "hacklist-sf", "gate:", "44s", "8s"} {
+	for _, want := range []string{"morning-brief", "09:15", "delivered", "hacklist-sf", "gate:", "44s", "8s"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
@@ -97,16 +98,14 @@ func TestSkippedIsNotAlarming(t *testing.T) {
 	}
 }
 
-// The reaper runs 48 times a day and almost every run correctly does nothing.
-// Reporting each one would be 48 lines a day saying nothing happened, which is
-// how a channel gets muted, which is how nothing reached the phone for nine
-// days. Only a run that actually killed a session is a run worth a line.
-func TestReaperReportsOnlyTheRunsThatKilledSomething(t *testing.T) {
+// Discord is the activity journal for this installation, so every completed
+// reaper tick is visible even when there was nothing to reap.
+func TestEveryCompletedReaperTickIsReported(t *testing.T) {
 	for _, tc := range []struct {
 		name, note string
 		want       bool
 	}{
-		{"tmux-idle-reaper", "done (0 reaped)", false},
+		{"tmux-idle-reaper", "done (0 reaped)", true},
 		{"tmux-idle-reaper", "done (1 reaped)", true},
 		{"tmux-idle-reaper", "done (12 reaped)", true},
 		// The sweep writes a banner before it does any work, so a run that

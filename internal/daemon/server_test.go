@@ -69,6 +69,13 @@ func TestResumeCommandsMatchInstalledCLIs(t *testing.T) {
 	}
 }
 
+func TestDefaultSessionNameSaysAgentAndTime(t *testing.T) {
+	at := time.Date(2026, 8, 30, 18, 7, 32, 0, time.Local)
+	if got := defaultSessionName("codex", at); got != "codex 18:07:32" {
+		t.Fatalf("got %q", got)
+	}
+}
+
 // The page itself is served without one, because iOS fetches it, the manifest
 // and the icon while adding to a home screen, from a context holding none of
 // the page's storage. None of those say anything about this machine.

@@ -142,10 +142,9 @@ func Alert(reports []Report, prev map[string]State) (string, bool) {
 
 // RunBatch renders every run seen this sweep as one message.
 //
-// One message per run would be roughly twenty-two pings a day, and a channel
-// that pings twenty-two times a day gets muted. A muted channel is precisely
-// how nothing reached him between Aug 13 and Aug 22, so the volume is the
-// safety property here, not a matter of taste.
+// Every completed run is included, but runs discovered in the same health
+// sweep share one message so Discord remains an activity journal without
+// producing a burst of separate phone notifications.
 func RunBatch(runs []Run) string {
 	var b strings.Builder
 	if len(runs) == 1 {
@@ -154,7 +153,11 @@ func RunBatch(runs []Run) string {
 		fmt.Fprintf(&b, "**Runs** · %d\n", len(runs))
 	}
 	for _, r := range runs {
-		fmt.Fprintf(&b, "%s **%s** · %s", r.Status.Icon(), r.Automation, r.Detail)
+		fmt.Fprintf(&b, "%s **%s**", r.Status.Icon(), r.Automation)
+		if !r.Started.IsZero() {
+			fmt.Fprintf(&b, " · %s", r.Started.Local().Format("15:04"))
+		}
+		fmt.Fprintf(&b, " · %s", r.Detail)
 		if r.Duration > 0 {
 			fmt.Fprintf(&b, " · %s", short(r.Duration))
 		}
