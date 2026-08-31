@@ -68,12 +68,13 @@ func (s State) Icon() string {
 // last run, and stays zero when the probe genuinely could not determine it,
 // which suppresses the lateness test rather than inventing a failure.
 type Report struct {
-	Name   string    `json:"name"`
-	State  State     `json:"state"`
-	Last   time.Time `json:"last,omitempty"`
-	Detail string    `json:"detail"`
-	Notes  []string  `json:"notes,omitempty"`
-	Err    string    `json:"err,omitempty"`
+	Name     string    `json:"name"`
+	Category string    `json:"category,omitempty"`
+	State    State     `json:"state"`
+	Last     time.Time `json:"last,omitempty"`
+	Detail   string    `json:"detail"`
+	Notes    []string  `json:"notes,omitempty"`
+	Err      string    `json:"err,omitempty"`
 }
 
 // Automation is a declared expectation. Every and Grace are what make silence
@@ -92,7 +93,8 @@ type Automation struct {
 	// that sends an agent to edit the wrong tree. Empty means there is nothing
 	// local to open, which is the honest answer for a hosted pipeline whose
 	// fix is a click on someone else's dashboard.
-	Home string
+	Home     string
+	Category string
 }
 
 // Sweep probes every automation and applies the lateness test.
@@ -105,6 +107,7 @@ func Sweep(ctx context.Context, list []Automation) []Report {
 	for _, a := range list {
 		r, err := a.Check(ctx)
 		r.Name = a.Name
+		r.Category = a.Category
 		if err != nil {
 			// A probe that failed tells us nothing about the automation, only
 			// about the probe. Reporting OK here would be a lie, and reporting

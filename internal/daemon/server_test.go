@@ -235,7 +235,7 @@ func TestHealthScheduleExplainsIntent(t *testing.T) {
 	path := dir + "/health.json"
 	if err := os.WriteFile(path, []byte(`{"automations":[{
 		"name":"pressure","what":"watch swap and disk","every":"30m",
-		"grace":"4h","probe":"marker_fields"}]}`), 0o600); err != nil {
+		"grace":"4h","schedule":"hourly","host":"This Mac","category":"machine","probe":"marker_fields"}]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("AMAC_HEALTH_CONFIG", path)
@@ -243,10 +243,13 @@ func TestHealthScheduleExplainsIntent(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("got %d: %s", w.Code, w.Body)
 	}
-	for _, want := range []string{"pressure", "30m", "completion line", "monitors"} {
+	for _, want := range []string{"pressure", "30m", "hourly", "This Mac", "machine", "completion line", "monitors"} {
 		if !strings.Contains(w.Body.String(), want) {
 			t.Errorf("schedule did not explain %q: %s", want, w.Body)
 		}
+	}
+	if !strings.Contains(w.Body.String(), "amac-health-monitor") {
+		t.Errorf("schedule omitted the monitor itself: %s", w.Body)
 	}
 }
 

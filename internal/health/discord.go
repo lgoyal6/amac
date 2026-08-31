@@ -25,8 +25,12 @@ func Send(ctx context.Context, content string) error { return discord.Send(ctx, 
 // healthy automation is one line, and everything below the fold is reserved
 // for the ones that need him. Reports arrive worst-first from Run.
 func Digest(reports []Report) string {
-	var bad, good []Report
+	var bad, good, machine []Report
 	for _, r := range reports {
+		if r.Category == "machine" {
+			machine = append(machine, r)
+			continue
+		}
 		if r.State == OK {
 			good = append(good, r)
 		} else {
@@ -36,9 +40,9 @@ func Digest(reports []Report) string {
 
 	var b strings.Builder
 	if len(bad) == 0 {
-		fmt.Fprintf(&b, "✅ **Automations** · all %d delivering\n", len(reports))
+		fmt.Fprintf(&b, "✅ **Automations** · all %d delivering\n", len(good))
 	} else {
-		fmt.Fprintf(&b, "⚠️ **Automations** · %d of %d need attention\n", len(bad), len(reports))
+		fmt.Fprintf(&b, "⚠️ **Automations** · %d of %d need attention\n", len(bad), len(bad)+len(good))
 	}
 
 	for _, r := range bad {
@@ -70,6 +74,13 @@ func Digest(reports []Report) string {
 		for _, r := range good {
 			fmt.Fprintf(&b, "**%s** · %s\n", r.Name, tidy(r.Detail))
 		}
+	}
+	for _, r := range machine {
+		icon := "✅"
+		if r.State != OK {
+			icon = "⚠️"
+		}
+		fmt.Fprintf(&b, "\n%s **Machine status** · %s\n", icon, tidy(r.Detail))
 	}
 
 	fmt.Fprintf(&b, "\n_checked %s_", time.Now().Local().Format("Mon 2 Jan 15:04"))
@@ -126,6 +137,10 @@ func Alert(reports []Report, prev map[string]State) (string, bool) {
 	}
 	var b strings.Builder
 	for _, r := range broke {
+		if r.Category == "machine" {
+			fmt.Fprintf(&b, "⚠️ **Machine status** · %s\n", tidy(r.Detail))
+			continue
+		}
 		text, link := splitURL(r.Detail)
 		fmt.Fprintf(&b, "%s **%s** · %s\n%s\n", r.State.Icon(), r.Name, r.State, text)
 		for _, n := range r.Notes {
@@ -136,6 +151,10 @@ func Alert(reports []Report, prev map[string]State) (string, bool) {
 		}
 	}
 	for _, r := range fixed {
+		if r.Category == "machine" {
+			fmt.Fprintf(&b, "🟢 **Machine pressure normal** · %s\n", tidy(r.Detail))
+			continue
+		}
 		fmt.Fprintf(&b, "🟢 **%s recovered** · %s\n", r.Name, tidy(r.Detail))
 	}
 	return strings.TrimRight(b.String(), "\n"), true

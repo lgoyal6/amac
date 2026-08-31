@@ -73,6 +73,22 @@ func TestProbeErrorIsUnknown(t *testing.T) {
 	}
 }
 
+func TestSweepCarriesCategoryIntoLiveReport(t *testing.T) {
+	got := Sweep(context.Background(), []Automation{{
+		Name: "pressure", Category: "machine",
+		Check: func(context.Context) (Report, error) {
+			return Report{State: Failing, Detail: "disk 90%"}, nil
+		},
+	}})
+	if got[0].Category != "machine" {
+		t.Fatalf("category = %q, want machine", got[0].Category)
+	}
+	msg := Digest(got)
+	if strings.Contains(msg, "Automations · 1 of 1 need attention") || !strings.Contains(msg, "Machine status") {
+		t.Fatalf("machine pressure was presented as an automation failure: %q", msg)
+	}
+}
+
 func TestRunSortsWorstFirst(t *testing.T) {
 	mk := func(name string, s State) Automation {
 		return Automation{Name: name, Every: time.Hour, Grace: time.Hour,

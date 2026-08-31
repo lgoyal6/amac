@@ -470,13 +470,16 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 type scheduleView struct {
-	Name  string `json:"name"`
-	What  string `json:"what"`
-	Every string `json:"every,omitempty"`
-	Grace string `json:"grace,omitempty"`
-	Probe string `json:"probe"`
-	Check string `json:"check"`
-	Role  string `json:"role"`
+	Name     string `json:"name"`
+	What     string `json:"what"`
+	Every    string `json:"every,omitempty"`
+	Grace    string `json:"grace,omitempty"`
+	Schedule string `json:"schedule,omitempty"`
+	Host     string `json:"host,omitempty"`
+	Category string `json:"category"`
+	Probe    string `json:"probe"`
+	Check    string `json:"check"`
+	Role     string `json:"role"`
 }
 
 func (s *Server) healthSchedule(w http.ResponseWriter, r *http.Request) {
@@ -487,12 +490,23 @@ func (s *Server) healthSchedule(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]scheduleView, 0, len(decls))
 	for _, d := range decls {
+		category := d.Category
+		if category == "" {
+			category = "automation"
+		}
 		out = append(out, scheduleView{
 			Name: d.Name, What: d.What, Every: d.Every, Grace: d.Grace,
+			Schedule: d.Schedule, Host: d.Host, Category: category,
 			Probe: d.Probe, Check: probeExplanation(d.Probe),
 			Role: "AMAC monitors this; the job itself runs elsewhere.",
 		})
 	}
+	out = append(out, scheduleView{
+		Name: "amac-health-monitor", What: "checks every declared automation and records the live dashboard snapshot",
+		Every: "1h", Grace: "1h", Schedule: "hourly", Host: "This Mac · launchd", Category: "automation",
+		Probe: "self", Check: "Checks the age of AMAC's latest completed health sweep.",
+		Role: "This is the monitor itself; the dashboard marks it late when the latest sweep is over two hours old.",
+	})
 	writeJSON(w, 200, map[string]any{"automations": out})
 }
 

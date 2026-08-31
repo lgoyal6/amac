@@ -62,7 +62,11 @@ func cmdHealth(args []string) error {
 
 	if !*quiet {
 		for _, r := range reports {
-			fmt.Printf("%s %-22s %-8s %s\n", r.State.Icon(), r.Name, r.State, r.Detail)
+			icon, state := r.State.Icon(), string(r.State)
+			if r.Category == "machine" && r.State != health.OK {
+				icon, state = "⚠️", "warning"
+			}
+			fmt.Printf("%s %-22s %-8s %s\n", icon, r.Name, state, r.Detail)
 			for _, n := range r.Notes {
 				fmt.Printf("  %-22s   · %s\n", "", n)
 			}

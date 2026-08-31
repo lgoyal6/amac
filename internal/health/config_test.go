@@ -44,6 +44,22 @@ func TestLoadParsesADeclaration(t *testing.T) {
 	if a.Check == nil {
 		t.Error("no check built")
 	}
+	if a.Category != "automation" {
+		t.Errorf("default category = %q, want automation", a.Category)
+	}
+}
+
+func TestMachineCategoryIsPreserved(t *testing.T) {
+	p := writeRoster(t, `{"automations":[
+	  {"name":"pressure","category":"machine","probe":"marker_fields","with":{"log":"x","fields":[]}}
+	]}`)
+	list, err := Load(p, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list[0].Category != "machine" {
+		t.Fatalf("category = %q, want machine", list[0].Category)
+	}
 }
 
 // A cadence is optional and its absence means the lateness test does not

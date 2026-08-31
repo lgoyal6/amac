@@ -48,13 +48,16 @@ func ConfigPath() string {
 // "24h" in a config file is worth the parse: the alternative is a number whose
 // unit lives in a comment.
 type Declaration struct {
-	Name  string         `json:"name"`
-	What  string         `json:"what"`
-	Every string         `json:"every"`
-	Grace string         `json:"grace"`
-	Home  string         `json:"home,omitempty"`
-	Probe string         `json:"probe"`
-	With  map[string]any `json:"with,omitempty"`
+	Name     string         `json:"name"`
+	What     string         `json:"what"`
+	Every    string         `json:"every"`
+	Grace    string         `json:"grace"`
+	Schedule string         `json:"schedule,omitempty"`
+	Host     string         `json:"host,omitempty"`
+	Category string         `json:"category,omitempty"`
+	Home     string         `json:"home,omitempty"`
+	Probe    string         `json:"probe"`
+	With     map[string]any `json:"with,omitempty"`
 }
 
 type Config struct {
@@ -173,7 +176,14 @@ func Load(path string, log *event.Log) ([]Automation, error) {
 		}
 		seen[d.Name] = true
 
-		a := Automation{Name: d.Name, What: d.What, Home: expand(d.Home)}
+		category := d.Category
+		if category == "" {
+			category = "automation"
+		}
+		if category != "automation" && category != "machine" {
+			problems = append(problems, where+": category must be automation or machine")
+		}
+		a := Automation{Name: d.Name, What: d.What, Home: expand(d.Home), Category: category}
 
 		// Cadence may be empty, which means the lateness test does not apply.
 		// A service is either up or it is not, and declaring a fake cadence for
