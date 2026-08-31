@@ -54,6 +54,7 @@
           display:flex; align-items:center; gap:var(--s2); }
   .dot { width:6px; height:6px; border-radius:50%; background:var(--faint); }
   .dot.on { background:var(--ok); }
+  .mobile-new { display:none; }
 
   nav { display:flex; gap:var(--s4); margin-top:var(--s4); overflow-x:auto; }
   nav button { background:none; border:0; padding:0 0 var(--s3);
@@ -169,10 +170,36 @@
   .copied { color:var(--ok); font:11px/1 var(--mono); }
   .session-help { flex-basis:100%; color:var(--faint); font-size:11.5px; }
 
+  .board-overview { display:grid; gap:var(--s2); margin-bottom:var(--s3); }
+  .pressure-alert { display:flex; align-items:center; gap:var(--s3);
+                    background:color-mix(in srgb, var(--fail) 9%, var(--surface));
+                    border:1px solid color-mix(in srgb, var(--fail) 38%, var(--line));
+                    border-radius:var(--r); padding:var(--s3) var(--s4); }
+  .pressure-copy { flex:1; min-width:0; }
+  .pressure-copy b { font:600 12.5px/1.4 var(--mono); color:var(--fail); }
+  .pressure-copy span { display:block; color:var(--dim); font-size:12px; margin-top:2px; }
+  .pressure-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--s2); margin-top:var(--s3); }
+  .pressure-metric { background:var(--raise); border:1px solid var(--line); border-radius:8px; padding:var(--s3); }
+  .pressure-metric b { display:block; font:600 20px/1.1 var(--mono); color:var(--fail); }
+  .pressure-metric span { color:var(--dim); font-size:11px; }
+
   @media (max-width:600px) {
-    header { padding-left:var(--s4); padding-right:var(--s4); }
-    .summary { max-width:170px; overflow:hidden; text-overflow:ellipsis;
-               white-space:nowrap; }
+    :root { --header-h:74px; --mobile-nav-h:62px; }
+    header { padding:var(--s3) var(--s3) var(--s2); }
+    .brand { align-items:center; flex-wrap:wrap; gap:var(--s2); }
+    h1 { font-size:16px; }
+    .summary { order:3; flex-basis:100%; max-width:none; font-size:10.5px;
+               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .conn { margin-left:0; }
+    .mobile-new { display:block; margin-left:auto; min-height:36px; padding:0 12px !important; }
+    nav { position:fixed; z-index:8; left:0; right:0; bottom:0; height:calc(var(--mobile-nav-h) + env(safe-area-inset-bottom));
+          margin:0; padding:0 var(--s2) env(safe-area-inset-bottom); overflow:visible;
+          display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:0;
+          background:color-mix(in srgb, var(--surface) 96%, transparent); border-top:1px solid var(--line); }
+    nav button { position:relative; min-width:0; padding:8px 1px 6px; border-bottom:0; border-top:2px solid transparent;
+                 font-size:10.5px; overflow:hidden; text-overflow:ellipsis; }
+    nav button.on { border-top-color:var(--fg); border-bottom-color:transparent; }
+    nav .badge { display:block; position:absolute; margin:-4px 0 0 calc(50% + 5px); }
     main { padding-left:var(--s3); padding-right:var(--s3); }
     .grid { grid-template-columns:minmax(0,1fr); }
     .card { padding:var(--s3); }
@@ -183,16 +210,27 @@
     .pane { max-height:none; height:clamp(240px, calc(100dvh - var(--header-h) - 330px), 380px); }
     .keys button, button.sm, .opts button { min-height:44px; min-width:44px; }
     .typebar input { min-height:44px; }
-    .bar { flex-wrap:wrap; }
+    .bar { display:none; flex-wrap:wrap; bottom:calc(var(--mobile-nav-h) + env(safe-area-inset-bottom));
+           box-shadow:0 -16px 40px rgba(0,0,0,.28); }
+    body.compose-open .bar { display:flex; }
     .bar .session-name { width:calc(100% - 112px); order:-1; }
     .bar select { width:104px; order:-1; }
     .bar input#prompt { flex-basis:100%; min-height:44px; }
-    main { padding-bottom:132px; }
+    main { padding-bottom:calc(var(--mobile-nav-h) + var(--s4)); }
+    body.compose-open main { padding-bottom:calc(132px + var(--mobile-nav-h)); }
     body.session-active #startBar { display:none; }
-    body.session-active main { padding-bottom:var(--s4); }
+    body.session-active main { padding-bottom:calc(var(--mobile-nav-h) + var(--s4)); }
     body.session-active .card.open .typebar { position:sticky; bottom:0; z-index:3;
             padding:var(--s2) 0; background:var(--surface); }
     body.session-active .card.open .keys { padding-bottom:68px; }
+    .card:not(.open) .tags { display:none; }
+    .card:not(.open) { padding:14px var(--s3); }
+    .card:not(.open) > .top { min-height:24px; align-items:center; }
+    .session-actions .go { flex:1 1 100%; min-height:48px; font-size:13px; }
+    .session-actions .copy-command { display:none; }
+    .session-actions select { flex:1; min-height:44px; }
+    .pressure-alert { align-items:flex-start; padding:var(--s3); }
+    .pressure-alert button { flex:none; }
   }
   .bar select, .bar input { background:var(--raise); color:var(--fg);
          border:1px solid var(--line); border-radius:8px;
@@ -284,6 +322,7 @@
     <h1>amac</h1>
     <span class="summary" id="summary"></span>
     <div class="conn"><span class="dot" id="dot"></span><span id="connText">connecting</span></div>
+    <button class="sm mobile-new" id="mobileNew" aria-expanded="false">new</button>
   </div>
   <nav>
     <button data-tab="board" class="on">board<span class="badge" id="blockedCount" hidden></span></button>
@@ -296,6 +335,7 @@
 </header>
 
 <main>
+  <div id="boardOverview" class="board-overview"></div>
   <div id="board" class="grid"><div class="empty">no sessions yet</div></div>
 
   <section id="wall" hidden>
@@ -680,7 +720,7 @@ function sessionActions(s) {
 	row.appendChild(open);
 
     const copy = document.createElement('button');
-    copy.className = 'sm';
+    copy.className = 'sm copy-command';
     copy.textContent = s.kind === 'tmux' ? 'attach on Mac' : 'copy resume command';
     copy.onclick = ev => { ev.stopPropagation(); copyText(s.continueCommand, said); };
     row.appendChild(copy);
@@ -989,12 +1029,15 @@ async function loadHealth() {
     return;
   }
   el.className = '';
-  el.innerHTML = reports.map(rep => `
+  el.innerHTML = reports.map(rep => {
+    const pressure = rep.name === 'machine-pressure' ? pressureBreakdown(rep.detail) : '';
+    return `
     <div class="hrow">
       <span class="hstate ${esc(rep.state)}">${esc(rep.state)}</span>
       <div style="min-width:0;flex:1">
         <div class="hname">${esc(rep.name)}</div>
         <div class="hdetail">${esc(rep.detail)}</div>
+        ${pressure}
         ${(rep.notes || []).map(n => `<div class="hdetail">${esc(n)}</div>`).join('')}
         ${rep.home && rep.state !== 'ok' ? `<div class="acts">
              <button class="sm fix" data-name="${esc(rep.name)}">fix it</button>
@@ -1002,7 +1045,7 @@ async function loadHealth() {
              <span class="hdetail said"></span>
            </div>` : ''}
       </div>
-    </div>`).join('')
+    </div>`}).join('')
     + `<div class="hdetail" style="margin-top:12px">swept ${esc(new Date(at).toLocaleString())}</div>`;
 
   // Only on rows that are not ok. Every row carrying two buttons made the
@@ -1019,6 +1062,30 @@ async function loadHealth() {
   el.querySelectorAll('button.shell').forEach(b => {
     b.onclick = () => dispatch(b, 'shell', b.dataset.name);
   });
+}
+
+function pressureBreakdown(detail) {
+  const swap = /swap (\d+)%/.exec(detail || '');
+  const disk = /disk (\d+)%/.exec(detail || '');
+  if (!swap || !disk) return '';
+  return `<div class="pressure-grid">
+    <div class="pressure-metric"><b>${esc(swap[1])}%</b><span>swap · warns at 80%</span></div>
+    <div class="pressure-metric"><b>${esc(disk[1])}%</b><span>disk · warns at 85%</span></div>
+  </div><div class="hdetail" style="margin-top:8px">Close unused agent sessions to reduce swap. Move or remove large files to reduce disk use; one does not fix the other.</div>`;
+}
+
+async function loadBoardHealth() {
+  const el = $('boardOverview');
+  const r = await api('/api/health');
+  if (!r.ok) return;
+  const d = await r.json();
+  const rep = (d.reports || []).find(x => x.name === 'machine-pressure' && x.state !== 'ok');
+  if (!rep) { el.innerHTML = ''; return; }
+  el.innerHTML = `<div class="pressure-alert">
+    <div class="pressure-copy"><b>machine pressure</b><span>${esc(rep.detail)}</span></div>
+    <button class="sm" id="pressureDetails">details</button>
+  </div>`;
+  $('pressureDetails').onclick = () => document.querySelector('nav button[data-tab="health"]').click();
 }
 
 async function loadHealthSchedule() {
@@ -1278,7 +1345,10 @@ document.querySelectorAll('nav button').forEach(b => {
     tab = b.dataset.tab;
     document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
     for (const id of ['board', 'wall', 'queue', 'crew', 'health', 'spend']) $(id).hidden = id !== tab;
+	$('boardOverview').hidden = tab !== 'board';
     $('startBar').hidden = tab !== 'board';
+	document.body.classList.remove('compose-open');
+	$('mobileNew').setAttribute('aria-expanded', 'false');
     if (tab === 'board') render();
     if (tab === 'wall') loadWall();
     if (tab === 'queue') loadQueue();
@@ -1287,6 +1357,13 @@ document.querySelectorAll('nav button').forEach(b => {
     if (tab === 'spend') loadSpend();
   };
 });
+
+$('mobileNew').onclick = () => {
+  const open = document.body.classList.toggle('compose-open');
+  $('mobileNew').setAttribute('aria-expanded', open ? 'true' : 'false');
+  $('mobileNew').textContent = open ? 'close' : 'new';
+  if (open) requestAnimationFrame(() => $('prompt').focus());
+};
 
 // ------------------------------------------------------------------ stream --
 
@@ -1359,10 +1436,15 @@ $('prompt').addEventListener('keydown', async ev => {
     method: 'POST',
     body: JSON.stringify({ agent: $('agent').value, prompt: text, name }),
   });
+  document.body.classList.remove('compose-open');
+  $('mobileNew').textContent = 'new';
+  $('mobileNew').setAttribute('aria-expanded', 'false');
   refresh();
 });
 
 loadAgents();
+loadBoardHealth();
+setInterval(() => { if (tab === 'board' && !document.hidden && !unauthorized) loadBoardHealth(); }, 60000);
 
 // Sticky elements share the measured header height. iOS also moves and
 // shrinks the visual viewport for the keyboard; raise the composer by the
