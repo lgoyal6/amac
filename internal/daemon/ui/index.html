@@ -19,13 +19,14 @@
      not nineteen values chosen one at a time. */
   :root {
     --bg:#0b0d10; --surface:#14171c; --raise:#1b1f26; --line:#242a33;
-    --fg:#e7eaf0; --dim:#7d8697; --faint:#4d5563;
+    --fg:#e7eaf0; --dim:#9aa4b5; --faint:#8993a5;
 
     --blocked:#ff9147; --working:#4c9aff; --idle:#6b7688;
     --ok:#3fb950; --fail:#f85149; --late:#d29922;
 
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px;
     --r:10px;
+    --header-h:90px; --keyboard-offset:0px;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
     --sans: -apple-system, "SF Pro Text", system-ui, sans-serif;
   }
@@ -87,6 +88,7 @@
      instead: the session you are answering gets the room, the rest stay a
      tidy grid, and it lands in the same place whichever card you opened. */
   .card.open { grid-column:1 / -1; order:-1; }
+  .card.open { scroll-margin-top:calc(var(--header-h) + var(--s3)); }
   .card > .top { cursor:pointer; }
   .top { display:flex; align-items:baseline; gap:var(--s2); }
   .name { font:600 13px/1.4 var(--mono); flex:1 1 auto; min-width:0;
@@ -156,6 +158,42 @@
          border-top:1px solid var(--line);
          padding:var(--s3) var(--s3) calc(var(--s3) + env(safe-area-inset-bottom));
          display:flex; gap:var(--s2); }
+  .bar { bottom:var(--keyboard-offset); }
+  .bar .session-name { width:150px; }
+
+  .session-actions { display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap;
+                     margin-top:var(--s2); }
+  .session-actions select { background:var(--raise); color:var(--fg);
+          border:1px solid var(--line); border-radius:7px; padding:7px 9px;
+          font:11.5px/1 var(--sans); }
+  .copied { color:var(--ok); font:11px/1 var(--mono); }
+  .session-help { flex-basis:100%; color:var(--faint); font-size:11.5px; }
+
+  @media (max-width:600px) {
+    header { padding-left:var(--s4); padding-right:var(--s4); }
+    .summary { max-width:170px; overflow:hidden; text-overflow:ellipsis;
+               white-space:nowrap; }
+    main { padding-left:var(--s3); padding-right:var(--s3); }
+    .grid { grid-template-columns:minmax(0,1fr); }
+    .card { padding:var(--s3); }
+    .card.open > .top { position:sticky; top:var(--header-h); z-index:3;
+                        margin:calc(-1 * var(--s3)); margin-bottom:var(--s3);
+                        padding:var(--s3); background:var(--surface);
+                        border-bottom:1px solid var(--line); }
+    .pane { max-height:none; height:clamp(240px, calc(100dvh - var(--header-h) - 330px), 380px); }
+    .keys button, button.sm, .opts button { min-height:44px; min-width:44px; }
+    .typebar input { min-height:44px; }
+    .bar { flex-wrap:wrap; }
+    .bar .session-name { width:calc(100% - 112px); order:-1; }
+    .bar select { width:104px; order:-1; }
+    .bar input#prompt { flex-basis:100%; min-height:44px; }
+    main { padding-bottom:132px; }
+    body.session-active #startBar { display:none; }
+    body.session-active main { padding-bottom:var(--s4); }
+    body.session-active .card.open .typebar { position:sticky; bottom:0; z-index:3;
+            padding:var(--s2) 0; background:var(--surface); }
+    body.session-active .card.open .keys { padding-bottom:68px; }
+  }
   .bar select, .bar input { background:var(--raise); color:var(--fg);
          border:1px solid var(--line); border-radius:8px;
          padding:9px var(--s3); font:12.5px/1 var(--sans); }
@@ -300,6 +338,7 @@
 
 <div class="bar" id="startBar">
   <select id="agent"></select>
+  <input id="sessionName" class="session-name" placeholder="name (optional)" maxlength="80">
   <input id="prompt" placeholder="start a session..." enterkeyhint="go">
 </div>
 
@@ -308,6 +347,7 @@
 // so a refresh or a home-screen bookmark keeps working, then strip it from the
 // address bar so it does not sit in screenshots or shoulder-view.
 const url = new URL(location.href);
+const requestedSession = url.searchParams.get('session') || '';
 // Two ways in. ?token= is the link amac url prints; /app/<token> is where the
 // home-screen icon lands, because start_url is the one place a credential
 // survives Safari deciding to clear the site's storage.
@@ -392,7 +432,7 @@ function ago(iso) {
 
 let sessions = new Map();
 let logs = new Map();      // session id -> recent lines
-let open = new Set();      // expanded cards
+let activeSessionId = requestedSession; // exactly one expanded card; stable on a phone
 let panes = new Map();     // session id -> last captured pane text
 let paneEls = new Map();   // session id -> the <div class="pane"> showing it
 let lastSeq = 0;
@@ -418,14 +458,10 @@ async function loadTodaySpend() {
 // The stream replays up to 500 events on connect and an active turn emits
 // hundreds more. One list fetch per event is a flood the page inflicts on
 // itself, so both the fetch and the paint coalesce onto the next tick.
-let refreshTimer = null, renderTimer = null;
+let refreshTimer = null;
 function scheduleRefresh() {
   if (refreshTimer) return;
   refreshTimer = setTimeout(() => { refreshTimer = null; refresh(); }, 250);
-}
-function scheduleRender() {
-  if (renderTimer) return;
-  renderTimer = setTimeout(() => { renderTimer = null; if (tab === 'board') render(); }, 250);
 }
 
 async function refresh() {
@@ -434,13 +470,14 @@ async function refresh() {
   if (!r.ok) return;
   const list = await r.json();
   sessions = new Map(list.map(s => [s.id, s]));
+  if (activeSessionId && !sessions.has(activeSessionId)) activeSessionId = '';
   // Only the first one. Five blocked sessions each expanded to a full pane is
   // a page you have to scroll past to reach anything else, and the sort
   // already guarantees the one opened for you is the one on top.
   const blockedIds = list.filter(s => s.state === 'blocked').map(s => s.id).sort();
   if (blockedIds.length && !autoOpened.has(blockedIds[0])) {
     autoOpened.add(blockedIds[0]);
-    open.add(blockedIds[0]);
+    if (!activeSessionId) activeSessionId = blockedIds[0];
   }
   for (const s of list) if (s.state !== 'blocked') autoOpened.delete(s.id);
   const blocked = list.filter(s => s.state === 'blocked').length;
@@ -470,11 +507,23 @@ function push(id, line) {
   // should not hold all of them in the DOM.
   if (arr.length > 60) arr.shift();
   logs.set(id, arr);
+  // Output is the hot path. Do not rebuild every card for every streamed
+  // token: doing so ejects focus and moves the controls under a phone user's
+  // finger. Append only to the open session's existing log.
+  const log = document.querySelector(`.card[data-session-id="${CSS.escape(id)}"] .log`);
+  if (log) {
+    const el = document.createElement('div');
+    el.textContent = line;
+    log.appendChild(el);
+    while (log.childNodes.length > 60) log.firstChild.remove();
+    log.scrollTop = log.scrollHeight;
+  }
 }
 
 function render() {
   const grid = $('board');
   const all = [...sessions.values()];
+  document.body.classList.toggle('session-active', Boolean(activeSessionId));
   if (!all.length) { grid.innerHTML = '<div class="empty">no sessions yet</div>'; return; }
 
   // Anything waiting on a human sorts first. That is the whole point of the
@@ -490,16 +539,25 @@ function cardFor(s) {
   const card = document.createElement('div');
   // The state is on the card, which colours the light down its edge. Said in
   // one place instead of as a dot, a badge and a border all claiming it.
-  card.className = 'card ' + s.state + (open.has(s.id) ? ' open' : '');
+  card.className = 'card ' + s.state + (activeSessionId === s.id ? ' open' : '');
+  card.dataset.sessionId = s.id;
 
   const head = document.createElement('div');
   head.className = 'top';
   // The name gets the whole line. Four badges beside it truncated every session
   // to "am-lakshgoyal-..." on a phone, which is the one field you need to tell
   // two sessions apart, so the badges moved underneath it.
-  head.innerHTML = `<span class="name">${esc(s.id)}</span>
+  head.innerHTML = `<span class="name">${esc(s.name || s.id)}</span>
     <span class="state ${esc(s.state)}">${esc(s.state)}</span>`;
-  head.onclick = () => { open.has(s.id) ? open.delete(s.id) : open.add(s.id); render(); };
+  head.onclick = () => {
+    const opening = activeSessionId !== s.id;
+    activeSessionId = opening ? s.id : '';
+    render();
+    if (opening) requestAnimationFrame(() => {
+      document.querySelector(`.card[data-session-id="${CSS.escape(s.id)}"]`)
+        ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    });
+  };
   card.appendChild(head);
 
   const tags = document.createElement('div');
@@ -507,7 +565,7 @@ function cardFor(s) {
   // Only what distinguishes one card from another. "tmux" was on nearly all of
   // them and told you nothing; "acp" is the rare one and still does.
   tags.innerHTML = `<span class="agent">${esc(s.agent || 'shell')}</span>
-    ${s.kind === 'acp' ? '<span class="kind">acp</span>' : ''}
+    <span class="kind">${s.kind === 'acp' ? 'managed' : 'terminal'}</span>
     ${s.attached ? '<span class="kind on">attached</span>' : ''}`;
   card.appendChild(tags);
 
@@ -545,11 +603,13 @@ function cardFor(s) {
     card.appendChild(ask);
   }
 
-  if (open.has(s.id)) {
+  if (activeSessionId === s.id) {
     const dir = document.createElement('div');
     dir.className = 'dir';
     dir.textContent = s.dir || '';
     card.appendChild(dir);
+
+    card.appendChild(sessionActions(s));
 
     if (s.kind === 'tmux') card.appendChild(remote(s));
 
@@ -568,6 +628,76 @@ function cardFor(s) {
   return card;
 }
 
+async function copyText(text, said) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    const area = document.createElement('textarea');
+    area.value = text; area.style.position = 'fixed'; area.style.opacity = '0';
+    document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove();
+  }
+  said.textContent = 'copied';
+  setTimeout(() => { said.textContent = ''; }, 1500);
+}
+
+function sessionActions(s) {
+  const row = document.createElement('div');
+  row.className = 'session-actions';
+  const said = document.createElement('span');
+  said.className = 'copied';
+  const help = document.createElement('div');
+  help.className = 'session-help';
+  help.textContent = s.kind === 'tmux'
+    ? 'Terminal session · attach to the same tmux session on your Mac.'
+    : 'AMAC-managed session · continue here or resume it in a terminal.';
+  row.appendChild(help);
+
+  if (s.continueCommand) {
+    const copy = document.createElement('button');
+    copy.className = 'sm';
+    copy.textContent = s.kind === 'tmux' ? 'attach on Mac' : 'copy resume command';
+    copy.onclick = ev => { ev.stopPropagation(); copyText(s.continueCommand, said); };
+    row.appendChild(copy);
+  }
+
+  if (s.kind === 'acp') {
+    const rename = document.createElement('button');
+    rename.className = 'sm'; rename.textContent = 'rename';
+    rename.onclick = async ev => {
+      ev.stopPropagation();
+      const name = prompt('Session name', s.name || '');
+      if (name === null) return;
+      await updateManaged(s.id, { name });
+    };
+    row.appendChild(rename);
+
+    const mode = document.createElement('select');
+    mode.setAttribute('aria-label', 'permission mode');
+    mode.innerHTML = `<option value="ask">ask for permission</option>
+      <option value="auto">auto: least permission</option>
+      <option value="reject">reject changes</option>`;
+    mode.value = s.permissionMode || 'ask';
+    mode.onchange = async ev => {
+      ev.stopPropagation();
+      const next = mode.value;
+      if (next === 'auto' && !confirm('Auto mode will approve the least-permissive allow option without asking. Turn it on?')) {
+        mode.value = s.permissionMode || 'ask'; return;
+      }
+      await updateManaged(s.id, { permissionMode: next });
+    };
+    row.appendChild(mode);
+  }
+  row.appendChild(said);
+  return row;
+}
+
+async function updateManaged(id, body) {
+  const r = await api(`/api/sessions/${encodeURIComponent(id)}`, {
+    method: 'PATCH', body: JSON.stringify(body),
+  });
+  if (r.ok) refresh();
+}
+
 // remote is the screen, forwarded, plus the keys that go back.
 //
 // amac never reads this text. It does not know which option is which, and it
@@ -579,6 +709,7 @@ function remote(s) {
 
   const pre = document.createElement('div');
   pre.className = 'pane';
+  pre.tabIndex = 0;
   const cached = panes.get(s.id);
   pre.textContent = cached === undefined ? 'reading the pane...' : (cached || '(nothing on the screen)');
   wrap.appendChild(pre);
@@ -662,6 +793,7 @@ function divider() {
 function inspectKeys(s, bar) {
   const out = document.createElement('div');
   out.className = 'pane';
+  out.tabIndex = 0;
   out.hidden = true;
 
   const show = (text) => { out.hidden = false; out.textContent = text; };
@@ -718,10 +850,8 @@ async function capture(id) {
 // at.
 setInterval(() => {
   if (tab !== 'board' || document.hidden) return;
-  for (const id of open) {
-    const s = sessions.get(id);
-    if (s && s.kind === 'tmux') capture(id);
-  }
+  const s = sessions.get(activeSessionId);
+  if (s && s.kind === 'tmux') capture(activeSessionId);
 }, 4000);
 
 // ------------------------------------------------------------------- crew --
@@ -889,7 +1019,7 @@ async function loadWall() {
   el.innerHTML = all.map(s => `
     <div class="tile-pane ${esc(s.state)}">
       <div class="tile-head">
-        <span class="tile-name">${esc(s.id)}</span>
+        <span class="tile-name">${esc(s.name || s.id)}</span>
         <span class="state ${esc(s.state)}">${esc(s.state)}</span>
       </div>
       <div class="tile-body">${esc(byName.get(s.id) || '')}</div>
@@ -899,12 +1029,11 @@ async function loadWall() {
     // Tapping a tile takes you to that session on the board, where the keypad
     // is. The wall is for seeing; acting still happens in one place.
     tile.onclick = () => {
-      open.add(all[i].id);
+      activeSessionId = all[i].id;
       document.querySelector('nav button[data-tab="board"]').click();
       requestAnimationFrame(() => {
-        [...document.querySelectorAll('#board .name')]
-          .find(n => n.textContent === all[i].id)
-          ?.scrollIntoView({ block: 'center' });
+        document.querySelector(`.card[data-session-id="${CSS.escape(all[i].id)}"]`)
+          ?.scrollIntoView({ block: 'start' });
       });
     };
   });
@@ -1111,9 +1240,8 @@ function connect() {
     // Anything that can change the card list re-reads the authoritative list
     // rather than trying to mutate it from the event.
     const listChanged = ['session.state', 'session.started', 'session.ended', 'attention'].includes(e.kind)
-      || (e.kind === 'session.update' && p.state);
+      || (e.kind === 'session.update' && (p.state || p.name !== undefined || p.permissionMode));
     if (listChanged) scheduleRefresh();
-    else scheduleRender();
     if (e.kind === 'automation.check' && tab === 'health') loadHealth();
   };
 }
@@ -1131,14 +1259,34 @@ $('prompt').addEventListener('keydown', async ev => {
   if (!text) return;
   input.value = '';
   input.blur();
+  const name = $('sessionName').value.trim();
+  $('sessionName').value = '';
   await api('/api/sessions', {
     method: 'POST',
-    body: JSON.stringify({ agent: $('agent').value, prompt: text }),
+    body: JSON.stringify({ agent: $('agent').value, prompt: text, name }),
   });
   refresh();
 });
 
 loadAgents();
+
+// Sticky elements share the measured header height. iOS also moves and
+// shrinks the visual viewport for the keyboard; raise the composer by the
+// covered portion so the field being edited stays reachable.
+const measureChrome = () => {
+  document.documentElement.style.setProperty('--header-h', document.querySelector('header').offsetHeight + 'px');
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+    document.documentElement.style.setProperty('--keyboard-offset', covered + 'px');
+  }
+};
+new ResizeObserver(measureChrome).observe(document.querySelector('header'));
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', measureChrome);
+  window.visualViewport.addEventListener('scroll', measureChrome);
+}
+measureChrome();
 loadTodaySpend();
 setInterval(loadTodaySpend, 60000);
 refresh();

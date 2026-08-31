@@ -36,6 +36,7 @@ func do(t *testing.T, r *http.Request) *httptest.ResponseRecorder {
 func TestEveryAPIRouteNeedsTheToken(t *testing.T) {
 	routes := []struct{ method, path string }{
 		{"GET", "/api/sessions"}, {"POST", "/api/sessions"},
+		{"PATCH", "/api/sessions/x"},
 		{"GET", "/api/events"}, {"GET", "/api/agents"},
 		{"GET", "/api/health"}, {"GET", "/api/spend"},
 		{"GET", "/api/tasks"}, {"POST", "/api/tasks"},
@@ -50,6 +51,18 @@ func TestEveryAPIRouteNeedsTheToken(t *testing.T) {
 		}
 		if got := do(t, req(rt.method, rt.path+"?token=wrong", "{}")).Code; got != 401 {
 			t.Errorf("%s %s with a wrong token returned %d, want 401", rt.method, rt.path, got)
+		}
+	}
+}
+
+func TestResumeCommandsMatchInstalledCLIs(t *testing.T) {
+	for _, tc := range []struct{ agent, id, want string }{
+		{"claude", "abc", "claude --resume abc"},
+		{"codex", "abc", "codex resume abc"},
+		{"other", "abc", ""},
+	} {
+		if got := resumeCommand(tc.agent, tc.id); got != tc.want {
+			t.Errorf("resumeCommand(%q, %q) = %q, want %q", tc.agent, tc.id, got, tc.want)
 		}
 	}
 }

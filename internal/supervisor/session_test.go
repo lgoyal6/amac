@@ -162,6 +162,24 @@ func TestRejectAllDecidesAndDenies(t *testing.T) {
 	}
 }
 
+func TestSessionPresentationDefaultsAndValidates(t *testing.T) {
+	s := &Session{sup: testSup(t)}
+	name, mode := s.Presentation()
+	if name != "" || mode != PermissionAsk {
+		t.Fatalf("defaults = %q, %q; want empty, ask", name, mode)
+	}
+	if err := s.SetPresentation("  release fix  ", PermissionAuto); err != nil {
+		t.Fatal(err)
+	}
+	name, mode = s.Presentation()
+	if name != "release fix" || mode != PermissionAuto {
+		t.Fatalf("presentation = %q, %q", name, mode)
+	}
+	if err := s.SetPresentation(name, PermissionMode("anything")); err == nil {
+		t.Fatal("accepted an unknown permission mode")
+	}
+}
+
 // ------------------------------------------------------------------ files ---
 
 func TestReadTextFileRefusesARelativePath(t *testing.T) {

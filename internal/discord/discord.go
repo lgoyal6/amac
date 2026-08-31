@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -67,6 +68,40 @@ func channel() string {
 		}
 	}
 	return ""
+}
+
+// BoardURL returns a notification-safe link to one session. It deliberately
+// does not put the board token in Discord: the phone's installed board already
+// has it, while a chat transcript is a much broader place to leave a shell-
+// equivalent credential. AMAC_BOARD_URL can override discovery for unusual
+// ports or hostnames.
+func BoardURL(session string) string {
+	base := strings.TrimSpace(os.Getenv("AMAC_BOARD_URL"))
+	if base == "" {
+		out, err := exec.Command("tailscale", "ip", "-4").Output()
+		if err != nil {
+			return ""
+		}
+		ip := strings.Fields(string(out))
+		if len(ip) == 0 {
+			return ""
+		}
+		port := strings.TrimSpace(os.Getenv("AMAC_PORT"))
+		if port == "" {
+			port = "7788"
+		}
+		base = "http://" + ip[0] + ":" + port + "/"
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return ""
+	}
+	q := u.Query()
+	if session != "" {
+		q.Set("session", session)
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 // Send posts one message to the DM channel.

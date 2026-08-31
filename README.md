@@ -117,6 +117,12 @@ Every signal that means "this session wants you" lands on `amac attention`,
 which decides whether to interrupt, delivers it if so, and records the decision
 either way — including the suppressed ones and the reason.
 
+Discord is deliberately the notification edge, not a second control plane.
+It tells you that a session needs attention and links back to the board; session
+input, permission decisions, queue state and history belong to amac. Keeping
+actions in one place prevents a button in Discord and a button on the board
+from racing to answer the same agent differently.
+
 ```
 amac attention -claude                     from Claude Code's hooks
 amac attention -codex '<notify payload>'   from Codex's notify hook

@@ -97,7 +97,7 @@ func (s *Supervisor) Start(ctx context.Context, agentName, dir string) (*Session
 
 	sess := &Session{
 		ID: id, Agent: agentName, Dir: dir, Started: time.Now(),
-		state: StateStarting, client: client, sup: s,
+		state: StateStarting, mode: PermissionAsk, client: client, sup: s,
 	}
 	// The handler must be installed before any call that can make the agent
 	// ask us something, which initialize can.

@@ -148,5 +148,9 @@ func render(n Notice) string {
 	if len(body) > 400 {
 		body = body[:400] + "…"
 	}
-	return head + " · " + n.Agent + "\n" + body
+	message := head + " · " + n.Agent + "\n" + body
+	if link := discord.BoardURL(n.Session); link != "" {
+		message += "\n" + link
+	}
+	return message
 }

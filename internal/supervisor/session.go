@@ -49,6 +49,7 @@ type Pending struct {
 // Session is one running agent.
 type Session struct {
 	ID      string
+	Label   string
 	Agent   string
 	Dir     string
 	ACPID   string
@@ -58,6 +59,7 @@ type Session struct {
 	state   State
 	detail  string
 	pending *Pending
+	mode    PermissionMode
 
 	client *acp.Client
 	sup    *Supervisor
@@ -71,6 +73,59 @@ type Session struct {
 	// watching it: without a policy the first tool call blocks the whole run
 	// forever, which is exactly what happened the first time it ran.
 	OnPermission func(*Pending) (optionID string, ok bool)
+}
+
+type PermissionMode string
+
+const (
+	PermissionAsk    PermissionMode = "ask"
+	PermissionAuto   PermissionMode = "auto"
+	PermissionReject PermissionMode = "reject"
+)
+
+func (s *Session) Presentation() (string, PermissionMode) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	mode := s.mode
+	if mode == "" {
+		mode = PermissionAsk
+	}
+	return s.Label, mode
+}
+
+func (s *Session) SetPresentation(label string, mode PermissionMode) error {
+	label = strings.TrimSpace(label)
+	if len(label) > 80 {
+		return fmt.Errorf("name is longer than 80 characters")
+	}
+	if mode != PermissionAsk && mode != PermissionAuto && mode != PermissionReject {
+		return fmt.Errorf("unknown permission mode %q", mode)
+	}
+	s.mu.Lock()
+	s.Label, s.mode = label, mode
+	pending := s.pending
+	s.mu.Unlock()
+	s.sup.record(event.KindSessionUpdate, s.ID, map[string]any{
+		"name": label, "permissionMode": mode,
+	})
+	// Switching mode while a question is already parked should take effect on
+	// that question, not only on the next one. once keeps this safe if the
+	// phone and another client answer at the same time.
+	if pending != nil {
+		var policy func(*Pending) (string, bool)
+		switch mode {
+		case PermissionAuto:
+			policy = LeastPermissiveAllow
+		case PermissionReject:
+			policy = RejectAll
+		}
+		if policy != nil {
+			if optionID, ok := policy(pending); ok {
+				pending.once.Do(func() { pending.reply <- decide(optionID) })
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Session) State() (State, string) {
@@ -263,9 +318,22 @@ func (s *Session) handlePermission(ctx context.Context, req acp.IncomingRequest)
 		"options":    p.Options,
 	})
 
-	// An unattended policy answers first, if it has an opinion.
-	if s.OnPermission != nil {
-		if optionID, ok := s.OnPermission(pend); ok {
+	// An unattended policy answers first, if it has an opinion. Dashboard
+	// sessions use a named mode so the board can show exactly what will happen;
+	// orchestrated sessions may install a more specific policy.
+	s.mu.RLock()
+	policy, mode := s.OnPermission, s.mode
+	s.mu.RUnlock()
+	if policy == nil {
+		switch mode {
+		case PermissionAuto:
+			policy = LeastPermissiveAllow
+		case PermissionReject:
+			policy = RejectAll
+		}
+	}
+	if policy != nil {
+		if optionID, ok := policy(pend); ok {
 			pend.once.Do(func() { pend.reply <- decide(optionID) })
 		}
 	}

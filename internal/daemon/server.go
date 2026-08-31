@@ -79,6 +79,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions", s.auth(s.startSession))
 	mux.HandleFunc("POST /api/sessions/{id}/prompt", s.auth(s.promptSession))
 	mux.HandleFunc("POST /api/sessions/{id}/answer", s.auth(s.answerSession))
+	mux.HandleFunc("PATCH /api/sessions/{id}", s.auth(s.updateSession))
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.auth(s.stopSession))
 	mux.HandleFunc("GET /api/sessions/{id}/pane", s.auth(s.pane))
 	mux.HandleFunc("GET /api/panes", s.auth(s.panes))
@@ -262,6 +263,7 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 
 type sessionView struct {
 	ID    string `json:"id"`
+	Name  string `json:"name,omitempty"`
 	Agent string `json:"agent"`
 	Dir   string `json:"dir"`
 	State string `json:"state"`
@@ -284,7 +286,9 @@ type sessionView struct {
 	// A pointer, because `omitempty` does nothing for a zero time.Time: it is a
 	// struct, not a basic type, so an unset one serialises as year 1 and the
 	// board rendered a session nobody had heard from as "739855d ago".
-	Since *time.Time `json:"since,omitempty"`
+	Since           *time.Time `json:"since,omitempty"`
+	PermissionMode  string     `json:"permissionMode,omitempty"`
+	ContinueCommand string     `json:"continueCommand,omitempty"`
 }
 
 type pendingView struct {
@@ -301,9 +305,11 @@ type optionView struct {
 
 func view(sess *supervisor.Session) sessionView {
 	st, detail := sess.State()
+	name, mode := sess.Presentation()
 	v := sessionView{
-		ID: sess.ID, Agent: sess.Agent, Dir: sess.Dir, Kind: "acp",
+		ID: sess.ID, Name: name, Agent: sess.Agent, Dir: sess.Dir, Kind: "acp",
 		State: string(st), Detail: detail, Started: sess.Started,
+		PermissionMode: string(mode), ContinueCommand: resumeCommand(sess.Agent, sess.ACPID),
 	}
 	if p := sess.Pending(); p != nil {
 		pv := &pendingView{Title: p.Title, AskedAt: p.AskedAt}
@@ -313,6 +319,20 @@ func view(sess *supervisor.Session) sessionView {
 		v.Pending = pv
 	}
 	return v
+}
+
+func resumeCommand(agentName, id string) string {
+	if id == "" {
+		return ""
+	}
+	switch agentName {
+	case "claude":
+		return "claude --resume " + id
+	case "codex":
+		return "codex resume " + id
+	default:
+		return ""
+	}
 }
 
 func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
@@ -358,6 +378,7 @@ func (s *Server) tmuxSessions(ctx context.Context) []sessionView {
 			ID: t.Name, Agent: t.Agent(), Dir: t.Dir, Kind: "tmux",
 			Attached: t.Attached, Started: t.Created,
 			State: "unknown", Detail: t.Command,
+			ContinueCommand: "tmux attach -t " + t.Name,
 		}
 		// Two sources, and the better one wins where it exists. An attention
 		// event is raised only when a session wants something, so on its own
@@ -548,9 +569,11 @@ func (s *Server) agents(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) startSession(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Agent  string `json:"agent"`
-		Dir    string `json:"dir"`
-		Prompt string `json:"prompt"`
+		Agent          string                    `json:"agent"`
+		Dir            string                    `json:"dir"`
+		Prompt         string                    `json:"prompt"`
+		Name           string                    `json:"name"`
+		PermissionMode supervisor.PermissionMode `json:"permissionMode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, 400, map[string]string{"error": err.Error()})
@@ -563,6 +586,9 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request) {
 		home, _ := os.UserHomeDir()
 		body.Dir = home
 	}
+	if body.PermissionMode == "" {
+		body.PermissionMode = supervisor.PermissionAsk
+	}
 
 	// Spawning is slow enough (adapter start plus handshake) that holding the
 	// request open would look like a hang on a phone. Detach from the request
@@ -573,8 +599,41 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
+	if err := sess.SetPresentation(body.Name, body.PermissionMode); err != nil {
+		sess.Close()
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
 	if body.Prompt != "" {
 		go func() { _, _ = sess.Prompt(context.Background(), body.Prompt) }()
+	}
+	writeJSON(w, 200, view(sess))
+}
+
+func (s *Server) updateSession(w http.ResponseWriter, r *http.Request) {
+	sess, ok := s.sup.Get(r.PathValue("id"))
+	if !ok {
+		writeJSON(w, 404, map[string]string{"error": "no such managed session"})
+		return
+	}
+	name, mode := sess.Presentation()
+	var body struct {
+		Name           *string                    `json:"name"`
+		PermissionMode *supervisor.PermissionMode `json:"permissionMode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	if body.Name != nil {
+		name = *body.Name
+	}
+	if body.PermissionMode != nil {
+		mode = *body.PermissionMode
+	}
+	if err := sess.SetPresentation(name, mode); err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
 	}
 	writeJSON(w, 200, view(sess))
 }
