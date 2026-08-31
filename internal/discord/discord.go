@@ -104,8 +104,38 @@ func BoardURL(session string) string {
 	return u.String()
 }
 
+// HandoffURL opens the board just long enough to authenticate the request and
+// ask the Mac daemon to put the selected tmux session in a Terminal window.
+// The token remains in the board's local storage; Discord only gets this
+// notification-safe URL.
+func HandoffURL(session string) string {
+	u := BoardURL(session)
+	if u == "" {
+		return ""
+	}
+	parsed, err := url.Parse(u)
+	if err != nil {
+		return ""
+	}
+	q := parsed.Query()
+	q.Set("handoff", "mac")
+	parsed.RawQuery = q.Encode()
+	return parsed.String()
+}
+
 // Send posts one message to the DM channel.
 func Send(ctx context.Context, content string) error {
+	return send(ctx, content, "")
+}
+
+// SendHandoff posts an attention message with a real Discord link button.
+// Discord cannot invoke a private POST endpoint itself, so the link opens the
+// already-authenticated board, whose first action is the local handoff POST.
+func SendHandoff(ctx context.Context, content, handoffURL string) error {
+	return send(ctx, content, handoffURL)
+}
+
+func send(ctx context.Context, content, handoffURL string) error {
 	tok, ch := token(), channel()
 	if tok == "" {
 		return fmt.Errorf("no Discord token: set AMAC_DISCORD_TOKEN, or add it to the login keychain under that name")
@@ -119,7 +149,16 @@ func Send(ctx context.Context, content string) error {
 	if len(content) > limit {
 		content = content[:limit] + "\n…"
 	}
-	body, _ := json.Marshal(map[string]string{"content": content})
+	payload := map[string]any{"content": content}
+	if handoffURL != "" {
+		payload["components"] = []any{map[string]any{
+			"type": 1,
+			"components": []any{map[string]any{
+				"type": 2, "style": 5, "label": "Open on Mac", "url": handoffURL,
+			}},
+		}}
+	}
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, "POST", api+"/channels/"+ch+"/messages", bytes.NewReader(body))
 	if err != nil {
 		return err

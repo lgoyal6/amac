@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"net/http"
 	"os/exec"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +33,42 @@ import (
 	"github.com/lgoyal6/amac/internal/health"
 	"github.com/lgoyal6/amac/internal/spend"
 )
+
+// openOnMac moves a phone-started workflow to a real local terminal. A fresh
+// Terminal window is intentional: it is the only reliable way to put the
+// requested tmux client in front without guessing which existing tab belongs
+// to which tty.
+func (s *Server) openOnMac(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("id")
+	if runtime.GOOS != "darwin" {
+		writeJSON(w, 409, map[string]string{"error": "opening a terminal is only supported on macOS"})
+		return
+	}
+	if !crew.Exists(name) {
+		writeJSON(w, 404, map[string]string{"error": "tmux session no longer exists"})
+		return
+	}
+	script := terminalHandoffScript(name)
+	if err := exec.CommandContext(r.Context(), "osascript", "-e", script).Run(); err != nil {
+		writeJSON(w, 500, map[string]string{"error": "open Terminal: " + err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "opened", "session": name})
+}
+
+func terminalHandoffScript(name string) string {
+	// name has already been resolved as an existing tmux session. Quoting it
+	// here also keeps AppleScript and the shell boundaries explicit.
+	command := "tmux attach -t " + shellSingleQuote("="+name)
+	return `tell application "Terminal"` + "\n" +
+		`activate` + "\n" +
+		`do script ` + strconv.Quote(command) + "\n" +
+		`end tell`
+}
+
+func shellSingleQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
 
 // lastReport returns the newest recorded verdict for one automation.
 //

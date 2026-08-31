@@ -61,7 +61,7 @@ func Handle(ctx context.Context, log *event.Log, n Notice, coalesce time.Duratio
 
 	out := decide(ctx, log, n)
 	if out.Sent {
-		if err := discord.Send(ctx, render(n)); err != nil {
+		if err := discord.SendHandoff(ctx, render(n), discord.HandoffURL(n.Session)); err != nil {
 			// Record the attempt and its failure. Swallowing this would let
 			// the phone go quiet with the log still claiming delivery.
 			out = Outcome{Sent: false, Why: "discord failed: " + err.Error()}
@@ -136,9 +136,5 @@ func render(n Notice) string {
 	if name == "" {
 		name = n.Agent
 	}
-	message := "🔔 **" + name + "** needs you"
-	if link := discord.BoardURL(n.Session); link != "" {
-		message += "\n" + link
-	}
-	return message
+	return "🔔 **" + name + "** needs you"
 }

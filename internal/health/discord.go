@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -146,18 +147,18 @@ func Alert(reports []Report, prev map[string]State) (string, bool) {
 // sweep share one message so Discord remains an activity journal without
 // producing a burst of separate phone notifications.
 func RunBatch(runs []Run) string {
+	return runBatchAt(runs, time.Now())
+}
+
+func runBatchAt(runs []Run, now time.Time) string {
 	var b strings.Builder
-	if len(runs) == 1 {
-		b.WriteString("**Run**\n")
-	} else {
-		fmt.Fprintf(&b, "**Runs** · %d\n", len(runs))
-	}
+	b.WriteString("**Automation activity**\n")
 	for _, r := range runs {
-		fmt.Fprintf(&b, "%s **%s**", r.Status.Icon(), r.Automation)
+		fmt.Fprintf(&b, "%s ", runIcon(r))
 		if !r.Started.IsZero() {
-			fmt.Fprintf(&b, " · %s", r.Started.Local().Format("15:04"))
+			fmt.Fprintf(&b, "%s · ", runStamp(r.Started, now))
 		}
-		fmt.Fprintf(&b, " · %s", r.Detail)
+		fmt.Fprintf(&b, "**%s** · %s", automationLabel(r.Automation), runDetail(r))
 		if r.Duration > 0 {
 			fmt.Fprintf(&b, " · %s", short(r.Duration))
 		}
@@ -166,11 +167,70 @@ func RunBatch(runs []Run) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+func runStamp(at, now time.Time) string {
+	at, now = at.Local(), now.Local()
+	if at.Year() == now.Year() && at.YearDay() == now.YearDay() {
+		return at.Format("15:04")
+	}
+	return at.Format("Jan 2 15:04")
+}
+
+func automationLabel(name string) string {
+	if label, ok := map[string]string{
+		"tmux-idle-reaper":      "Session cleanup",
+		"job-discovery":         "Job discovery",
+		"morning-brief":         "Morning brief",
+		"hacklist-sf":           "Hacklist SF",
+		"hacklist-local-passes": "Hacklist local passes",
+		"brew-autoupgrade":      "Homebrew update",
+		"disk-sweep":            "Disk cleanup",
+	}[name]; ok {
+		return label
+	}
+	return strings.ReplaceAll(name, "-", " ")
+}
+
+var reaperDetail = regexp.MustCompile(`^done \((\d+) reaped(?:, swap (\d+)%, disk (\d+)%)?\)$`)
+
+func runDetail(r Run) string {
+	if r.Automation != "tmux-idle-reaper" {
+		return r.Detail
+	}
+	m := reaperDetail.FindStringSubmatch(r.Detail)
+	if m == nil {
+		return r.Detail
+	}
+	closed := m[1] + " sessions closed"
+	if m[1] == "0" {
+		closed = "nothing closed"
+	} else if m[1] == "1" {
+		closed = "1 session closed"
+	}
+	if m[2] != "" {
+		closed += " · swap " + m[2] + "% · disk " + m[3] + "%"
+	}
+	return closed
+}
+
+func runIcon(r Run) string {
+	if r.Automation == "tmux-idle-reaper" {
+		m := reaperDetail.FindStringSubmatch(r.Detail)
+		if len(m) == 4 {
+			swap, _ := strconv.Atoi(m[2])
+			disk, _ := strconv.Atoi(m[3])
+			if swap >= 80 || disk >= 85 {
+				return "⚠️"
+			}
+		}
+	}
+	return r.Status.Icon()
+}
+
 // RunFailure is sent on its own, so a failure is never a line in a list he
 // skims. Everything else can wait for the batch.
 func RunFailure(r Run) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "🔴 **%s run failed** · %s\n", r.Automation, r.Detail)
+	fmt.Fprintf(&b, "🔴 **%s failed** · %s\n", automationLabel(r.Automation), r.Detail)
 	fmt.Fprintf(&b, "started %s", r.Started.Local().Format("Mon 15:04"))
 	if r.Duration > 0 {
 		fmt.Fprintf(&b, ", ran %s", short(r.Duration))

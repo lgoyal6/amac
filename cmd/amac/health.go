@@ -179,7 +179,9 @@ func reportRuns(ctx context.Context, log *event.Log, quiet bool) error {
 		}
 		return nil
 	}
-	sort.Slice(fresh, func(i, j int) bool { return fresh[i].Started.Before(fresh[j].Started) })
+	// Phone activity reads newest-first. Oldest-first made a catch-up batch look
+	// random once the date was hidden behind a bare clock time.
+	sort.Slice(fresh, func(i, j int) bool { return fresh[i].Started.After(fresh[j].Started) })
 
 	for _, r := range fresh {
 		ev, err := event.New(event.KindAutomationRun, "health", r.Automation, r)

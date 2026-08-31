@@ -55,7 +55,7 @@ func TestRunFailureIsSelfContained(t *testing.T) {
 		URL: "https://n8n.example/execution/376",
 	}
 	got := RunFailure(r)
-	for _, want := range []string{"job-discovery", "crashed", "31s"} {
+	for _, want := range []string{"Job discovery", "crashed", "31s"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
@@ -72,18 +72,40 @@ func TestRunBatch(t *testing.T) {
 		{Automation: "morning-brief", Status: RunOK, Detail: "delivered the brief", Started: started, Duration: 44 * time.Second},
 		{Automation: "hacklist-sf", Status: RunSkipped, Detail: "gate: swept recently enough", Duration: 8 * time.Second},
 	}
-	got := RunBatch(runs)
-	if !strings.HasPrefix(got, "**Runs** · 2") {
-		t.Errorf("should lead with the count:\n%s", got)
+	got := runBatchAt(runs, started.Add(time.Hour))
+	if !strings.HasPrefix(got, "**Automation activity**") {
+		t.Errorf("should say what the message is:\n%s", got)
 	}
-	for _, want := range []string{"morning-brief", "09:15", "delivered", "hacklist-sf", "gate:", "44s", "8s"} {
+	for _, want := range []string{"Morning brief", "09:15", "delivered", "Hacklist SF", "gate:", "44s", "8s"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}
 	}
-	// A single run should not be announced as a plural list.
-	if one := RunBatch(runs[:1]); !strings.HasPrefix(one, "**Run**\n") {
-		t.Errorf("single run header wrong:\n%s", one)
+	old := started.AddDate(0, 0, -1)
+	if got := runBatchAt([]Run{{Automation: "morning-brief", Started: old}}, started); !strings.Contains(got, "Aug 29 09:15") {
+		t.Errorf("an older run must include its date so it does not look like a future time:\n%s", got)
+	}
+}
+
+func TestReaperRunIsPlainAndPressureIsVisible(t *testing.T) {
+	r := Run{Automation: "tmux-idle-reaper", Status: RunOK, Detail: "done (0 reaped, swap 95%, disk 94%)"}
+	got := runBatchAt([]Run{r}, time.Now())
+	for _, want := range []string{"⚠️", "Session cleanup", "nothing closed", "swap 95%", "disk 94%"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+}
+
+func TestLaunchdWatermarkUsesNewestSeenMarker(t *testing.T) {
+	seen := map[string]bool{
+		"tmux-idle-reaper/2026-08-29T18:33:00Z": true,
+		"tmux-idle-reaper/2026-08-30T01:13:00Z": true,
+		"job-discovery/376":                     true,
+	}
+	got, ok := launchdWatermark(seen, "tmux-idle-reaper")
+	if !ok || got.UTC().Format(time.RFC3339) != "2026-08-30T01:13:00Z" {
+		t.Fatalf("got %v, %v", got, ok)
 	}
 }
 

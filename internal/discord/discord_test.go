@@ -20,3 +20,18 @@ func TestBoardURLTargetsSessionWithoutAddingAToken(t *testing.T) {
 		t.Fatalf("notification link leaked a token: %s", got)
 	}
 }
+
+func TestHandoffURLTargetsMacWithoutAddingAToken(t *testing.T) {
+	old := os.Getenv("AMAC_BOARD_URL")
+	t.Cleanup(func() { _ = os.Setenv("AMAC_BOARD_URL", old) })
+	if err := os.Setenv("AMAC_BOARD_URL", "https://amac.example/"); err != nil {
+		t.Fatal(err)
+	}
+	got := HandoffURL("am-work one")
+	if !strings.Contains(got, "session=am-work+one") || !strings.Contains(got, "handoff=mac") {
+		t.Fatalf("handoff link missing its target: %s", got)
+	}
+	if strings.Contains(got, "token") {
+		t.Fatalf("handoff link leaked a token: %s", got)
+	}
+}

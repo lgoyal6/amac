@@ -69,6 +69,15 @@ func TestResumeCommandsMatchInstalledCLIs(t *testing.T) {
 	}
 }
 
+func TestTerminalHandoffScriptQuotesTmuxTarget(t *testing.T) {
+	got := terminalHandoffScript("work's session")
+	for _, want := range []string{`tell application "Terminal"`, `activate`, `tmux attach -t '=work'\\''s session'`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("handoff script missing %q:\n%s", want, got)
+		}
+	}
+}
+
 func TestDefaultSessionNameSaysAgentAndTime(t *testing.T) {
 	at := time.Date(2026, 8, 30, 18, 7, 32, 0, time.Local)
 	if got := defaultSessionName("codex", at); got != "codex 18:07:32" {

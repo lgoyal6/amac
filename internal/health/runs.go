@@ -349,8 +349,19 @@ func launchdRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
 	}
 	var out []Run
 	for _, j := range jobs {
-		for _, m := range allMarkers(j.log) {
+		markers := allMarkers(j.log)
+		watermark, hasWatermark := launchdWatermark(seen, j.name)
+		// A newly monitored log can contain months of valid completion lines.
+		// Those are history, not phone notifications. Establish its baseline
+		// at the newest marker; subsequent sweeps advance from there.
+		if !hasWatermark && len(seen) > 0 && len(markers) > 1 {
+			markers = markers[len(markers)-1:]
+		}
+		for _, m := range markers {
 			if !reportableRun(j.name, m.note) {
+				continue
+			}
+			if hasWatermark && !m.at.After(watermark) {
 				continue
 			}
 			id := m.at.UTC().Format(time.RFC3339)
@@ -369,6 +380,25 @@ func launchdRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
 		}
 	}
 	return out, nil
+}
+
+// launchdWatermark is the newest marker already recorded for one launchd job.
+// A watermark prevents a reporting-rule change from replaying old log lines
+// that were previously ignored, as happened when zero-action reaper ticks were
+// enabled and several unrelated days appeared in one Discord message.
+func launchdWatermark(seen map[string]bool, automation string) (time.Time, bool) {
+	prefix := automation + "/"
+	var newest time.Time
+	for k := range seen {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339, strings.TrimPrefix(k, prefix))
+		if err == nil && at.After(newest) {
+			newest = at
+		}
+	}
+	return newest, !newest.IsZero()
 }
 
 // reportableRun decides whether a marker is a completed run. Reaper ticks are

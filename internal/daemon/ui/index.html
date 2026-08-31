@@ -360,6 +360,8 @@
 // address bar so it does not sit in screenshots or shoulder-view.
 const url = new URL(location.href);
 const requestedSession = url.searchParams.get('session') || '';
+const requestedHandoff = url.searchParams.get('handoff') === 'mac';
+let handoffAttempted = false;
 // Two ways in. ?token= is the link amac url prints; /app/<token> is where the
 // home-screen icon lands, because start_url is the one place a credential
 // survives Safari deciding to clear the site's storage.
@@ -482,6 +484,7 @@ async function refresh() {
   if (!r.ok) return;
   const list = await r.json();
   sessions = new Map(list.map(s => [s.id, s]));
+  await runRequestedHandoff(list);
   if (activeSessionId && !sessions.has(activeSessionId)) activeSessionId = '';
   // Only the first one. Five blocked sessions each expanded to a full pane is
   // a page you have to scroll past to reach anything else, and the sort
@@ -665,6 +668,16 @@ function sessionActions(s) {
   row.appendChild(help);
 
   if (s.continueCommand) {
+	const open = document.createElement('button');
+	open.className = 'sm go';
+	open.textContent = 'open on Mac';
+	open.onclick = async ev => {
+	  ev.stopPropagation();
+	  const r = await api(`/api/sessions/${encodeURIComponent(s.id)}/open-on-mac`, { method: 'POST' });
+	  said.textContent = r.ok ? 'opened in Terminal' : ((await r.json()).error || 'could not open');
+	};
+	row.appendChild(open);
+
     const copy = document.createElement('button');
     copy.className = 'sm';
     copy.textContent = s.kind === 'tmux' ? 'attach on Mac' : 'copy resume command';
@@ -701,6 +714,18 @@ function sessionActions(s) {
   }
   row.appendChild(said);
   return row;
+}
+
+async function runRequestedHandoff(sessions) {
+  if (handoffAttempted || !requestedHandoff || !requestedSession) return;
+  const target = sessions.find(s => s.id === requestedSession);
+  if (!target) return;
+	handoffAttempted = true;
+  const r = await api(`/api/sessions/${encodeURIComponent(target.id)}/open-on-mac`, { method: 'POST' });
+  const clean = new URL(location.href);
+  clean.searchParams.delete('handoff');
+  history.replaceState({}, '', clean);
+  if (r.ok) document.getElementById('summary').textContent = `${target.name || target.id} opened in Terminal`;
 }
 
 async function updateManaged(id, body) {
