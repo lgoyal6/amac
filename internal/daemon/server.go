@@ -92,6 +92,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/crew/open", s.auth(s.crewOpen))
 	mux.HandleFunc("GET /api/crew/artifact", s.auth(s.crewArtifact))
 	mux.HandleFunc("GET /api/health", s.auth(s.health))
+	mux.HandleFunc("GET /api/health/schedule", s.auth(s.healthSchedule))
 	mux.HandleFunc("POST /api/beat/{name}", s.auth(s.beat))
 	mux.HandleFunc("POST /api/health/{name}/fix", s.auth(s.healthFix))
 	mux.HandleFunc("POST /api/health/{name}/shell", s.auth(s.healthShell))
@@ -461,6 +462,58 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 
 	swept, _ := time.Parse(time.RFC3339Nano, at)
 	writeJSON(w, 200, map[string]any{"at": swept, "reports": out})
+}
+
+type scheduleView struct {
+	Name  string `json:"name"`
+	What  string `json:"what"`
+	Every string `json:"every,omitempty"`
+	Grace string `json:"grace,omitempty"`
+	Probe string `json:"probe"`
+	Check string `json:"check"`
+	Role  string `json:"role"`
+}
+
+func (s *Server) healthSchedule(w http.ResponseWriter, r *http.Request) {
+	decls, err := health.Declarations(health.ConfigPath())
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	out := make([]scheduleView, 0, len(decls))
+	for _, d := range decls {
+		out = append(out, scheduleView{
+			Name: d.Name, What: d.What, Every: d.Every, Grace: d.Grace,
+			Probe: d.Probe, Check: probeExplanation(d.Probe),
+			Role: "AMAC monitors this; the job itself runs elsewhere.",
+		})
+	}
+	writeJSON(w, 200, map[string]any{"automations": out})
+}
+
+func probeExplanation(probe string) string {
+	switch probe {
+	case "launchd_marker":
+		return "Reads the job's launchd status and its completion line in a log."
+	case "marker_fields":
+		return "Reads named measurements from a completion line in a log."
+	case "service":
+		return "Checks that the service process is loaded and its port answers."
+	case "spend_snapshot":
+		return "Reads the latest saved spend report."
+	case "github_delivery_file":
+		return "Reads a committed delivery marker from GitHub."
+	case "github_newest_file":
+		return "Finds the newest matching delivery file on GitHub."
+	case "n8n":
+		return "Reads the workflow's recent runs from n8n."
+	case "heartbeat":
+		return "Reads the latest heartbeat sent to AMAC."
+	case "systemd_unit":
+		return "Reads the service and timer state from systemd."
+	default:
+		return "Runs the configured evidence check."
+	}
 }
 
 // when returns a timestamp only when there is one. A zero time is not a very

@@ -61,6 +61,30 @@ type Config struct {
 	Automations []Declaration `json:"automations"`
 }
 
+// Declarations reads the intended roster without constructing its probes.
+// The board uses this to explain what should happen even before the first
+// sweep has run. It is deliberately uncached so editing health.json is visible
+// on the next refresh without restarting the daemon.
+func Declarations(path string) ([]Declaration, error) {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, ErrNoConfig{Path: path}
+	}
+	if err != nil {
+		return nil, err
+	}
+	var cfg Config
+	dec := json.NewDecoder(strings.NewReader(string(b)))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&cfg); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if len(cfg.Automations) == 0 {
+		return nil, fmt.Errorf("%s declares no automations", path)
+	}
+	return cfg.Automations, nil
+}
+
 // ErrNoConfig is returned when the roster has never been written. It is a
 // distinct error so the CLI can say "run amac init" rather than printing a
 // bare file-not-found at someone who has just cloned the repo.

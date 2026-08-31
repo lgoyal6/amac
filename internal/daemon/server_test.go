@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -39,6 +40,7 @@ func TestEveryAPIRouteNeedsTheToken(t *testing.T) {
 		{"PATCH", "/api/sessions/x"},
 		{"GET", "/api/events"}, {"GET", "/api/agents"},
 		{"GET", "/api/health"}, {"GET", "/api/spend"},
+		{"GET", "/api/health/schedule"},
 		{"GET", "/api/tasks"}, {"POST", "/api/tasks"},
 		{"POST", "/api/tasks/claim"}, {"GET", "/api/crew"},
 		{"POST", "/api/beat/x"}, {"POST", "/api/health/x/fix"},
@@ -192,6 +194,26 @@ func TestHealthWithNoSweepOnRecord(t *testing.T) {
 	}
 	if len(body.Reports) != 0 {
 		t.Errorf("expected no reports, got %d", len(body.Reports))
+	}
+}
+
+func TestHealthScheduleExplainsIntent(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/health.json"
+	if err := os.WriteFile(path, []byte(`{"automations":[{
+		"name":"pressure","what":"watch swap and disk","every":"30m",
+		"grace":"4h","probe":"marker_fields"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AMAC_HEALTH_CONFIG", path)
+	w := do(t, authed("GET", "/api/health/schedule", ""))
+	if w.Code != 200 {
+		t.Fatalf("got %d: %s", w.Code, w.Body)
+	}
+	for _, want := range []string{"pressure", "30m", "completion line", "monitors"} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Errorf("schedule did not explain %q: %s", want, w.Body)
+		}
 	}
 }
 

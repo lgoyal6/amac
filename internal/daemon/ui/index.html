@@ -254,6 +254,13 @@
   .hname { font:600 12.5px/1.5 var(--mono); }
   .hdetail { color:var(--dim); font-size:12px; margin-top:2px; }
   .acts { display:flex; gap:var(--s2); align-items:center; margin-top:var(--s2); flex-wrap:wrap; }
+  .subnav { display:flex; gap:var(--s2); margin-bottom:var(--s3); }
+  .subnav button { background:transparent; border:1px solid var(--line); color:var(--dim);
+                   border-radius:8px; padding:8px 12px; }
+  .subnav button.on { background:var(--raise); color:var(--fg); border-color:var(--faint); }
+  .explain { background:var(--raise); border:1px solid var(--line); border-radius:8px;
+             padding:var(--s3); margin-bottom:var(--s2); color:var(--dim); font-size:12px; }
+  .schedule-meta { display:flex; gap:var(--s2); flex-wrap:wrap; margin:var(--s2) 0; }
 
   /* ---- spend ------------------------------------------------------------ */
   .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
@@ -328,7 +335,12 @@
   </section>
 
   <section id="health" hidden>
-    <div class="card"><div id="healthOut" class="empty">loading</div></div>
+    <div class="subnav" role="tablist" aria-label="health views">
+      <button class="on" role="tab" aria-selected="true" data-health-view="status">status now</button>
+      <button role="tab" aria-selected="false" data-health-view="schedule">intended schedule</button>
+    </div>
+    <div class="card" id="healthStatus"><div id="healthOut" class="empty">loading</div></div>
+    <div class="card" id="healthSchedule" hidden><div id="scheduleOut" class="empty">loading</div></div>
   </section>
 
   <section id="spend" hidden>
@@ -974,6 +986,49 @@ async function loadHealth() {
     b.onclick = () => dispatch(b, 'shell', b.dataset.name);
   });
 }
+
+async function loadHealthSchedule() {
+  const r = await api('/api/health/schedule');
+  const el = $('scheduleOut');
+  if (!r.ok) { el.className = 'empty'; el.textContent = 'could not read the intended schedule'; return; }
+  const { automations } = await r.json();
+  el.className = '';
+  el.innerHTML = `<div class="explain">
+    <b>Every</b> is how often the automation should produce evidence. <b>Grace</b> is extra
+    time allowed before AMAC calls it late. <b>Check</b> is the evidence AMAC reads.
+    AMAC monitors these jobs; it does not run them.
+  </div>` + automations.map(a => `
+    <div class="hrow">
+      <span class="hstate">plan</span>
+      <div style="min-width:0;flex:1">
+        <div class="hname">${esc(a.name)}</div>
+        <div class="hdetail">${esc(a.what)}</div>
+        <div class="schedule-meta">
+          <span class="kind">${a.every ? `every ${esc(a.every)}` : 'continuous service'}</span>
+          ${a.grace ? `<span class="kind">grace ${esc(a.grace)}</span>` : ''}
+        </div>
+        <div class="hdetail"><b>Check:</b> ${esc(a.check)}</div>
+        <div class="hdetail">${esc(a.role)}</div>
+        ${a.name === 'machine-pressure' ? `<div class="hdetail">
+          <b>Swap</b> is disk temporarily used as extra memory when RAM is tight.
+          <b>Disk</b> is how full the Mac's Data volume is. This automation only warns; it does not clean either one.
+        </div>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+document.querySelectorAll('[data-health-view]').forEach(b => {
+  b.onclick = () => {
+    const schedule = b.dataset.healthView === 'schedule';
+    document.querySelectorAll('[data-health-view]').forEach(x => {
+      x.classList.toggle('on', x === b);
+      x.setAttribute('aria-selected', x === b ? 'true' : 'false');
+    });
+    $('healthStatus').hidden = schedule;
+    $('healthSchedule').hidden = !schedule;
+    if (schedule) loadHealthSchedule(); else loadHealth();
+  };
+});
 
 async function dispatch(btn, what, name) {
   const said = btn.parentElement.querySelector('.said');
