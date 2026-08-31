@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -42,6 +43,8 @@ func TestEveryAPIRouteNeedsTheToken(t *testing.T) {
 		{"GET", "/api/sessions"}, {"POST", "/api/sessions"},
 		{"PATCH", "/api/sessions/x"},
 		{"GET", "/api/events"}, {"GET", "/api/agents"},
+		{"GET", "/api/applications"}, {"POST", "/api/applications"},
+		{"PATCH", "/api/applications/x"}, {"POST", "/api/applications/sync"},
 		{"GET", "/api/health"}, {"GET", "/api/spend"},
 		{"GET", "/api/health/schedule"},
 		{"GET", "/api/tasks"}, {"POST", "/api/tasks"},
@@ -279,6 +282,49 @@ func TestSpendWithoutASnapshotSaysSo(t *testing.T) {
 	// render as "you have spent nothing".
 	if !strings.Contains(w.Body.String(), "spend.mjs") {
 		t.Errorf("a missing snapshot should say how to make one: %s", w.Body)
+	}
+}
+
+func TestSpendExposesLooseAPIServiceStateWithoutInboxOrProviderDetails(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".devspend")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	const snapshot = `{
+  "generatedAt":"2026-08-28T12:00:00Z","source":"gmail","messageCount":42,
+  "ledgerSize":9,"recoveredFromLedger":2,"hiddenOutOfScope":3,"monthlyCents":2999,
+  "events":[
+    {"id":"private-message-id","subject":"private trial subject","date":"2026-08-28T10:00:00Z","serviceId":"cursor","service":"Cursor","scope":"dev","kind":"trial_converting","severity":3,"amountCents":2999,"creditsRemainingCents":null,"unread":true,"trashed":false},
+    {"date":"2026-08-27T10:00:00Z","serviceId":"aws","service":"AWS","scope":"dev","kind":"credits_low","severity":2,"amountCents":null,"creditsRemainingCents":1000,"unread":false,"trashed":false}
+  ],
+  "alerts":[{"kind":"trial_converting","severity":3,"service":"Cursor","message":"Cursor trial converts soon"}],
+  "providers":[{"id":"aws","name":"AWS","status":"error","error":"secret upstream response"}],
+  "noApi":[{"name":"ChatGPT Plus","reason":"consumer plan has no API"}],
+  "usage":{"days":30,"tools":[]}
+}`
+	if err := os.WriteFile(filepath.Join(dir, "snapshot.json"), []byte(snapshot), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	w := do(t, authed("GET", "/api/spend", ""))
+	if w.Code != 200 {
+		t.Fatalf("got %d: %s", w.Code, w.Body.String())
+	}
+	for _, want := range []string{
+		`"source":"gmail"`, `"servicesSeen":2`, `"trials":1`,
+		`"trialStatus":"converting"`, `"creditsRemainingCents":1000`,
+		`"providers"`, `"provider check failed; see LooseAPI logs"`, `"noApi"`,
+	} {
+		if !strings.Contains(w.Body.String(), want) {
+			t.Errorf("spend response missing %s: %s", want, w.Body.String())
+		}
+	}
+	for _, secret := range []string{"private-message-id", "private trial subject", "secret upstream response"} {
+		if strings.Contains(w.Body.String(), secret) {
+			t.Errorf("spend response leaked %q: %s", secret, w.Body.String())
+		}
 	}
 }
 

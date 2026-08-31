@@ -37,6 +37,7 @@
 
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   [hidden] { display:none !important; }
+  a { color:inherit; text-decoration-color:var(--faint); text-underline-offset:2px; }
   body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--sans);
          padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
          -webkit-font-smoothing:antialiased; }
@@ -65,6 +66,27 @@
                border-radius:6px; background:var(--blocked); color:#231000;
                font:700 10px/1.4 var(--mono); }
   nav .badge.ready { background:var(--working); color:#001427; }
+
+  .section-head { display:flex; align-items:flex-end; gap:var(--s3); margin-bottom:var(--s3); }
+  .section-head h2 { margin:0; font:600 14px/1.3 var(--mono); }
+  .section-head p { margin:0; color:var(--dim); font-size:12px; }
+  .section-head .grow { flex:1; }
+
+  .action-list { display:grid; gap:var(--s2); }
+  .action { display:flex; align-items:flex-start; gap:var(--s3); background:var(--surface);
+            border:1px solid var(--line); border-left:2px solid var(--late);
+            border-radius:var(--r); padding:var(--s3) var(--s4); }
+  .action.urgent { border-left-color:var(--fail); }
+  .action.info { border-left-color:var(--working); }
+  .action-copy { min-width:0; flex:1; }
+  .action-copy b { display:block; font:600 12.5px/1.4 var(--mono); }
+  .action-copy span { display:block; color:var(--dim); font-size:12px; margin-top:2px; }
+  .action button { flex:none; }
+  .all-clear { background:color-mix(in srgb, var(--ok) 7%, var(--surface));
+               border:1px solid color-mix(in srgb, var(--ok) 30%, var(--line));
+               border-radius:var(--r); padding:var(--s5); text-align:center; }
+  .all-clear b { display:block; color:var(--ok); font:600 14px/1.4 var(--mono); }
+  .all-clear span { color:var(--dim); font-size:12px; }
 
   main { padding:var(--s4) var(--s4) 96px; }
   /* align-items:start, not the default stretch. Opening one card grows its row,
@@ -194,7 +216,7 @@
     .mobile-new { display:block; margin-left:auto; min-height:36px; padding:0 12px !important; }
     nav { position:fixed; z-index:8; left:0; right:0; bottom:0; height:calc(var(--mobile-nav-h) + env(safe-area-inset-bottom));
           margin:0; padding:0 var(--s2) env(safe-area-inset-bottom); overflow:visible;
-          display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:0;
+          display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:0;
           background:color-mix(in srgb, var(--surface) 96%, transparent); border-top:1px solid var(--line); }
     nav button { position:relative; min-width:0; padding:8px 1px 6px; border-bottom:0; border-top:2px solid transparent;
                  font-size:10.5px; overflow:hidden; text-overflow:ellipsis; }
@@ -231,6 +253,12 @@
     .session-actions select { flex:1; min-height:44px; }
     .pressure-alert { align-items:flex-start; padding:var(--s3); }
     .pressure-alert button { flex:none; }
+    .section-head { align-items:flex-start; }
+    .section-head p { display:none; }
+    .action { padding:var(--s3); }
+    .jobs-toolbar { grid-template-columns:minmax(0,1fr) !important; }
+    .job-row { grid-template-columns:minmax(0,1fr) auto !important; }
+    .job-row .job-date, .job-row .job-follow { grid-column:1 / -1; }
   }
   .bar select, .bar input { background:var(--raise); color:var(--fg);
          border:1px solid var(--line); border-radius:8px;
@@ -297,6 +325,10 @@
   .subnav button { background:transparent; border:1px solid var(--line); color:var(--dim);
                    border-radius:8px; padding:8px 12px; }
   .subnav button.on { background:var(--raise); color:var(--fg); border-color:var(--faint); }
+  .subnav .badge { display:inline-block; margin-left:var(--s1); padding:1px 5px;
+                   border-radius:6px; background:var(--blocked); color:#231000;
+                   font:700 10px/1.4 var(--mono); }
+  .subnav .badge.ready { background:var(--working); color:#001427; }
   .explain { background:var(--raise); border:1px solid var(--line); border-radius:8px;
              padding:var(--s3); margin-bottom:var(--s2); color:var(--dim); font-size:12px; }
   .schedule-meta { display:flex; gap:var(--s2); flex-wrap:wrap; margin:var(--s2) 0; }
@@ -315,6 +347,35 @@
   .bar-fill { height:100%; background:var(--working); border-radius:3px; }
   .bar-val { width:62px; text-align:right; font:11.5px/1.4 var(--mono);
              color:var(--dim); font-variant-numeric:tabular-nums; }
+
+  /* ---- jobs ------------------------------------------------------------ */
+  .jobs-toolbar { display:grid; grid-template-columns:minmax(180px,1fr) repeat(2,minmax(120px,180px));
+                  gap:var(--s2); margin-bottom:var(--s3); }
+  .jobs-toolbar input, .jobs-toolbar select, .job-row select, .job-row input {
+        width:100%; min-width:0; background:var(--raise); color:var(--fg);
+        border:1px solid var(--line); border-radius:8px; padding:9px var(--s3);
+        font:12.5px/1 var(--sans); }
+  .job-list { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); overflow:hidden; }
+  .job-row { display:grid; grid-template-columns:minmax(180px,1.5fr) minmax(130px,.7fr) 105px minmax(145px,.8fr);
+             gap:var(--s3); align-items:center; padding:var(--s3) var(--s4); border-bottom:1px solid var(--line); }
+  .job-row:last-child { border-bottom:0; }
+  .job-main { min-width:0; }
+  .job-main b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+                font:600 12.5px/1.4 var(--mono); }
+  .job-main span { display:block; color:var(--dim); font-size:12px; overflow:hidden;
+                   text-overflow:ellipsis; white-space:nowrap; }
+  .job-date, .job-follow { color:var(--dim); font-size:11.5px; }
+  .job-follow label { display:block; color:var(--faint); font-size:10px; margin-bottom:4px; }
+  .job-count { color:var(--dim); font:11px/1.4 var(--mono); }
+  .money-section { margin-top:var(--s3); }
+  .service-list { display:grid; gap:var(--s2); }
+  .service-row { display:flex; align-items:center; gap:var(--s3); padding:var(--s3) 0;
+                 border-bottom:1px solid var(--line); }
+  .service-row:last-child { border-bottom:0; }
+  .service-main { flex:1; min-width:0; }
+  .service-main b { display:block; font:600 12.5px/1.4 var(--mono); }
+  .service-main span { color:var(--dim); font-size:11.5px; }
+  .service-cost { flex:none; text-align:right; font:600 12px/1.4 var(--mono); }
 </style>
 </head>
 <body>
@@ -323,59 +384,79 @@
     <h1>amac</h1>
     <span class="summary" id="summary"></span>
     <div class="conn"><span class="dot" id="dot"></span><span id="connText">connecting</span></div>
-    <button class="sm mobile-new" id="mobileNew" aria-expanded="false">new</button>
+    <button class="sm mobile-new" id="mobileNew" aria-expanded="false" hidden>new</button>
   </div>
   <nav>
-    <button data-tab="board" class="on">board<span class="badge" id="blockedCount" hidden></span></button>
-    <button data-tab="wall">wall</button>
-    <button data-tab="queue">queue<span class="badge ready" id="readyCount" hidden></span></button>
-    <button data-tab="crew">crew</button>
-    <button data-tab="health">health</button>
-    <button data-tab="spend">spend</button>
+    <button data-tab="home" class="on">home<span class="badge" id="actionCount" hidden></span></button>
+    <button data-tab="agents">agents<span class="badge" id="blockedCount" hidden></span></button>
+    <button data-tab="automations">automations</button>
+    <button data-tab="money">money</button>
+    <button data-tab="jobs">jobs</button>
   </nav>
 </header>
 
 <main>
-  <div id="boardOverview" class="board-overview"></div>
-  <div id="board" class="grid"><div class="empty">no sessions yet</div></div>
-
-  <section id="wall" hidden>
-    <div id="wallOut" class="wall"></div>
-  </section>
-
-  <section id="queue" hidden>
-    <div class="compose">
-      <input id="taskTitle" placeholder="what needs doing?" enterkeyhint="go">
-      <input id="taskDir" placeholder="working directory (default: home)">
-      <div class="row">
-        <button id="taskFile" class="sm">file it</button>
-        <button id="taskClaim" class="sm go">claim next and open a session</button>
-        <span class="hdetail" id="taskSaid"></span>
-      </div>
+  <section id="home">
+    <div class="section-head">
+      <div class="grow"><h2>needs you</h2><p>Only things that need a decision, follow-up, or fix.</p></div>
+      <button class="sm" id="refreshHome">refresh</button>
     </div>
-    <div id="queueOut"></div>
+    <div id="homeOut" class="action-list"><div class="empty">checking</div></div>
   </section>
 
-  <section id="crew" hidden>
-    <div class="compose">
-      <input id="crewTask" placeholder="what should the org do?" enterkeyhint="go">
-      <input id="crewDir" placeholder="working directory (default: home)">
-      <div class="row">
-        <select id="crewSize">
-          <option value="">triage it</option>
-          <option value="solo">solo</option>
-          <option value="pair">pair</option>
-          <option value="team">team</option>
-        </select>
-        <button id="crewPlan" class="sm">plan</button>
-        <button id="crewOpen" class="sm go">open next role</button>
-      </div>
-      <div id="crewPlanOut"></div>
+  <section id="agents" hidden>
+    <div class="section-head"><div class="grow"><h2>agents</h2><p>Sessions, live output, queued work, and crews.</p></div></div>
+    <div class="subnav" role="tablist" aria-label="agent views">
+      <button class="on" role="tab" aria-selected="true" data-agent-view="board">board</button>
+      <button role="tab" aria-selected="false" data-agent-view="wall">wall</button>
+      <button role="tab" aria-selected="false" data-agent-view="queue">queue<span class="badge ready" id="readyCount" hidden></span></button>
+      <button role="tab" aria-selected="false" data-agent-view="crew">crew</button>
     </div>
-    <div id="crewRuns"></div>
+
+    <section id="board">
+      <div id="boardOverview" class="board-overview"></div>
+      <div id="boardOut" class="grid"><div class="empty">no sessions yet</div></div>
+    </section>
+
+    <section id="wall" hidden>
+      <div id="wallOut" class="wall"></div>
+    </section>
+
+    <section id="queue" hidden>
+      <div class="compose">
+        <input id="taskTitle" placeholder="what needs doing?" enterkeyhint="go">
+        <input id="taskDir" placeholder="working directory (default: home)">
+        <div class="row">
+          <button id="taskFile" class="sm">file it</button>
+          <button id="taskClaim" class="sm go">claim next and open a session</button>
+          <span class="hdetail" id="taskSaid"></span>
+        </div>
+      </div>
+      <div id="queueOut"></div>
+    </section>
+
+    <section id="crew" hidden>
+      <div class="compose">
+        <input id="crewTask" placeholder="what should the org do?" enterkeyhint="go">
+        <input id="crewDir" placeholder="working directory (default: home)">
+        <div class="row">
+          <select id="crewSize">
+            <option value="">triage it</option>
+            <option value="solo">solo</option>
+            <option value="pair">pair</option>
+            <option value="team">team</option>
+          </select>
+          <button id="crewPlan" class="sm">plan</button>
+          <button id="crewOpen" class="sm go">open next role</button>
+        </div>
+        <div id="crewPlanOut"></div>
+      </div>
+      <div id="crewRuns"></div>
+    </section>
   </section>
 
-  <section id="health" hidden>
+  <section id="automations" hidden>
+    <div class="section-head"><div class="grow"><h2>automations</h2><p>What runs where, when it should run, and whether the evidence is current.</p></div></div>
     <div class="subnav" role="tablist" aria-label="health views">
       <button class="on" role="tab" aria-selected="true" data-health-view="status">status now</button>
       <button role="tab" aria-selected="false" data-health-view="schedule">intended schedule</button>
@@ -384,12 +465,36 @@
     <div class="card" id="healthSchedule" hidden><div id="scheduleOut" class="empty">loading</div></div>
   </section>
 
-  <section id="spend" hidden>
+  <section id="money" hidden>
+    <div class="section-head"><div class="grow"><h2>money</h2><p>Subscriptions, usage, credits, trials, and anything needing attention.</p></div></div>
     <div id="spendOut" class="empty">loading</div>
+  </section>
+
+  <section id="jobs" hidden>
+    <div class="section-head">
+      <div class="grow"><h2>jobs</h2><p>Fast local view of applications synced from Notion.</p></div>
+      <button class="sm" id="syncJobs">sync Notion</button>
+    </div>
+    <div class="jobs-toolbar">
+      <input id="jobSearch" type="search" placeholder="search company or role" aria-label="Search applications">
+      <select id="jobStatus" aria-label="Filter by status">
+        <option value="">all statuses</option>
+        <option>Applied</option><option>In Review</option><option>Interview</option>
+        <option>Offer</option><option>Rejected</option>
+      </select>
+      <select id="jobFollowFilter" aria-label="Filter by follow-up">
+        <option value="">all follow-ups</option>
+        <option value="due">due now</option>
+        <option value="scheduled">scheduled</option>
+        <option value="none">not set</option>
+      </select>
+    </div>
+    <div class="section-head"><span id="jobCount" class="job-count"></span><span id="jobSyncState" class="job-count"></span></div>
+    <div id="jobsOut" class="empty">loading</div>
   </section>
 </main>
 
-<div class="bar" id="startBar">
+<div class="bar" id="startBar" hidden>
   <select id="agent"></select>
   <input id="sessionName" class="session-name" placeholder="name (optional)" maxlength="80">
   <input id="prompt" placeholder="start a session..." enterkeyhint="go">
@@ -492,7 +597,8 @@ let activeSessionId = requestedSession; // exactly one expanded card; stable on 
 let panes = new Map();     // session id -> last captured pane text
 let paneEls = new Map();   // session id -> the <div class="pane"> showing it
 let lastSeq = 0;
-let tab = 'board';
+let tab = requestedSession ? 'agents' : 'home';
+let agentView = 'board';
 // Expanding a blocked card is done for you once, on the first sight of it.
 // Answering the question you have not answered is the entire job of the
 // screen, and making you tap twice to see it is the screen failing at it.
@@ -553,7 +659,8 @@ async function refresh() {
     // together: the second is the reason to look at the first.
     todayUsd ? `<b>${esc(todayUsd)}</b> API-equivalent today` : '',
   ].filter(Boolean).join(' · ');
-  if (tab === 'board') render();
+  if (tab === 'agents' && agentView === 'board') render();
+  if (tab === 'home') loadHome();
 }
 
 function push(id, line) {
@@ -578,7 +685,7 @@ function push(id, line) {
 }
 
 function render() {
-  const grid = $('board');
+  const grid = $('boardOut');
   const all = [...sessions.values()];
   document.body.classList.toggle('session-active', Boolean(activeSessionId));
   if (!all.length) { grid.innerHTML = '<div class="empty">no sessions yet</div>'; return; }
@@ -928,7 +1035,7 @@ async function capture(id) {
 // captured on a timer would be twenty forks a tick for panes nobody is looking
 // at.
 setInterval(() => {
-  if (tab !== 'board' || document.hidden) return;
+  if (tab !== 'agents' || agentView !== 'board' || document.hidden) return;
   const s = sessions.get(activeSessionId);
   if (s && s.kind === 'tmux') capture(activeSessionId);
 }, 4000);
@@ -1016,6 +1123,71 @@ async function loadRuns() {
 $('crewPlan').onclick = () => crewPlan(false);
 $('crewOpen').onclick = () => crewPlan(true);
 $('crewTask').addEventListener('keydown', ev => { if (ev.key === 'Enter') crewPlan(false); });
+
+// ------------------------------------------------------------------- home --
+
+let homeLoadedAt = 0;
+let homeLoading = false;
+async function loadHome(force = false) {
+  if (homeLoading || (!force && Date.now() - homeLoadedAt < 30000)) return;
+  homeLoading = true;
+  const [hr, tr, sr, jr] = await Promise.all([
+    api('/api/health'), api('/api/tasks'), api('/api/spend'), api('/api/applications?limit=200'),
+  ]);
+  homeLoading = false;
+  homeLoadedAt = Date.now();
+  const health = hr.ok ? await hr.json() : {};
+  const tasks = tr.ok ? await tr.json() : [];
+  const spend = sr.ok ? await sr.json() : {};
+  const jobData = jr.ok ? await jr.json() : {};
+  const apps = Array.isArray(jobData) ? jobData : (jobData.applications || []);
+  if (unauthorized || !$('homeOut')) return;
+  const actions = [];
+  const blocked = [...sessions.values()].filter(s => s.state === 'blocked');
+  if (blocked.length) actions.push({tone:'urgent', title:`${blocked.length} agent${blocked.length === 1 ? '' : 's'} waiting`,
+    detail:'A session needs an answer or approval.', label:'open agents', tab:'agents', view:'board'});
+  const ready = (Array.isArray(tasks) ? tasks : []).filter(t => t.state === 'ready');
+  if (ready.length) actions.push({tone:'info', title:`${ready.length} queued task${ready.length === 1 ? '' : 's'} ready`,
+    detail:'Claim the next task when you have capacity.', label:'open queue', tab:'agents', view:'queue'});
+  for (const rep of (health.reports || []).filter(x => x.category !== 'machine' && x.state !== 'ok').slice(0, 3)) {
+    actions.push({tone:rep.state === 'failing' || rep.state === 'down' ? 'urgent' : '',
+      title:`${rep.name} is ${rep.state}`, detail:rep.detail || 'The latest expected evidence is missing.',
+      label:'check', tab:'automations'});
+  }
+  const machine = (health.reports || []).find(x => x.category === 'machine' && x.state !== 'ok');
+  if (machine) actions.push({tone:'', title:'Mac capacity warning',
+    detail:`Automations are not marked failed. ${machine.detail || 'The machine is under pressure.'}`,
+    label:'details', tab:'automations'});
+  for (const alert of (spend.alerts || []).slice(0, 3)) {
+    actions.push({tone:alert.severity >= 3 ? 'urgent' : '', title:'Money needs attention',
+      detail:alert.message || 'A balance, trial, or charge needs review.', label:'review', tab:'money'});
+  }
+  const today = new Date(); today.setHours(23, 59, 59, 999);
+  const due = apps.filter(a => a.followUpAt && new Date(a.followUpAt) <= today && !['Offer','Rejected'].includes(a.status));
+  if (due.length) actions.push({tone:'', title:`${due.length} job follow-up${due.length === 1 ? '' : 's'} due`,
+    detail:'Applications with a follow-up date today or earlier.', label:'open jobs', tab:'jobs'});
+  const out = $('homeOut');
+  const count = actions.length;
+  $('actionCount').hidden = count === 0;
+  $('actionCount').textContent = count;
+  if (!count) {
+    out.innerHTML = '<div class="all-clear"><b>nothing needs you</b><span>Agents, automations, money, and job follow-ups have no current action.</span></div>';
+    return;
+  }
+  out.innerHTML = actions.map((a, i) => `<div class="action ${esc(a.tone)}">
+    <div class="action-copy"><b>${esc(a.title)}</b><span>${esc(a.detail)}</span></div>
+    <button class="sm" data-action="${i}">${esc(a.label)}</button>
+  </div>`).join('');
+  out.querySelectorAll('[data-action]').forEach(b => {
+    b.onclick = () => {
+      const action = actions[Number(b.dataset.action)];
+      openTopTab(action.tab);
+      if (action.view) setAgentView(action.view);
+    };
+  });
+}
+
+$('refreshHome').onclick = () => { homeLoadedAt = 0; loadHome(true); };
 
 // ----------------------------------------------------------------- health --
 
@@ -1106,7 +1278,7 @@ async function loadBoardHealth() {
     <div class="pressure-copy"><b>machine pressure</b><span>${esc(rep.detail)}</span></div>
     <button class="sm" id="pressureDetails">details</button>
   </div>`;
-  $('pressureDetails').onclick = () => document.querySelector('nav button[data-tab="health"]').click();
+  $('pressureDetails').onclick = () => openTopTab('automations');
 }
 
 async function loadHealthSchedule() {
@@ -1205,7 +1377,8 @@ async function loadWall() {
     // is. The wall is for seeing; acting still happens in one place.
     tile.onclick = () => {
       activeSessionId = all[i].id;
-      document.querySelector('nav button[data-tab="board"]').click();
+      document.querySelector('nav button[data-tab="agents"]').click();
+      setAgentView('board');
       requestAnimationFrame(() => {
         document.querySelector(`.card[data-session-id="${CSS.escape(all[i].id)}"]`)
           ?.scrollIntoView({ block: 'start' });
@@ -1217,7 +1390,7 @@ async function loadWall() {
 // Slower than the board's open card. Twelve captures a tick is twelve forks,
 // and a wall is for watching rather than for reacting to a keystroke.
 setInterval(() => {
-  if (tab === 'wall' && !document.hidden && !unauthorized) loadWall();
+  if (tab === 'agents' && agentView === 'wall' && !document.hidden && !unauthorized) loadWall();
 }, 5000);
 
 // ------------------------------------------------------------------ queue --
@@ -1334,12 +1507,43 @@ async function loadSpend() {
   const r = await api('/api/spend');
   const d = r.ok ? await r.json() : { error: 'could not read the snapshot' };
   if (d.error) { el.className = 'empty'; el.textContent = d.error; return; }
+  const counts = d.counts || {};
+  const services = Array.isArray(d.services) ? d.services : [];
+  const events = Array.isArray(d.events) ? d.events : [];
+  const providers = Array.isArray(d.providers) ? d.providers : [];
+  const noApi = Array.isArray(d.noApi) ? d.noApi : [];
+  const serviceRows = services.length ? `<div class="card money-section">
+    <div class="hname">services</div><div class="service-list">${services.map(s => {
+      const attention = s.needsAttention || (s.alerts && s.alerts.length);
+      const meta = [s.scope, s.trialStatus, s.creditsRemainingUsd ? `${s.creditsRemainingUsd} credits` : '',
+        s.latestKind, s.latestAt ? `updated ${ago(s.latestAt)}` : ''].filter(Boolean).join(' · ');
+      return `<div class="service-row">
+        <span class="hstate ${attention ? 'late' : 'ok'}">${attention ? 'watch' : 'ok'}</span>
+        <div class="service-main"><b>${esc(s.name || s.id)}</b><span>${esc(meta || 'tracked')}</span>
+          ${(s.alerts || []).map(a => `<span style="display:block">${esc(a.message || a)}</span>`).join('')}</div>
+        <div class="service-cost">${esc(s.totalUsd || usd(s.totalCents || 0))}<div class="hdetail">${esc(s.billedThrough || '')}</div></div>
+      </div>`;
+    }).join('')}</div></div>` : '';
+  const eventRows = events.length ? `<div class="card money-section">
+    <div class="hname">recent activity</div>${events.slice(0, 10).map(e => `<div class="hrow">
+      <span class="hstate ${e.severity >= 3 ? 'failing' : e.severity ? 'late' : 'ok'}">${esc(e.kind || 'event')}</span>
+      <div style="min-width:0;flex:1"><div class="hname">${esc(e.service || e.serviceId || 'service')}</div>
+      <div class="hdetail">${esc([e.date, e.amountUsd, e.creditsRemainingUsd ? `${e.creditsRemainingUsd} credits left` : '', e.unread ? 'unread' : ''].filter(Boolean).join(' · '))}</div></div>
+    </div>`).join('')}</div>` : '';
+  const providerRows = providers.length || noApi.length ? `<div class="card money-section">
+    <div class="hname">data coverage</div>
+    ${providers.map(p => `<div class="hrow"><span class="hstate ${p.status === 'ok' ? 'ok' : 'late'}">${esc(p.status || 'check')}</span>
+      <div><div class="hname">${esc(p.name || p.id)}</div><div class="hdetail">${esc(p.note || p.error || '')}</div></div></div>`).join('')}
+    ${noApi.map(p => `<div class="hrow"><span class="hstate">manual</span><div><div class="hname">${esc(p.name)}</div><div class="hdetail">${esc(p.reason)}</div></div></div>`).join('')}
+    </div>` : '';
   el.className = '';
   el.innerHTML = `
     <div class="tiles">
       <div class="tile"><div class="tv">${esc(d.monthlyUsd)}</div><div class="tl">recurring / month</div></div>
       <div class="tile"><div class="tv">${esc(d.todayUsd)}</div><div class="tl">API equivalent today, not billed spend</div></div>
       <div class="tile"><div class="tv">${esc(d.agentUsd)}</div><div class="tl">API equivalent, ${d.days}d</div></div>
+      ${counts.trials ? `<div class="tile"><div class="tv">${esc(counts.trials)}</div><div class="tl">active trials</div></div>` : ''}
+      ${(counts.creditAccounts || counts.creditsNeedingAttention) ? `<div class="tile"><div class="tv">${esc(counts.creditAccounts || counts.creditsNeedingAttention)}</div><div class="tl">credit balances</div></div>` : ''}
     </div>
     <div class="explain">${esc(d.caveat)}</div>
     ${bars('where it went', d.byProject)}
@@ -1354,28 +1558,152 @@ async function loadSpend() {
       <div class="hdetail" style="margin-top:12px">
         scanned ${esc(new Date(d.at).toLocaleString())}${d.stale ? ' - stale, the daily scan has not run' : ''}
       </div>
-    </div>`;
+    </div>
+    ${serviceRows}${eventRows}${providerRows}`;
 }
+
+// -------------------------------------------------------------------- jobs --
+
+let applications = [];
+let jobMeta = {};
+const jobStatuses = ['Applied', 'In Review', 'Interview', 'Offer', 'Rejected'];
+const dateOnly = value => value ? String(value).slice(0, 10) : '';
+const safeHref = value => {
+  try {
+    const parsed = new URL(value);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
+  } catch (_) { return ''; }
+};
+
+async function loadJobs() {
+  const out = $('jobsOut');
+  const r = await api('/api/applications?limit=200');
+  if (!r.ok) {
+    out.className = 'empty';
+    out.textContent = 'could not load applications from the local Notion mirror';
+    return;
+  }
+  const d = await r.json();
+  applications = Array.isArray(d) ? d : (d.applications || []);
+  jobMeta = Array.isArray(d) ? {} : d;
+  renderJobs();
+}
+
+function renderJobs() {
+  const query = $('jobSearch').value.trim().toLowerCase();
+  const status = $('jobStatus').value;
+  const follow = $('jobFollowFilter').value;
+  const endToday = new Date(); endToday.setHours(23, 59, 59, 999);
+  const filtered = applications.filter(a => {
+    const haystack = [a.company, a.role, a.status, a.location, a.category, a.ats].filter(Boolean).join(' ').toLowerCase();
+    if (query && !haystack.includes(query)) return false;
+    if (status && a.status !== status) return false;
+    const due = a.followUpAt && new Date(a.followUpAt) <= endToday;
+    if (follow === 'due' && !due) return false;
+    if (follow === 'scheduled' && (!a.followUpAt || due)) return false;
+    if (follow === 'none' && a.followUpAt) return false;
+    return true;
+  });
+  $('jobCount').textContent = `${filtered.length} of ${jobMeta.total ?? applications.length} applications`;
+  $('jobSyncState').textContent = [jobMeta.source, jobMeta.syncedAt ? `synced ${ago(jobMeta.syncedAt)}` : '',
+    jobMeta.stale ? 'stale' : '', jobMeta.warning || ''].filter(Boolean).join(' · ');
+  const out = $('jobsOut');
+  if (!filtered.length) {
+    out.className = 'empty';
+    out.textContent = applications.length ? 'no applications match these filters' : 'no applications synced yet';
+    return;
+  }
+  out.className = 'job-list';
+  out.innerHTML = filtered.map(a => {
+    const href = safeHref(a.url || a.notionUrl || '');
+    const title = `${a.company || 'Unknown company'} · ${a.role || 'Unknown role'}`;
+    return `<div class="job-row" data-job-key="${esc(a.key)}">
+      <div class="job-main">${href ? `<a href="${esc(href)}" target="_blank" rel="noreferrer"><b>${esc(title)}</b></a>` : `<b>${esc(title)}</b>`}
+        <span>${esc([a.location, a.ats || a.source, a.category].filter(Boolean).join(' · '))}</span></div>
+      <select class="job-status" aria-label="Status for ${esc(title)}">
+        ${jobStatuses.map(s => `<option${a.status === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}
+      </select>
+      <div class="job-date">applied<br>${esc(dateOnly(a.appliedAt) || 'unknown')}</div>
+      <div class="job-follow"><label>follow up</label><input class="job-follow-input" type="date" value="${esc(dateOnly(a.followUpAt))}" aria-label="Follow-up date for ${esc(title)}"></div>
+    </div>`;
+  }).join('');
+  out.querySelectorAll('.job-status').forEach(input => {
+    input.onchange = () => patchApplication(input.closest('[data-job-key]'), {status:input.value}, input);
+  });
+  out.querySelectorAll('.job-follow-input').forEach(input => {
+    input.onchange = () => patchApplication(input.closest('[data-job-key]'), {followUpAt:input.value || null}, input);
+  });
+}
+
+async function patchApplication(row, patch, control) {
+  const key = row.dataset.jobKey;
+  control.disabled = true;
+  const r = await api(`/api/applications/${encodeURIComponent(key)}`, {
+    method:'PATCH', body:JSON.stringify(patch),
+  });
+  control.disabled = false;
+  if (!r.ok) {
+    $('jobSyncState').textContent = 'update failed - refresh and try again';
+    return;
+  }
+  const updated = await r.json();
+  const idx = applications.findIndex(a => a.key === key);
+  if (idx >= 0) applications[idx] = {...applications[idx], ...patch, ...(updated.application || updated)};
+  homeLoadedAt = 0;
+  renderJobs();
+}
+
+['jobSearch', 'jobStatus', 'jobFollowFilter'].forEach(id => {
+  $(id).addEventListener(id === 'jobSearch' ? 'input' : 'change', renderJobs);
+});
+$('syncJobs').onclick = async () => {
+  const btn = $('syncJobs');
+  btn.disabled = true; btn.textContent = 'syncing...';
+  const r = await api('/api/applications/sync', {method:'POST'});
+  btn.disabled = false; btn.textContent = r.ok ? 'synced' : 'sync failed';
+  if (r.ok) await loadJobs();
+  setTimeout(() => { btn.textContent = 'sync Notion'; }, 1500);
+};
 
 // ------------------------------------------------------------------- tabs --
 
-document.querySelectorAll('nav button').forEach(b => {
-  b.onclick = () => {
-    tab = b.dataset.tab;
-    document.querySelectorAll('nav button').forEach(x => x.classList.toggle('on', x === b));
-    for (const id of ['board', 'wall', 'queue', 'crew', 'health', 'spend']) $(id).hidden = id !== tab;
-	$('boardOverview').hidden = tab !== 'board';
-    $('startBar').hidden = tab !== 'board';
-	document.body.classList.remove('compose-open');
-	$('mobileNew').setAttribute('aria-expanded', 'false');
-    if (tab === 'board') render();
-    if (tab === 'wall') loadWall();
-    if (tab === 'queue') loadQueue();
-    if (tab === 'crew') loadRuns();
-    if (tab === 'health') loadHealth();
-    if (tab === 'spend') loadSpend();
-  };
-});
+function openTopTab(next) {
+  tab = next;
+  document.querySelectorAll('header nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
+  for (const id of ['home', 'agents', 'automations', 'money', 'jobs']) $(id).hidden = id !== tab;
+  document.body.classList.remove('compose-open');
+  $('mobileNew').textContent = 'new';
+  $('mobileNew').setAttribute('aria-expanded', 'false');
+  const showComposer = tab === 'agents' && agentView === 'board';
+  $('startBar').hidden = !showComposer;
+  $('mobileNew').hidden = !showComposer;
+  if (tab === 'home') loadHome();
+  if (tab === 'agents') setAgentView(agentView);
+  if (tab === 'automations') loadHealth();
+  if (tab === 'money') loadSpend();
+  if (tab === 'jobs') loadJobs();
+}
+
+function setAgentView(next) {
+  agentView = next;
+  document.querySelectorAll('[data-agent-view]').forEach(x => {
+    const active = x.dataset.agentView === agentView;
+    x.classList.toggle('on', active);
+    x.setAttribute('aria-selected', active ? 'true' : 'false');
+  });
+  for (const id of ['board', 'wall', 'queue', 'crew']) $(id).hidden = id !== agentView;
+  const showComposer = tab === 'agents' && agentView === 'board';
+  $('startBar').hidden = !showComposer;
+  $('mobileNew').hidden = !showComposer;
+  document.body.classList.remove('compose-open');
+  if (agentView === 'board') { render(); loadBoardHealth(); }
+  if (agentView === 'wall') loadWall();
+  if (agentView === 'queue') loadQueue();
+  if (agentView === 'crew') loadRuns();
+}
+
+document.querySelectorAll('header nav button').forEach(b => { b.onclick = () => openTopTab(b.dataset.tab); });
+document.querySelectorAll('[data-agent-view]').forEach(b => { b.onclick = () => setAgentView(b.dataset.agentView); });
 
 $('mobileNew').onclick = () => {
   const open = document.body.classList.toggle('compose-open');
@@ -1432,7 +1760,8 @@ function connect() {
     const listChanged = ['session.state', 'session.started', 'session.ended', 'attention'].includes(e.kind)
       || (e.kind === 'session.update' && (p.state || p.name !== undefined || p.permissionMode));
     if (listChanged) scheduleRefresh();
-    if (e.kind === 'automation.check' && tab === 'health') loadHealth();
+    if (e.kind === 'automation.check' && tab === 'automations') loadHealth();
+    if (e.kind === 'automation.check' && tab === 'home') { homeLoadedAt = 0; loadHome(); }
   };
 }
 
@@ -1461,9 +1790,11 @@ $('prompt').addEventListener('keydown', async ev => {
   refresh();
 });
 
+openTopTab(tab);
 loadAgents();
-loadBoardHealth();
-setInterval(() => { if (tab === 'board' && !document.hidden && !unauthorized) loadBoardHealth(); }, 60000);
+setInterval(() => {
+  if (tab === 'agents' && agentView === 'board' && !document.hidden && !unauthorized) loadBoardHealth();
+}, 60000);
 
 // Sticky elements share the measured header height. iOS also moves and
 // shrinks the visual viewport for the keyboard; raise the composer by the

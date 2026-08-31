@@ -35,12 +35,26 @@ const (
 )
 
 type Application struct {
-	Company   string    `json:"company"`
-	Role      string    `json:"role"`
-	URL       string    `json:"url,omitempty"`
-	ATS       string    `json:"ats,omitempty"`
-	Source    Source    `json:"source"`
-	AppliedAt time.Time `json:"appliedAt"`
+	ID          string     `json:"key,omitempty"`
+	NotionID    string     `json:"notionId,omitempty"`
+	NotionURL   string     `json:"notionUrl,omitempty"`
+	Company     string     `json:"company"`
+	Role        string     `json:"role"`
+	URL         string     `json:"url,omitempty"`
+	ATS         string     `json:"ats,omitempty"`
+	Source      Source     `json:"source"`
+	AppliedAt   time.Time  `json:"appliedAt"`
+	Status      string     `json:"status"`
+	Category    string     `json:"category,omitempty"`
+	Cycle       string     `json:"cycle,omitempty"`
+	Location    string     `json:"location,omitempty"`
+	WorkAuth    string     `json:"workAuth,omitempty"`
+	Tier        string     `json:"tier,omitempty"`
+	Sponsorship *bool      `json:"sponsorship,omitempty"`
+	FollowUpAt  *time.Time `json:"followUpAt,omitempty"`
+	UpdatedAt   time.Time  `json:"updatedAt,omitempty"`
+	SyncState   string     `json:"syncState,omitempty"`
+	SyncError   string     `json:"syncError,omitempty"`
 }
 
 // Key is the reconciliation identity. Company plus a normalised role, because
@@ -186,6 +200,7 @@ func isATSName(s string) bool {
 type Tracker struct {
 	log  *event.Log
 	sink Sink
+	repo *Repository
 }
 
 // Sink is where confirmed applications go. Notion is one implementation;
@@ -196,7 +211,10 @@ type Sink interface {
 	Name() string
 }
 
-func NewTracker(log *event.Log, sink Sink) *Tracker { return &Tracker{log: log, sink: sink} }
+func NewTracker(log *event.Log, sink Sink) *Tracker {
+	repo, _ := NewRepository(log.DB())
+	return &Tracker{log: log, sink: sink, repo: repo}
+}
 
 // Record reconciles and persists. Returns whether this was new.
 func (t *Tracker) Record(ctx context.Context, a Application) (bool, error) {
@@ -216,15 +234,41 @@ func (t *Tracker) Record(ctx context.Context, a Application) (bool, error) {
 	if _, err := t.log.Append(ctx, ev); err != nil {
 		return false, err
 	}
-	if seen {
-		return false, nil
+	if a.Status == "" {
+		a.Status = "Applied"
+	}
+	if t.repo != nil {
+		// A second signal (usually the confirmation email after the browser
+		// extension) is evidence about the same application, not a request to
+		// move an Interview or Offer back to Applied.
+		if seen {
+			if current, err := t.repo.Get(ctx, key); err == nil {
+				a.Status = current.Status
+				a.AppliedAt = current.AppliedAt
+				a.FollowUpAt = current.FollowUpAt
+				a.NotionID = current.NotionID
+				a.NotionURL = current.NotionURL
+			}
+		}
+		if _, err := t.repo.UpsertLocal(ctx, a); err != nil {
+			return false, err
+		}
 	}
 	if t.sink != nil {
 		if err := t.sink.Upsert(ctx, key, a); err != nil {
-			return true, fmt.Errorf("%s: %w", t.sink.Name(), err)
+			// The local cache is the primary store. Notion is a backup, so an
+			// outage is recorded for the dashboard and retried by the next sync;
+			// it must not turn a successfully captured application into a 500.
+			if t.repo != nil {
+				_ = t.repo.MarkSyncError(ctx, key, fmt.Sprintf("%s: %v", t.sink.Name(), err))
+			}
+			return !seen, nil
+		}
+		if t.repo != nil {
+			_ = t.repo.MarkSynced(ctx, key, time.Now())
 		}
 	}
-	return true, nil
+	return !seen, nil
 }
 
 func (t *Tracker) seen(ctx context.Context, key string) (bool, error) {

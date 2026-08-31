@@ -109,7 +109,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/events", s.auth(s.events))
 	mux.HandleFunc("GET /api/stream", s.auth(s.stream))
 	mux.HandleFunc("GET /api/agents", s.auth(s.agents))
+	mux.HandleFunc("GET /api/applications", s.auth(s.listApplications))
 	mux.HandleFunc("POST /api/applications", s.auth(s.recordApplication))
+	mux.HandleFunc("PATCH /api/applications/{key}", s.auth(s.updateApplication))
+	mux.HandleFunc("POST /api/applications/sync", s.auth(s.syncApplications))
 	mux.HandleFunc("OPTIONS /api/", s.preflight)
 
 	// The manifest and its icons are the only things served without a token,
@@ -778,7 +781,7 @@ func (s *Server) preflight(w http.ResponseWriter, r *http.Request) {
 	allowExtensionOrigin(w, r)
 	if w.Header().Get("Access-Control-Allow-Origin") != "" {
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Amac-Token")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

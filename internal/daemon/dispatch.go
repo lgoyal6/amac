@@ -304,20 +304,54 @@ func (s *Server) healthShell(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------ spend ---
 
 type spendView struct {
-	MonthlyUSD string        `json:"monthlyUsd"`
-	AgentUSD   string        `json:"agentUsd"`
-	TodayUSD   string        `json:"todayUsd"`
-	Days       int           `json:"days"`
-	Alerts     []spend.Alert `json:"alerts"`
-	ByProject  []spend.Slice `json:"byProject"`
-	ByModel    []spend.Slice `json:"byModel"`
-	At         time.Time     `json:"at"`
-	Stale      bool          `json:"stale"`
+	MonthlyUSD          string              `json:"monthlyUsd"`
+	AgentUSD            string              `json:"agentUsd"`
+	TodayUSD            string              `json:"todayUsd"`
+	Days                int                 `json:"days"`
+	Source              string              `json:"source"`
+	MessageCount        int                 `json:"messageCount"`
+	LedgerSize          int                 `json:"ledgerSize"`
+	RecoveredFromLedger int                 `json:"recoveredFromLedger"`
+	HiddenOutOfScope    int                 `json:"hiddenOutOfScope"`
+	Counts              spend.Counts        `json:"counts"`
+	Alerts              []spend.Alert       `json:"alerts"`
+	Services            []spendServiceView  `json:"services"`
+	Events              []spendEventView    `json:"events"`
+	Providers           []spendProviderView `json:"providers"`
+	NoAPI               []spend.NoAPI       `json:"noApi"`
+	ByProject           []spend.Slice       `json:"byProject"`
+	ByModel             []spend.Slice       `json:"byModel"`
+	At                  time.Time           `json:"at"`
+	Stale               bool                `json:"stale"`
 	// Caveat travels with the number. looseapi is careful to call the agent
 	// figure an equivalent API cost rather than spend, because on a flat
 	// subscription those tokens cost nothing marginal. Restating it here keeps
 	// the board from quietly upgrading it into money.
 	Caveat string `json:"caveat"`
+}
+
+type spendServiceView struct {
+	spend.Service
+	TotalUSD            string `json:"totalUsd"`
+	LastAmountUSD       string `json:"lastAmountUsd,omitempty"`
+	CreditsRemainingUSD string `json:"creditsRemainingUsd,omitempty"`
+}
+
+type spendEventView struct {
+	spend.Event
+	AmountUSD           string `json:"amountUsd,omitempty"`
+	CreditsRemainingUSD string `json:"creditsRemainingUsd,omitempty"`
+}
+
+type spendProviderView struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Cents      *int64 `json:"cents"`
+	USD        string `json:"usd,omitempty"`
+	PeriodDays int    `json:"periodDays,omitempty"`
+	Note       string `json:"note,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 func (s *Server) spend(w http.ResponseWriter, r *http.Request) {
@@ -328,12 +362,61 @@ func (s *Server) spend(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	services := make([]spendServiceView, 0, len(snap.Services()))
+	for _, service := range snap.Services() {
+		v := spendServiceView{Service: service, TotalUSD: spend.USD(service.TotalCents)}
+		if service.LastAmountCents != nil {
+			v.LastAmountUSD = spend.USD(*service.LastAmountCents)
+		}
+		if service.CreditsRemainingCents != nil {
+			v.CreditsRemainingUSD = spend.USD(*service.CreditsRemainingCents)
+		}
+		services = append(services, v)
+	}
+	events := make([]spendEventView, 0, len(snap.Events))
+	for _, event := range snap.Events {
+		v := spendEventView{Event: event}
+		if event.AmountCents != nil {
+			v.AmountUSD = spend.USD(*event.AmountCents)
+		}
+		if event.CreditsRemainingCents != nil {
+			v.CreditsRemainingUSD = spend.USD(*event.CreditsRemainingCents)
+		}
+		events = append(events, v)
+	}
+	providers := make([]spendProviderView, 0, len(snap.Providers))
+	for _, provider := range snap.Providers {
+		v := spendProviderView{
+			ID: provider.ID, Name: provider.Name, Status: provider.Status,
+			Cents: provider.Cents, PeriodDays: provider.PeriodDays, Note: provider.Note,
+		}
+		if provider.Cents != nil {
+			v.USD = spend.USD(*provider.Cents)
+		}
+		if provider.Status == "error" {
+			// Provider responses can contain account metadata. LooseAPI's own
+			// logs retain the detail; AMAC only needs the actionable state.
+			v.Error = "provider check failed; see LooseAPI logs"
+		}
+		providers = append(providers, v)
+	}
+
 	writeJSON(w, 200, spendView{
-		MonthlyUSD: spend.USD(int64(snap.MonthlyCents)),
-		AgentUSD:   spend.USD(snap.AgentCents()),
-		TodayUSD:   spend.USD(snap.TodayCents(time.Now())),
-		Days:       snap.Usage.Days,
-		Alerts:     snap.Worst(6),
+		MonthlyUSD:          spend.USD(snap.MonthlyCents),
+		AgentUSD:            spend.USD(snap.AgentCents()),
+		TodayUSD:            spend.USD(snap.TodayCents(time.Now())),
+		Days:                snap.Usage.Days,
+		Source:              snap.Source,
+		MessageCount:        snap.MessageCount,
+		LedgerSize:          snap.LedgerSize,
+		RecoveredFromLedger: snap.RecoveredFromLedger,
+		HiddenOutOfScope:    snap.HiddenOutOfScope,
+		Counts:              snap.Counts(),
+		Alerts:              snap.Worst(len(snap.Alerts)),
+		Services:            services,
+		Events:              events,
+		Providers:           providers,
+		NoAPI:               append([]spend.NoAPI(nil), snap.NoAPI...),
 		// Five each. The interesting thing about a breakdown on a phone is
 		// which two or three lines dominate, and a list long enough to scroll
 		// buries that under the ones that do not.

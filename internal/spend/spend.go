@@ -34,10 +34,18 @@ func Path() string {
 }
 
 type Snapshot struct {
-	GeneratedAt  time.Time `json:"generatedAt"`
-	MonthlyCents int       `json:"monthlyCents"`
-	Alerts       []Alert   `json:"alerts"`
-	Usage        Usage     `json:"usage"`
+	GeneratedAt         time.Time  `json:"generatedAt"`
+	Source              string     `json:"source"`
+	MessageCount        int        `json:"messageCount"`
+	LedgerSize          int        `json:"ledgerSize"`
+	RecoveredFromLedger int        `json:"recoveredFromLedger"`
+	HiddenOutOfScope    int        `json:"hiddenOutOfScope"`
+	MonthlyCents        int64      `json:"monthlyCents"`
+	Events              []Event    `json:"events"`
+	Alerts              []Alert    `json:"alerts"`
+	Providers           []Provider `json:"providers"`
+	Usage               Usage      `json:"usage"`
+	NoAPI               []NoAPI    `json:"noApi"`
 }
 
 // Alert is something looseapi thinks is worth acting on. Severity is its own
@@ -48,6 +56,72 @@ type Alert struct {
 	Severity int    `json:"severity"`
 	Service  string `json:"service"`
 	Message  string `json:"message"`
+}
+
+// Event is the safe, dashboard-relevant part of a billing-mail event. Message
+// ids, subjects and alert evidence deliberately do not enter this type: AMAC
+// needs to show what happened, not turn its general-purpose dashboard endpoint
+// into an inbox export.
+type Event struct {
+	Date                  string `json:"date"`
+	ServiceID             string `json:"serviceId"`
+	Service               string `json:"service"`
+	Scope                 string `json:"scope"`
+	Via                   string `json:"via"`
+	Kind                  string `json:"kind"`
+	Severity              int    `json:"severity"`
+	AmountCents           *int64 `json:"amountCents"`
+	CreditsRemainingCents *int64 `json:"creditsRemainingCents"`
+	Unread                *bool  `json:"unread"`
+	Trashed               *bool  `json:"trashed"`
+	MissingFromMailbox    bool   `json:"missingFromMailbox"`
+}
+
+type Provider struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Cents      *int64 `json:"cents"`
+	PeriodDays int    `json:"periodDays"`
+	Note       string `json:"note"`
+	Error      string `json:"error"`
+}
+
+type NoAPI struct {
+	Name   string `json:"name"`
+	Reason string `json:"reason"`
+}
+
+// Service rolls the event ledger up into one row per subscription or service.
+// Trial and credit state remain explicit so callers do not have to reverse
+// engineer account state from English alert messages.
+type Service struct {
+	ID                    string  `json:"id"`
+	Name                  string  `json:"name"`
+	Scope                 string  `json:"scope"`
+	BilledThrough         string  `json:"billedThrough,omitempty"`
+	ChargeCount           int     `json:"chargeCount"`
+	TotalCents            int64   `json:"totalCents"`
+	LatestAt              string  `json:"latestAt"`
+	LatestKind            string  `json:"latestKind"`
+	LastAmountCents       *int64  `json:"lastAmountCents"`
+	CreditsRemainingCents *int64  `json:"creditsRemainingCents"`
+	CreditsAsOf           string  `json:"creditsAsOf,omitempty"`
+	TrialStatus           string  `json:"trialStatus,omitempty"`
+	NeedsAttention        bool    `json:"needsAttention"`
+	Alerts                []Alert `json:"alerts"`
+}
+
+// Counts are the dashboard's at-a-glance answers. They count services rather
+// than messages where the user is deciding what needs attention.
+type Counts struct {
+	ServicesSeen      int `json:"servicesSeen"`
+	ActiveAlerts      int `json:"activeAlerts"`
+	UnreadMoney       int `json:"unreadMoney"`
+	Trials            int `json:"trials"`
+	CreditAccounts    int `json:"creditAccounts"`
+	AttentionServices int `json:"attentionServices"`
+	Charges           int `json:"charges"`
 }
 
 type Usage struct {
@@ -139,6 +213,132 @@ func (s Snapshot) TodayCents(now time.Time) int64 {
 		n += t.ByDay[key].Cents
 	}
 	return n
+}
+
+// Services turns looseapi's durable event ledger into the rows a control
+// surface needs. The snapshot remains the source of truth; this is only a
+// presentation projection and does not attempt to classify billing mail again.
+func (s Snapshot) Services() []Service {
+	type state struct {
+		Service
+		trialAt  string
+		creditAt string
+		amountAt string
+	}
+
+	byID := make(map[string]*state)
+	for _, e := range s.Events {
+		id := e.ServiceID
+		if id == "" {
+			id = e.Service
+		}
+		row := byID[id]
+		if row == nil {
+			row = &state{Service: Service{ID: id, Name: e.Service, Scope: e.Scope, Alerts: []Alert{}}}
+			byID[id] = row
+		}
+		if row.Name == "" {
+			row.Name = e.Service
+		}
+		if row.Scope == "" {
+			row.Scope = e.Scope
+		}
+		if row.BilledThrough == "" && e.Via != "" {
+			row.BilledThrough = e.Via
+		}
+		if row.LatestAt == "" || e.Date > row.LatestAt {
+			row.LatestAt = e.Date
+			row.LatestKind = e.Kind
+		}
+		if e.AmountCents != nil && (row.amountAt == "" || e.Date > row.amountAt) {
+			amount := *e.AmountCents
+			row.LastAmountCents = &amount
+			row.amountAt = e.Date
+		}
+		if e.Kind == "charge" {
+			row.ChargeCount++
+			if e.AmountCents != nil {
+				row.TotalCents += *e.AmountCents
+			}
+		}
+		if e.CreditsRemainingCents != nil && (row.creditAt == "" || e.Date > row.creditAt) {
+			balance := *e.CreditsRemainingCents
+			row.CreditsRemainingCents = &balance
+			row.CreditsAsOf = e.Date
+			row.creditAt = e.Date
+		}
+		if (e.Kind == "trial_converting" || e.Kind == "trial_ending" || e.Kind == "subscription_cancelled") &&
+			(row.trialAt == "" || e.Date > row.trialAt) {
+			switch e.Kind {
+			case "trial_converting":
+				row.TrialStatus = "converting"
+			case "trial_ending":
+				row.TrialStatus = "ending"
+			case "subscription_cancelled":
+				row.TrialStatus = "cancelled"
+			}
+			row.trialAt = e.Date
+		}
+	}
+
+	// Alerts already encode looseapi's suppression rules (for example, a trial
+	// alert disappears after a later cancellation), so use those judgements
+	// instead of duplicating them here.
+	for _, a := range s.Alerts {
+		for _, row := range byID {
+			if row.Name != a.Service {
+				continue
+			}
+			row.Alerts = append(row.Alerts, a)
+			if a.Severity >= 2 {
+				row.NeedsAttention = true
+			}
+		}
+	}
+
+	out := make([]Service, 0, len(byID))
+	for _, row := range byID {
+		if row.TrialStatus == "converting" || row.TrialStatus == "ending" {
+			row.NeedsAttention = true
+		}
+		out = append(out, row.Service)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].NeedsAttention != out[j].NeedsAttention {
+			return out[i].NeedsAttention
+		}
+		if out[i].TotalCents != out[j].TotalCents {
+			return out[i].TotalCents > out[j].TotalCents
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+func (s Snapshot) Counts() Counts {
+	c := Counts{ActiveAlerts: len(s.Alerts)}
+	for _, e := range s.Events {
+		if e.Kind == "charge" {
+			c.Charges++
+		}
+		if e.Severity >= 2 && e.Unread != nil && *e.Unread {
+			c.UnreadMoney++
+		}
+	}
+	services := s.Services()
+	c.ServicesSeen = len(services)
+	for _, service := range services {
+		if service.TrialStatus == "converting" || service.TrialStatus == "ending" {
+			c.Trials++
+		}
+		if service.CreditsRemainingCents != nil {
+			c.CreditAccounts++
+		}
+		if service.NeedsAttention {
+			c.AttentionServices++
+		}
+	}
+	return c
 }
 
 // USD renders cents the way a report should: no false precision, and never
