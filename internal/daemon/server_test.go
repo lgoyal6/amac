@@ -2,12 +2,15 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lgoyal6/amac/internal/handoff"
 )
 
 const tok = "tok"
@@ -42,6 +45,7 @@ func TestEveryAPIRouteNeedsTheToken(t *testing.T) {
 		{"GET", "/api/health"}, {"GET", "/api/spend"},
 		{"GET", "/api/health/schedule"},
 		{"GET", "/api/tasks"}, {"POST", "/api/tasks"},
+		{"DELETE", "/api/tasks/x"}, {"DELETE", "/api/crew/x"},
 		{"POST", "/api/tasks/claim"}, {"GET", "/api/crew"},
 		{"POST", "/api/beat/x"}, {"POST", "/api/health/x/fix"},
 		{"GET", "/api/sessions/x/pane"}, {"POST", "/api/sessions/x/keys"},
@@ -59,8 +63,8 @@ func TestEveryAPIRouteNeedsTheToken(t *testing.T) {
 
 func TestResumeCommandsMatchInstalledCLIs(t *testing.T) {
 	for _, tc := range []struct{ agent, id, want string }{
-		{"claude", "abc", "claude --resume abc"},
-		{"codex", "abc", "codex resume abc"},
+		{"claude", "abc", "claude --resume 'abc'"},
+		{"codex", "abc", "codex resume 'abc'"},
 		{"other", "abc", ""},
 	} {
 		if got := resumeCommand(tc.agent, tc.id); got != tc.want {
@@ -89,10 +93,23 @@ func TestDefaultSessionNameSaysAgentAndTime(t *testing.T) {
 // and the icon while adding to a home screen, from a context holding none of
 // the page's storage. None of those say anything about this machine.
 func TestThePageAndItsIconsAreOpen(t *testing.T) {
-	for _, path := range []string{"/", "/manifest.webmanifest", "/icon-180.png", "/icon-192.png"} {
+	for _, path := range []string{"/", "/handoff", "/manifest.webmanifest", "/icon-180.png", "/icon-192.png"} {
 		if got := do(t, req("GET", path, "")).Code; got != 200 {
 			t.Errorf("%s returned %d, want 200", path, got)
 		}
+	}
+}
+
+func TestSignedHandoffRejectsTamperingBeforeActing(t *testing.T) {
+	now := time.Now()
+	expires := now.Add(handoff.Lifetime)
+	sig := handoff.Sign(tok, "missing-session", expires)
+	valid := "/handoff?session=missing-session&expires=" + fmt.Sprint(expires.Unix()) + "&sig=" + sig
+	if got := do(t, req("POST", valid, "")).Code; got != 404 {
+		t.Fatalf("valid capability was not accepted: %d", got)
+	}
+	if got := do(t, req("POST", valid+"00", "")).Code; got != 401 {
+		t.Fatalf("tampered capability returned %d, want 401", got)
 	}
 }
 

@@ -79,6 +79,10 @@ const (
 
 	// Diagnostics from amac itself.
 	KindDaemon Kind = "daemon"
+
+	// A crew run hidden from the operational board. The original run events
+	// remain append-only and auditable; archiving only changes the current view.
+	KindCrewArchived Kind = "crew.archived"
 )
 
 // Event is the single record type. Seq is assigned by the store and is the

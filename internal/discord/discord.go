@@ -24,6 +24,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/lgoyal6/amac/internal/handoff"
 )
 
 const api = "https://discord.com/api/v10"
@@ -117,10 +119,30 @@ func HandoffURL(session string) string {
 	if err != nil {
 		return ""
 	}
+	secret := handoffSecret()
+	if secret == "" {
+		return ""
+	}
+	expires := time.Now().Add(handoff.Lifetime)
+	parsed.Path = "/handoff"
 	q := parsed.Query()
-	q.Set("handoff", "mac")
+	q.Del("handoff")
+	q.Set("session", session)
+	q.Set("expires", fmt.Sprint(expires.Unix()))
+	q.Set("sig", handoff.Sign(secret, session, expires))
 	parsed.RawQuery = q.Encode()
 	return parsed.String()
+}
+
+func handoffSecret() string {
+	if secret := os.Getenv("AMAC_HANDOFF_SECRET"); secret != "" {
+		return secret
+	}
+	b, err := os.ReadFile(os.Getenv("HOME") + "/.amac/token")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(b))
 }
 
 // Send posts one message to the DM channel.

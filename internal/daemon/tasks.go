@@ -149,3 +149,15 @@ func (s *Server) finishTask(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, 200, map[string]string{"status": "ok"})
 }
+
+func (s *Server) cancelTask(w http.ResponseWriter, r *http.Request) {
+	if err := s.queue.CancelReady(r.Context(), r.PathValue("id"), "withdrawn from board"); err != nil {
+		if err == queue.ErrNotHeld {
+			writeJSON(w, 409, map[string]string{"error": "task is not ready; refresh before changing it"})
+			return
+		}
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "canceled"})
+}

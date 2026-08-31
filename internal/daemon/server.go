@@ -85,6 +85,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/panes", s.auth(s.panes))
 	mux.HandleFunc("POST /api/sessions/{id}/keys", s.auth(s.sendKeys))
 	mux.HandleFunc("POST /api/sessions/{id}/open-on-mac", s.auth(s.openOnMac))
+	mux.HandleFunc("GET /handoff", s.handoffPage)
+	mux.HandleFunc("POST /handoff", s.signedHandoff)
 	mux.HandleFunc("GET /api/sessions/{id}/files", s.auth(s.files))
 	mux.HandleFunc("GET /api/sessions/{id}/file", s.auth(s.file))
 	mux.HandleFunc("GET /api/sessions/{id}/diff", s.auth(s.diff))
@@ -102,6 +104,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tasks", s.auth(s.fileTask))
 	mux.HandleFunc("POST /api/tasks/claim", s.auth(s.claimTask))
 	mux.HandleFunc("POST /api/tasks/{id}/finish", s.auth(s.finishTask))
+	mux.HandleFunc("DELETE /api/tasks/{id}", s.auth(s.cancelTask))
+	mux.HandleFunc("DELETE /api/crew/{slug}", s.auth(s.archiveCrewRun))
 	mux.HandleFunc("GET /api/events", s.auth(s.events))
 	mux.HandleFunc("GET /api/stream", s.auth(s.stream))
 	mux.HandleFunc("GET /api/agents", s.auth(s.agents))
@@ -329,9 +333,9 @@ func resumeCommand(agentName, id string) string {
 	}
 	switch agentName {
 	case "claude":
-		return "claude --resume " + id
+		return "claude --resume " + shellSingleQuote(id)
 	case "codex":
-		return "codex resume " + id
+		return "codex resume " + shellSingleQuote(id)
 	default:
 		return ""
 	}

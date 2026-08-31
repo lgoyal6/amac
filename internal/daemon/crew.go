@@ -197,6 +197,18 @@ type runView struct {
 // its task, its working directory, and the size it was graded at. A directory
 // full of planner.md files cannot tell you which prompt produced them.
 func (s *Server) crewRuns(w http.ResponseWriter, r *http.Request) {
+	archived := map[string]bool{}
+	archiveRows, err := s.log.DB().QueryContext(r.Context(), `
+		SELECT session FROM events WHERE kind = ?`, string(event.KindCrewArchived))
+	if err == nil {
+		for archiveRows.Next() {
+			var slug string
+			if archiveRows.Scan(&slug) == nil {
+				archived[slug] = true
+			}
+		}
+		archiveRows.Close()
+	}
 	rows, err := s.log.DB().QueryContext(r.Context(), `
 		SELECT at, payload FROM events
 		 WHERE kind = ? AND source = 'crew'
@@ -246,6 +258,9 @@ func (s *Server) crewRuns(w http.ResponseWriter, r *http.Request) {
 
 	out := []runView{}
 	for _, slug := range order {
+		if archived[slug] {
+			continue
+		}
 		sd := seeds[slug]
 		// Runs opened before size was recorded still have to rebuild. The
 		// number of roles that were opened is a fact about the run rather than
@@ -266,6 +281,23 @@ func (s *Server) crewRuns(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, 200, out)
+}
+
+func (s *Server) archiveCrewRun(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	if crew.Slug(slug) != slug {
+		writeJSON(w, 400, map[string]string{"error": "invalid run"})
+		return
+	}
+	ev, err := event.New(event.KindCrewArchived, "dashboard", slug, map[string]string{"status": "archived"})
+	if err == nil {
+		_, err = s.log.Append(r.Context(), ev)
+	}
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, map[string]string{"status": "archived"})
 }
 
 var safeRole = regexp.MustCompile(`^[a-z]+$`)

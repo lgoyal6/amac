@@ -66,6 +66,26 @@ func TestFilingTwiceIsOneTask(t *testing.T) {
 	}
 }
 
+func TestCancelReadyCannotCancelClaimedWork(t *testing.T) {
+	q := testQueue(t)
+	ctx := context.Background()
+	file(t, q, 2)
+	claimed, err := q.Claim(ctx, "worker", time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := q.CancelReady(ctx, claimed.ID, "stale"); err != ErrNotHeld {
+		t.Fatalf("canceling claimed work = %v, want ErrNotHeld", err)
+	}
+	if err := q.CancelReady(ctx, "t001", "no longer needed"); err != nil {
+		t.Fatal(err)
+	}
+	list, err := q.List(ctx, Canceled)
+	if err != nil || len(list) != 1 || list[0].Result != "no longer needed" {
+		t.Fatalf("canceled list = %#v, %v", list, err)
+	}
+}
+
 // The core claim: concurrent workers never both hold the same task.
 //
 // Every claim records which task it took; if the select-and-take were two

@@ -27,8 +27,11 @@ func TestHandoffURLTargetsMacWithoutAddingAToken(t *testing.T) {
 	if err := os.Setenv("AMAC_BOARD_URL", "https://amac.example/"); err != nil {
 		t.Fatal(err)
 	}
+	oldSecret := os.Getenv("AMAC_HANDOFF_SECRET")
+	t.Cleanup(func() { _ = os.Setenv("AMAC_HANDOFF_SECRET", oldSecret) })
+	_ = os.Setenv("AMAC_HANDOFF_SECRET", "test-secret")
 	got := HandoffURL("am-work one")
-	if !strings.Contains(got, "session=am-work+one") || !strings.Contains(got, "handoff=mac") {
+	if !strings.Contains(got, "/handoff?") || !strings.Contains(got, "session=am-work+one") || !strings.Contains(got, "sig=") {
 		t.Fatalf("handoff link missing its target: %s", got)
 	}
 	if strings.Contains(got, "token") {

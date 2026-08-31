@@ -30,6 +30,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lgoyal6/amac/internal/attention"
 	"github.com/lgoyal6/amac/internal/event"
 	"github.com/lgoyal6/amac/internal/tmux"
 )
@@ -172,6 +173,9 @@ func (s *Server) sendKeys(w http.ResponseWriter, r *http.Request) {
 	// indistinguishable at the terminal from Laksh having typed it, so the log
 	// is the only place that can say the phone did.
 	s.record(r.Context(), name, body.Text, body.Key, body.Enter)
+	_, _ = attention.RecordState(r.Context(), s.log, attention.State{
+		Session: name, Agent: "amac", State: "working", Detail: "answered from the board",
+	})
 
 	// The pane a beat later, so the caller sees what its keystroke did without
 	// a second round trip. Agents redraw fast; this is not a guarantee that

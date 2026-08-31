@@ -28,32 +28,115 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lgoyal6/amac/internal/attention"
 	"github.com/lgoyal6/amac/internal/crew"
 	"github.com/lgoyal6/amac/internal/event"
+	macHandoff "github.com/lgoyal6/amac/internal/handoff"
 	"github.com/lgoyal6/amac/internal/health"
 	"github.com/lgoyal6/amac/internal/spend"
 )
+
+const handoffPageHTML = `<!doctype html><meta name="viewport" content="width=device-width"><title>amac handoff</title>
+<style>body{font:16px system-ui;background:#111318;color:#e8eaf0;display:grid;place-items:center;min-height:90vh}main{max-width:28rem;padding:2rem}p{color:#aeb4c0}</style>
+<main><h1>Opening on your Mac…</h1><p id="status">Sending this session to Terminal.</p></main>
+<script>fetch(location.pathname+location.search,{method:'POST'}).then(async r=>{const d=await r.json();document.querySelector('h1').textContent=r.ok?'Opened in Terminal':'Could not open';document.querySelector('#status').textContent=r.ok?'You can put your phone away and continue on the Mac.':(d.error||'The handoff failed.');}).catch(()=>document.querySelector('#status').textContent='The Mac could not be reached.');</script>`
+
+// handoffPage is intentionally inert HTML. Link scanners and Discord previews
+// may GET a URL; only a real browser executing the page's script performs the
+// signed POST that opens Terminal.
+func (s *Server) handoffPage(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte(handoffPageHTML))
+}
+
+func (s *Server) signedHandoff(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	if !macHandoff.Valid(s.token, q.Get("session"), q.Get("expires"), q.Get("sig"), time.Now()) {
+		writeJSON(w, 401, map[string]string{"error": "handoff link is invalid or expired"})
+		return
+	}
+	s.openSessionOnMac(w, r, q.Get("session"))
+}
 
 // openOnMac moves a phone-started workflow to a real local terminal. A fresh
 // Terminal window is intentional: it is the only reliable way to put the
 // requested tmux client in front without guessing which existing tab belongs
 // to which tty.
 func (s *Server) openOnMac(w http.ResponseWriter, r *http.Request) {
-	name := r.PathValue("id")
+	s.openSessionOnMac(w, r, r.PathValue("id"))
+}
+
+func (s *Server) openSessionOnMac(w http.ResponseWriter, r *http.Request, id string) {
 	if runtime.GOOS != "darwin" {
 		writeJSON(w, 409, map[string]string{"error": "opening a terminal is only supported on macOS"})
 		return
 	}
-	if !crew.Exists(name) {
-		writeJSON(w, 404, map[string]string{"error": "tmux session no longer exists"})
+	name, err := s.attachableSession(r.Context(), id)
+	if err != nil {
+		writeJSON(w, 404, map[string]string{"error": err.Error()})
 		return
 	}
+	before := attachedClients(name)
 	script := terminalHandoffScript(name)
 	if err := exec.CommandContext(r.Context(), "osascript", "-e", script).Run(); err != nil {
 		writeJSON(w, 500, map[string]string{"error": "open Terminal: " + err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]string{"status": "opened", "session": name})
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		if attachedClients(name) > before {
+			_, _ = attention.RecordState(r.Context(), s.log, attention.State{
+				Session: id, Agent: "amac", State: "idle", Detail: "continued in Terminal",
+			})
+			writeJSON(w, 200, map[string]string{"status": "opened", "session": name})
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	writeJSON(w, 500, map[string]string{"error": "Terminal opened but did not attach the session"})
+}
+
+func (s *Server) attachableSession(ctx context.Context, id string) (string, error) {
+	if crew.Exists(id) {
+		return id, nil
+	}
+	sess, ok := s.sup.Get(id)
+	if !ok {
+		return "", fmt.Errorf("session no longer exists")
+	}
+	command := resumeCommand(sess.Agent, sess.ACPID)
+	if command == "" {
+		return "", fmt.Errorf("%s sessions cannot be resumed in a terminal", sess.Agent)
+	}
+	name := "am-" + crew.Slug(id)
+	if crew.Exists(name) {
+		return name, nil
+	}
+	if err := exec.CommandContext(ctx, "tmux", "new-session", "-d", "-s", name, "-c", sess.Dir).Run(); err != nil {
+		return "", fmt.Errorf("create terminal session: %w", err)
+	}
+	// The tmux destination exists before the managed client is closed, so a
+	// failure cannot strand the user with neither control surface available.
+	sess.Close()
+	if err := exec.CommandContext(ctx, "tmux", "send-keys", "-t", name+":", command, "Enter").Run(); err != nil {
+		_ = exec.Command("tmux", "kill-session", "-t", "="+name).Run()
+		return "", fmt.Errorf("resume in terminal: %w", err)
+	}
+	return name, nil
+}
+
+func attachedClients(name string) int {
+	// display-message takes a pane target, where the = exact-session prefix is
+	// not valid (unlike has-session/attach/kill). Name plus ':' identifies its
+	// active pane and exposes the owning session's attached-client count.
+	out, err := exec.Command("tmux", "display-message", "-p", "-t", name+":", "#{session_attached}").Output()
+	if err != nil {
+		return -1
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(out)))
+	return n
 }
 
 func terminalHandoffScript(name string) string {

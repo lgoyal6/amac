@@ -246,6 +246,22 @@ func (q *Queue) Release(ctx context.Context, id string, token int64) error {
 	return nil
 }
 
+// CancelReady withdraws work nobody has claimed. It needs no fencing token
+// because there is no worker to fence; the state predicate is the race guard.
+func (q *Queue) CancelReady(ctx context.Context, id, result string) error {
+	res, err := q.db.ExecContext(ctx, `
+		UPDATE tasks SET state = ?, result = ?, owner = '', lease = 0
+		 WHERE id = ? AND state = ?`, string(Canceled), result, id, string(Ready))
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotHeld
+	}
+	q.record(ctx, "task.canceled", id, map[string]any{"result": result})
+	return nil
+}
+
 func (q *Queue) Get(ctx context.Context, id string) (Task, error) {
 	var t Task
 	row := q.db.QueryRowContext(ctx, `

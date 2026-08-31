@@ -37,7 +37,12 @@ type Outcome struct {
 // DedupeWindow collapses the several signals one event can produce. A finished
 // Codex turn rings the terminal bell and calls the notify hook within the same
 // second, and those must not be two messages.
-const DedupeWindow = 45 * time.Second
+// A phone alert is a request for one human response, not a heartbeat. Codex
+// can ring the bell repeatedly while sitting at the same prompt, and a
+// 45-second transport-only window turned one unanswered request into a new DM
+// every few minutes. Ten minutes still permits a genuinely new ask while
+// preventing the notification channel from becoming a pager loop.
+const DedupeWindow = 10 * time.Minute
 
 // watching is indirected so tests can drive the decision without an actual
 // window server. Production always uses the real detector.

@@ -420,8 +420,9 @@ function showUnauthorized() {
       </div>
       <div class="pane" style="white-space:pre-wrap">${esc(location.origin)}/?token=&lt;token&gt;</div>
       <div class="detail" style="white-space:normal;margin-top:9px">
-        On the Mac: <code>cat ~/.amac/token</code>, or run <code>amac daemon</code>
-        and it prints the whole link.
+        On the Mac, run <code>amac url</code>, then open the printed link on this device.
+        A Discord “Open on Mac” button uses a separate short-lived handoff and does not
+        require this board credential.
       </div>
     </div>`;
   // Nothing below this point can succeed, and a page that keeps retrying while
@@ -509,7 +510,7 @@ async function refresh() {
     `${list.length} sessions`,
     // What today has cost, next to what is running. The two numbers belong
     // together: the second is the reason to look at the first.
-    todayUsd ? `<b>${esc(todayUsd)}</b> today` : '',
+    todayUsd ? `<b>${esc(todayUsd)}</b> API-equivalent today` : '',
   ].filter(Boolean).join(' · ');
   if (tab === 'board') render();
 }
@@ -957,8 +958,16 @@ async function loadRuns() {
     const card = document.createElement('div');
     card.className = 'card';
     card.style.marginBottom = '12px';
-    card.innerHTML = `<div class="top"><span class="name">${esc(run.task)}</span></div>` + chainHTML(run);
+    card.innerHTML = `<div class="top"><span class="name">${esc(run.task)}</span>
+      <button class="sm" data-archive="${esc(run.slug)}">archive</button></div>` + chainHTML(run);
     wireChain(card, run);
+	card.querySelector('[data-archive]').onclick = async ev => {
+	  ev.stopPropagation();
+	  const b = ev.currentTarget;
+	  b.disabled = true;
+	  const res = await api(`/api/crew/${encodeURIComponent(b.dataset.archive)}`, { method: 'DELETE' });
+	  if (res.ok) loadRuns(); else b.disabled = false;
+	};
     el.appendChild(card);
   }
 }
@@ -1157,16 +1166,21 @@ async function loadQueue() {
             <button class="sm" data-id="${esc(t.id)}" data-token="${t.token}" data-state="done">done</button>
             <button class="sm" data-id="${esc(t.id)}" data-token="${t.token}" data-state="released">release</button>
           </div>` : ''}
+        ${t.state === 'ready' ? `<div class="acts">
+            <button class="sm" data-cancel="${esc(t.id)}">cancel</button>
+          </div>` : ''}
       </div>
     </div>`).join('');
 
   el.querySelectorAll('.acts button').forEach(b => {
     b.onclick = async () => {
       b.disabled = true;
-      const r = await api(`/api/tasks/${encodeURIComponent(b.dataset.id)}/finish`, {
-        method: 'POST',
-        body: JSON.stringify({ token: Number(b.dataset.token), state: b.dataset.state }),
-      });
+	  const cancel = b.dataset.cancel;
+	  const r = cancel
+	    ? await api(`/api/tasks/${encodeURIComponent(cancel)}`, { method: 'DELETE' })
+	    : await api(`/api/tasks/${encodeURIComponent(b.dataset.id)}/finish`, {
+	        method: 'POST', body: JSON.stringify({ token: Number(b.dataset.token), state: b.dataset.state }),
+	      });
       if (!r.ok) $('taskSaid').textContent = (await r.json()).error;
       loadQueue();
     };
@@ -1238,9 +1252,10 @@ async function loadSpend() {
   el.innerHTML = `
     <div class="tiles">
       <div class="tile"><div class="tv">${esc(d.monthlyUsd)}</div><div class="tl">recurring / month</div></div>
-      <div class="tile"><div class="tv">${esc(d.todayUsd)}</div><div class="tl">agents today</div></div>
-      <div class="tile"><div class="tv">${esc(d.agentUsd)}</div><div class="tl">agents, ${d.days}d</div></div>
+      <div class="tile"><div class="tv">${esc(d.todayUsd)}</div><div class="tl">API equivalent today, not billed spend</div></div>
+      <div class="tile"><div class="tv">${esc(d.agentUsd)}</div><div class="tl">API equivalent, ${d.days}d</div></div>
     </div>
+    <div class="explain">${esc(d.caveat)}</div>
     ${bars('where it went', d.byProject)}
     ${bars('what ran it', d.byModel)}
     <div class="card">
@@ -1253,7 +1268,6 @@ async function loadSpend() {
       <div class="hdetail" style="margin-top:12px">
         scanned ${esc(new Date(d.at).toLocaleString())}${d.stale ? ' - stale, the daily scan has not run' : ''}
       </div>
-      <div class="hdetail">${esc(d.caveat)}</div>
     </div>`;
 }
 
