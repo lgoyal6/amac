@@ -22,8 +22,12 @@ import (
 // it to 0.0 would make a report that silently understates spend, which is the
 // one thing a cost report must never do.
 type Entry struct {
-	Session   string
-	Agent     string
+	Session string
+	Agent   string
+	// Account is the login the session ran as, as recorded when it started.
+	// Two accounts of one agent run here on separate plans, so "codex cost
+	// this much" is only half an answer.
+	Account   string
 	Started   time.Time
 	Cost      *float64
 	Tokens    int64
@@ -116,12 +120,22 @@ func Query(ctx context.Context, db *sql.DB, since time.Time) (Report, error) {
 }
 
 // annotate fills in the facts that live in other event kinds: which agent ran,
-// how many turns, and how often it had to stop and ask.
+// which login it ran as, how many turns, and how often it had to stop and ask.
+//
+// Two sources for the agent and the account, and the stronger one wins. Only a
+// session amac started has a session.started event; the sessions Laksh started
+// himself in tmux — which is most of them — are known only through the state
+// their own hooks recorded. Reading just the first left every one of those rows
+// blank, so the report named the agent for the handful of sessions amac owned
+// and said nothing about the twenty it watches.
 func annotate(ctx context.Context, db *sql.DB, since time.Time, byID map[string]*Entry) error {
 	rows, err := db.QueryContext(ctx, `
 		SELECT
 		  session,
-		  MAX(CASE WHEN kind='session.started' THEN json_extract(payload,'$.agent') END) AS agent,
+		  MAX(CASE WHEN kind='session.started' THEN json_extract(payload,'$.agent') END)   AS agent,
+		  MAX(CASE WHEN kind='session.started' THEN json_extract(payload,'$.account') END) AS account,
+		  MAX(CASE WHEN kind='session.state'   THEN json_extract(payload,'$.agent') END)   AS hookAgent,
+		  MAX(CASE WHEN kind='session.state'   THEN json_extract(payload,'$.account') END) AS hookAccount,
 		  SUM(CASE WHEN json_extract(payload,'$.prompt') IS NOT NULL THEN 1 ELSE 0 END)  AS turns,
 		  SUM(CASE WHEN kind='permission.requested' THEN 1 ELSE 0 END)                   AS approvals
 		FROM events
@@ -135,18 +149,28 @@ func annotate(ctx context.Context, db *sql.DB, since time.Time, byID map[string]
 
 	for rows.Next() {
 		var id string
-		var agent sql.NullString
+		var agent, acct, hookAgent, hookAcct sql.NullString
 		var turns, approvals sql.NullInt64
-		if err := rows.Scan(&id, &agent, &turns, &approvals); err != nil {
+		if err := rows.Scan(&id, &agent, &acct, &hookAgent, &hookAcct, &turns, &approvals); err != nil {
 			return err
 		}
 		e, ok := byID[id]
 		if !ok {
 			continue
 		}
-		e.Agent = agent.String
+		e.Agent, e.Account = first(agent, hookAgent), first(acct, hookAcct)
 		e.Turns = int(turns.Int64)
 		e.Approvals = int(approvals.Int64)
 	}
 	return rows.Err()
+}
+
+// first returns the leftmost value that is actually there.
+func first(vals ...sql.NullString) string {
+	for _, v := range vals {
+		if v.Valid && v.String != "" {
+			return v.String
+		}
+	}
+	return ""
 }

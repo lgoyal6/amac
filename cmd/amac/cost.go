@@ -35,10 +35,18 @@ func cmdCost(args []string) error {
 	}
 
 	fmt.Printf("last %d days\n\n", *days)
-	fmt.Printf("%-16s %-8s %-6s %10s %9s %6s %5s\n", "SESSION", "AGENT", "WHEN", "COST", "CTX", "TURNS", "ASKS")
+	fmt.Printf("%-24s %-8s %-14s %-6s %10s %9s %6s %5s\n",
+		"SESSION", "AGENT", "ACCOUNT", "WHEN", "COST", "CTX", "TURNS", "ASKS")
 	for _, e := range rep.Entries {
-		fmt.Printf("%-16s %-8s %-6s %10s %9s %6d %5d\n",
-			e.Session, e.Agent, e.Started.Local().Format("Jan02"),
+		// A session started before accounts were recorded has no account, and
+		// says so. Filling it in from today's environment would be a guess
+		// about a process that exited weeks ago.
+		acct := e.Account
+		if acct == "" {
+			acct = "-"
+		}
+		fmt.Printf("%-24s %-8s %-14s %-6s %10s %9s %6d %5d\n",
+			clip(e.Session, 24), e.Agent, acct, e.Started.Local().Format("Jan02"),
 			e.CostString(), ctx(e.Tokens, e.Window), e.Turns, e.Approvals)
 	}
 
@@ -58,4 +66,14 @@ func ctx(used, size int64) string {
 		return "-"
 	}
 	return fmt.Sprintf("%d%%", used*100/size)
+}
+
+// clip keeps a long session name inside its column. Session names here run to
+// "claude-job-discovery" and beyond, and one over-long name pushes every
+// column on that row out of line with the rest of the table.
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "\u2026"
 }
