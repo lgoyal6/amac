@@ -19,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/lgoyal6/amac/internal/account"
 	"github.com/lgoyal6/amac/internal/acp"
 	"github.com/lgoyal6/amac/internal/agent"
 	"github.com/lgoyal6/amac/internal/event"
@@ -86,6 +87,23 @@ func main() {
 			a, _ := agent.Get(n)
 			fmt.Printf("%-8s %s\n         %s\n", a.Name, strings.Join(a.Argv(), " "), a.Note)
 		}
+		// Adapters are which CLIs amac can drive; accounts are which logins
+		// they run as, which is a different question and the one that decides
+		// whose plan pays for a session.
+		fmt.Println("\naccounts")
+		for _, acc := range account.All() {
+			who := acc.Email
+			if who == "" {
+				who = "not signed in"
+			}
+			if !acc.Local {
+				who = "not on this machine"
+			}
+			if acc.Plan != "" {
+				who += "  (" + acc.Plan + ")"
+			}
+			fmt.Printf("  %-14s %-7s %s\n", acc.ID, acc.Agent, who)
+		}
 	case "version", "-version", "--version":
 		fmt.Println("amac", version)
 	case "help", "-h", "--help":
@@ -147,7 +165,7 @@ func usage() {
   amac log [-n N] [-since SEQ]
         Show recent events.
   amac agents
-        List known adapters.
+        List the agent adapters, and the accounts they run as.
   amac version
         Which build this is.
 `)
