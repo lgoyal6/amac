@@ -437,6 +437,90 @@ func TestSpawnKeepsStderrForADeadAdapter(t *testing.T) {
 	}
 }
 
+// The stderr test above only ever failed by luck: it asks for a string that
+// arrives on a goroutine nobody joined, so a quiet machine wins the race and a
+// loaded one does not. This asks the deterministic question instead. os/exec
+// copies stderr on its own goroutine and joins it in Wait, so "the process has
+// been reaped" is exactly the condition under which Stderr is complete, and it
+// is observable without racing anything.
+func TestDoneMeansTheAdapterHasBeenReaped(t *testing.T) {
+	c, err := Spawn(context.Background(), "fake", []string{"sh", "-c",
+		"echo 'node: command not found' >&2; exit 1"}, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	select {
+	case <-c.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("a process that exited did not end the read loop")
+	}
+	if c.cmd.ProcessState == nil {
+		t.Fatal("Done closed before the process was reaped, so Stderr can still be empty")
+	}
+}
+
+// A parked caller must not be woken ahead of the reap either. Initialize is
+// the one that matters: it hands its error straight to explain, which reads
+// Stderr, and the handshake is where a broken adapter shows up.
+func TestTheHandshakeErrorCarriesTheAdaptersOwnWords(t *testing.T) {
+	c, err := Spawn(context.Background(), "fake", []string{"sh", "-c",
+		"echo 'node: command not found' >&2; exit 1"}, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	_, err = c.Initialize(context.Background())
+	if err == nil {
+		t.Fatal("a handshake with a dead adapter must fail")
+	}
+	if !strings.Contains(err.Error(), "command not found") {
+		t.Fatalf("the error says nothing about why: %v", err)
+	}
+}
+
+// The reap is deliberately skipped when the stream ended for a reason other
+// than the adapter going away, because there is a live process on the other
+// end and nothing to wait for. Waiting there would turn a rare lost diagnostic
+// into a guaranteed delay in reporting a session dead.
+func TestALiveAdapterIsNotWaitedFor(t *testing.T) {
+	// exec, so the shell becomes the sleep rather than forking it. A forked
+	// grandchild survives Close's kill still holding the pipes, and Close waits
+	// on those, which costs this test the full thirty seconds for nothing.
+	c, err := Spawn(context.Background(), "fake", []string{"sh", "-c",
+		"echo 'not json'; exec sleep 30"}, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// Comfortably under reapWait, and comfortably over the time a shell needs
+	// to echo one line: a regression here costs the whole five seconds.
+	select {
+	case <-c.Done():
+	case <-time.After(3 * time.Second):
+		t.Fatal("a decode failure waited on a process that is still running")
+	}
+}
+
+// And the bound itself, so a process that closes stdout without exiting cannot
+// hold a session open forever.
+func TestTheReapGivesUp(t *testing.T) {
+	c, err := Spawn(context.Background(), "fake", []string{"sleep", "30"}, t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	start := time.Now()
+	c.awaitExit(50 * time.Millisecond)
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("awaitExit ignored its limit and took %s", elapsed)
+	}
+}
+
 func TestSpawnRejectsAnEmptyCommand(t *testing.T) {
 	if _, err := Spawn(context.Background(), "x", nil, "", nil); err == nil {
 		t.Fatal("an empty argv must be refused")
