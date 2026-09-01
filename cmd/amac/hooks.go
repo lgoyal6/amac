@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/lgoyal6/amac/internal/account"
 )
 
 // cmdHooks reports, and wires, the signals that tell amac a session wants you.
@@ -86,7 +88,7 @@ func reportHooks(settings, exe string) error {
 		rows  []wiring
 	}{
 		{"claude", claudeWiringStatus(settings)},
-		{"codex", []wiring{codexWiringStatus(), tmuxBellStatus()}},
+		{"codex", append(codexWiringStatus(), tmuxBellStatus())},
 	}
 
 	missing := 0
@@ -106,7 +108,7 @@ func reportHooks(settings, exe string) error {
 
 	if missing > 0 {
 		fmt.Printf("%d signal(s) not reaching amac. `amac hooks -install` wires Claude Code;\n", missing)
-		fmt.Printf("the Codex ones are a line in ~/.codex/config.toml and ~/.tmux.conf.\n")
+		fmt.Printf("the Codex ones are a notify line in each account's config.toml, plus ~/.tmux.conf.\n")
 	}
 	return nil
 }
@@ -143,22 +145,79 @@ func claudeWiringStatus(path string) []wiring {
 	return out
 }
 
-func codexWiringStatus() wiring {
-	home, _ := os.UserHomeDir()
-	b, err := os.ReadFile(filepath.Join(home, ".codex", "config.toml"))
-	if err != nil {
-		return wiring{name: "notify", detail: "no ~/.codex/config.toml"}
-	}
-	for _, line := range strings.Split(string(b), "\n") {
-		if !strings.HasPrefix(strings.TrimSpace(line), "notify") {
+// codexWiringStatus reports the notify hook of every Codex account, not just
+// the default one.
+//
+// Reporting only ~/.codex is how the second account stayed silent for as long
+// as it existed: it ran, it finished turns, and nothing rang, and a report that
+// covered one home said everything was fine. Each home is its own config file
+// and its own `notify` line, so each one is its own row.
+func codexWiringStatus() []wiring {
+	var out []wiring
+	for _, a := range account.All() {
+		if a.Agent != "codex" || !a.Local {
 			continue
 		}
-		if strings.Contains(line, "amac") {
-			return wiring{name: "notify", wired: true, detail: "idle: turn finished, carries what it said"}
-		}
-		return wiring{name: "notify", detail: "notify is set, but not to amac"}
+		out = append(out, codexNotify(a))
 	}
-	return wiring{name: "notify", detail: "no notify program set"}
+	if len(out) == 0 {
+		return []wiring{{name: "notify", detail: "no Codex home on this machine"}}
+	}
+	return out
+}
+
+func codexNotify(a account.Account) wiring {
+	name := "notify/" + a.Label
+	b, err := os.ReadFile(filepath.Join(a.Home, "config.toml"))
+	if err != nil {
+		return wiring{name: name, detail: "no config.toml in " + a.Home}
+	}
+	value, ok := tomlValue(string(b), "notify")
+	if !ok {
+		return wiring{name: name, detail: "no notify program set: this account is silent"}
+	}
+	if strings.Contains(value, "amac") {
+		return wiring{name: name, wired: true, detail: "idle: turn finished, carries what it said"}
+	}
+	return wiring{name: name, detail: "notify is set, but not to amac"}
+}
+
+// tomlValue returns the whole value of a top-level key, array included.
+//
+// `notify` is routinely an array spread over several lines, because Codex takes
+// exactly one notify program and chaining to another one means passing it as an
+// argument. Reading only the line the key is on found "notify = [" and no
+// mention of amac, and reported a wired account as unwired — a status report
+// that is wrong in the reassuring direction is bad; one that is wrong in the
+// alarming direction sends you to fix what is not broken.
+func tomlValue(doc, key string) (string, bool) {
+	lines := strings.Split(doc, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, key) {
+			continue
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(trimmed, key))
+		if !strings.HasPrefix(rest, "=") {
+			continue // a different key that happens to share this prefix
+		}
+		rest = strings.TrimSpace(strings.TrimPrefix(rest, "="))
+		if !strings.HasPrefix(rest, "[") {
+			return rest, true
+		}
+		var b strings.Builder
+		depth := 0
+		for _, l := range lines[i:] {
+			b.WriteString(l)
+			b.WriteString("\n")
+			depth += strings.Count(l, "[") - strings.Count(l, "]")
+			if depth <= 0 {
+				break
+			}
+		}
+		return b.String(), true
+	}
+	return "", false
 }
 
 // tmuxBellStatus reads the live tmux server rather than ~/.tmux.conf, because
