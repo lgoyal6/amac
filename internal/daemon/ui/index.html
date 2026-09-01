@@ -278,6 +278,7 @@
                padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); }
   .tile-name { font:600 11.5px/1.4 var(--mono); flex:1 1 auto; min-width:0;
                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tile-account { font:10px/1.4 var(--mono); color:var(--dim); flex:0 0 auto; }
   .tile-body { padding:var(--s2) var(--s3); font:10px/1.4 var(--mono);
                color:#aab3c2; white-space:pre; overflow:hidden; height:180px;
                -webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent),
@@ -1378,10 +1379,16 @@ async function loadWall() {
 
   if (!all.length) { el.innerHTML = '<div class="empty">no sessions to show</div>'; return; }
 
+  // The login, on the same terms as the board: named only when it adds
+  // something. The wall is the view where twenty sessions are on screen at
+  // once, so "which account is that" is least answerable here and worth the
+  // one line it costs.
   el.innerHTML = all.map(s => `
     <div class="tile-pane ${esc(s.state)}">
       <div class="tile-head">
         <span class="tile-name">${esc(s.name || s.id)}</span>
+        ${s.accountLabel && s.accountLabel !== s.agent
+          ? `<span class="tile-account">${esc(s.accountLabel)}</span>` : ''}
         <span class="state ${esc(s.state)}">${esc(s.state)}</span>
       </div>
       <div class="tile-body">${esc(byName.get(s.id) || '')}</div>
