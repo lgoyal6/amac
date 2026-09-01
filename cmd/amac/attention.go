@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lgoyal6/amac/internal/account"
 	"github.com/lgoyal6/amac/internal/attention"
 	"github.com/lgoyal6/amac/internal/event"
 )
@@ -35,6 +36,7 @@ func cmdAttention(args []string) error {
 	bell := fs.Bool("bell", false, "called from the tmux bell hook: unknown reason, coalesces")
 	session := fs.String("session", "", "tmux session (default: the caller's)")
 	agent := fs.String("agent", "codex", "which agent")
+	acct := fs.String("account", "", "which login (default: resolved from the caller's environment)")
 	reason := fs.String("reason", attention.WantsYou, "turn-complete | wants-attention")
 	message := fs.String("message", "", "what the agent last said")
 	// Long enough for the notify hook to overtake a bell fired by the same
@@ -46,11 +48,11 @@ func cmdAttention(args []string) error {
 		return err
 	}
 
-	n := attention.Notice{Session: *session, Agent: *agent, Reason: *reason, Message: *message}
+	n := attention.Notice{Session: *session, Agent: *agent, Account: *acct, Reason: *reason, Message: *message}
 
 	// Most Claude hooks are worth showing and not worth interrupting anyone
 	// over, so delivery and state are decided separately from here down.
-	notify, state, fallbackName := true, "", ""
+	notify, state, fallbackName, transcript := true, "", "", ""
 
 	if *claudeHook {
 		payload, err := io.ReadAll(os.Stdin)
@@ -71,6 +73,7 @@ func cmdAttention(args []string) error {
 		if sig.Hook.CWD != "" {
 			fallbackName = "claude-" + filepath.Base(sig.Hook.CWD)
 		}
+		transcript = sig.Hook.TranscriptPath
 	}
 
 	if *codexJSON != "" {
@@ -98,6 +101,19 @@ func cmdAttention(args []string) error {
 			*coalesce = 4 * time.Second
 		}
 	}
+	// Which login this was. Resolved from the caller's own environment, which
+	// the agent handed down when it spawned the hook: CODEX_HOME says which
+	// Codex home is in play, and a Claude transcript stamps its account id on
+	// itself. Neither is a guess about a process amac did not start.
+	if n.Account == "" {
+		switch n.Agent {
+		case "claude":
+			n.Account = account.Claude(os.Getenv("CLAUDE_CONFIG_DIR"), transcript)
+		case "codex":
+			n.Account = account.Codex(os.Getenv("CODEX_HOME"))
+		}
+	}
+
 	if n.Session == "" {
 		n.Session = callerSession()
 	}
@@ -116,13 +132,23 @@ func cmdAttention(args []string) error {
 	}
 	defer log.Close()
 
+	// The tmux bell hook runs inside the tmux server, which inherited none of
+	// the agent's environment, so a bell can say a session wants you without
+	// knowing whose session it is. The last state the session recorded does
+	// know, and carrying it forward is not a guess: it is the same session.
+	if n.Account == "" {
+		if prev, ok := attention.CurrentState(context.Background(), log, n.Session); ok {
+			n.Account = prev.Account
+		}
+	}
+
 	// Generous: the coalesce wait plus a Discord round trip.
 	ctx, cancel := context.WithTimeout(context.Background(), *coalesce+30*time.Second)
 	defer cancel()
 
 	if state != "" {
 		wrote, err := attention.RecordState(ctx, log, attention.State{
-			Session: n.Session, Agent: n.Agent, State: state,
+			Session: n.Session, Agent: n.Agent, Account: n.Account, State: state,
 			Detail: firstLine(n.Message, 160),
 		})
 		if err != nil {

@@ -347,6 +347,15 @@
   .bar-fill { height:100%; background:var(--working); border-radius:3px; }
   .bar-val { width:62px; text-align:right; font:11.5px/1.4 var(--mono);
              color:var(--dim); font-variant-numeric:tabular-nums; }
+  /* An account row names the login and then who it is, so it needs two lines
+     where a project row needs one. */
+  .bar-row.who { align-items:flex-start; }
+  .bar-row.who .bar-track { margin-top:6px; }
+  .bar-row.who .bar-val { margin-top:-1px; }
+  .bar-who { width:36%; min-width:0; font:11.5px/1.4 var(--mono); color:var(--fg); }
+  .bar-who span { display:block; color:var(--dim); font-size:10.5px;
+                  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bar-who.absent { color:var(--dim); }
 
   /* ---- jobs ------------------------------------------------------------ */
   .jobs-toolbar { display:grid; grid-template-columns:minmax(180px,1fr) repeat(2,minmax(120px,180px));
@@ -728,7 +737,13 @@ function cardFor(s) {
   tags.className = 'tags';
   // Only what distinguishes one card from another. "tmux" was on nearly all of
   // them and told you nothing; "acp" is the rare one and still does.
+  // The login, but only when it adds something. Two Codex accounts run here,
+  // so "codex" alone does not say whose weekly limit this is spending; the
+  // default account's label is already the agent's name, and repeating it
+  // would put a chip on every card that distinguishes nothing.
+  const account = s.accountLabel && s.accountLabel !== s.agent ? s.accountLabel : '';
   tags.innerHTML = `<span class="agent">${esc(s.agent || 'shell')}</span>
+    ${account ? `<span class="agent">${esc(account)}</span>` : ''}
     <span class="kind">${s.kind === 'acp' ? 'managed' : 'terminal'}</span>
     ${s.attached ? '<span class="kind on">attached</span>' : ''}`;
   card.appendChild(tags);
@@ -1497,6 +1512,27 @@ function bars(title, rows) {
   </div>`;
 }
 
+// Every login gets a row, including one that spent nothing and one that does
+// not live on this machine. A table of only the accounts that showed up in the
+// logs cannot tell "this account was quiet" from "this account was never
+// read", and the second is how a whole Codex login stayed invisible for as
+// long as it had been in use.
+function accountBars(rows) {
+  if (!rows || !rows.length) return '';
+  return `<div class="card" style="margin-bottom:12px">
+    <div class="hdetail" style="margin-bottom:9px">who ran it</div>
+    ${rows.map(r => {
+      const who = r.present ? [r.email, r.plan].filter(Boolean).join(' · ') : 'not on this Mac';
+      return `<div class="bar-row who">
+        <div class="bar-who${r.present ? '' : ' absent'}">${esc(r.label || r.id)}
+          <span>${esc([r.agent, who].filter(Boolean).join(' · '))}</span></div>
+        <div class="bar-track"><div class="bar-fill" style="width:${r.cents ? Math.max(r.share, 1) : 0}%"></div></div>
+        <div class="bar-val">${esc(usd(r.cents))}</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
 // Matches the server's formatter: no false precision, and never rounded to zero
 // when there is real money in it.
 const usd = c => c === 0 ? '$0' : c < 100 ? `$${(c / 100).toFixed(2)}`
@@ -1546,6 +1582,7 @@ async function loadSpend() {
       ${(counts.creditAccounts || counts.creditsNeedingAttention) ? `<div class="tile"><div class="tv">${esc(counts.creditAccounts || counts.creditsNeedingAttention)}</div><div class="tl">credit balances</div></div>` : ''}
     </div>
     <div class="explain">${esc(d.caveat)}</div>
+    ${accountBars(d.byAccount)}
     ${bars('where it went', d.byProject)}
     ${bars('what ran it', d.byModel)}
     <div class="card">

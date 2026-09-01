@@ -13,6 +13,7 @@ import (
 type State struct {
 	Session string `json:"session"`
 	Agent   string `json:"agent"`
+	Account string `json:"account,omitempty"`
 	State   string `json:"state"`
 	Detail  string `json:"detail,omitempty"`
 	// At is when the state was recorded. It is read from the event row rather
@@ -35,7 +36,12 @@ func RecordState(ctx context.Context, log *event.Log, s State) (reported bool, e
 	if s.Session == "" || s.State == "" {
 		return false, nil
 	}
-	if prev, ok := CurrentState(ctx, log, s.Session); ok && prev.State == s.State && prev.Detail == s.Detail {
+	if prev, ok := CurrentState(ctx, log, s.Session); ok &&
+		prev.State == s.State && prev.Detail == s.Detail && prev.Account == s.Account {
+		// An account arriving on a session that had none is a change: the
+		// board learns whose session it is, which is the whole point of
+		// recording it, and suppressing that write would leave the card
+		// untagged until the state happened to move.
 		return false, nil
 	}
 	ev, err := event.New(event.KindSessionState, s.Agent, s.Session, s)

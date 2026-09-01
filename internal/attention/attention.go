@@ -25,6 +25,11 @@ const (
 type Notice struct {
 	Session string // tmux session, e.g. am-mint
 	Agent   string // codex, claude
+	// Account is which login produced this, as internal/account names them.
+	// Two Codex accounts run on this machine under separate homes and separate
+	// plans, and a notification that says only "codex" cannot tell you which
+	// one is burning its limit.
+	Account string
 	Reason  string
 	Message string // last assistant message, when the signal carried one
 }
@@ -126,6 +131,7 @@ func recentlyNotified(ctx context.Context, log *event.Log, session string) (time
 func record(ctx context.Context, log *event.Log, n Notice, out Outcome) error {
 	ev, err := event.New(event.KindAttention, n.Agent, n.Session, map[string]any{
 		"reason":  n.Reason,
+		"account": n.Account,
 		"message": n.Message,
 		"outcome": out,
 	})

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lgoyal6/amac/internal/account"
 	"github.com/lgoyal6/amac/internal/agent"
 	"github.com/lgoyal6/amac/internal/apply"
 	"github.com/lgoyal6/amac/internal/attention"
@@ -280,11 +281,18 @@ type sessionView struct {
 	// only observes. The board shows both; only "acp" accepts a prompt or an
 	// answer over the API, and the UI has to know which is which or it will
 	// offer buttons that cannot work.
-	Kind     string       `json:"kind"`
-	Attached bool         `json:"attached,omitempty"`
-	Detail   string       `json:"detail"`
-	Started  time.Time    `json:"started"`
-	Pending  *pendingView `json:"pending,omitempty"`
+	Kind string `json:"kind"`
+	// Account is which login is running this session. Two Codex accounts run
+	// here under separate homes and separate plans, so "codex is blocked" is
+	// only half an answer: which one decides whose weekly limit is being
+	// spent. Empty means nothing has said yet, which is the honest state for a
+	// session that has not reached a hook since it started.
+	Account      string       `json:"account,omitempty"`
+	AccountLabel string       `json:"accountLabel,omitempty"`
+	Attached     bool         `json:"attached,omitempty"`
+	Detail       string       `json:"detail"`
+	Started      time.Time    `json:"started"`
+	Pending      *pendingView `json:"pending,omitempty"`
 	// Since is when the state was last established. It is on the card because
 	// for a session amac only watches, the state is the newest thing an agent
 	// said about itself and nothing refutes it afterwards. Codex has no signal
@@ -319,6 +327,10 @@ func view(sess *supervisor.Session) sessionView {
 		ID: sess.ID, Name: name, Agent: sess.Agent, Dir: sess.Dir, Kind: "acp",
 		State: string(st), Detail: detail, Started: sess.Started,
 		PermissionMode: string(mode), ContinueCommand: resumeCommand(sess.Agent, sess.ACPID),
+		// An ACP adapter is the daemon's own child and inherits its
+		// environment, so the account it runs as is the daemon's default one.
+		// That is a fact about how the process was started, not a guess.
+		Account: account.Default(sess.Agent),
 	}
 	if p := sess.Pending(); p != nil {
 		pv := &pendingView{Title: p.Title, AskedAt: p.AskedAt}
@@ -350,6 +362,13 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 		out = append(out, view(sess))
 	}
 	out = append(out, s.tmuxSessions(r.Context())...)
+	// Labelled once for the whole page. The board relists on every event and
+	// routinely carries twenty cards; resolving each card separately would
+	// stat the roster and reparse two config files twenty times a refresh.
+	labels := account.Labels()
+	for i := range out {
+		out[i].AccountLabel = labels[out[i].Account]
+	}
 	writeJSON(w, 200, out)
 }
 
@@ -416,6 +435,7 @@ func (s *Server) tmuxSessions(ctx context.Context) []sessionView {
 			if st.Agent != "" && (v.Agent == "" || v.Agent == "node") {
 				v.Agent = st.Agent
 			}
+			v.Account = st.Account
 		}
 		out = append(out, v)
 	}
