@@ -65,11 +65,14 @@ amac url         the link with the token in it
   from automation failure, so a busy Mac does not make a healthy job look red.
 - **Agents** — board, wall, queue and crew. Every session's live state, panes,
   work and handoffs are together without crowding the top-level navigation.
-- **Automations** — delivery health, schedule and host for every declared job.
+- **Automations** — delivery health, schedule and host for every declared job,
+  over a live reading of what the Mac has left: memory split the way Activity
+  Monitor splits it, plus disk and swap.
 - **Money** — agent cost split by login, plus LooseAPI services, trials,
   credits, provider health, alerts and recent billing events.
 - **Jobs** — a fast local view of submitted applications, with search, status,
-  follow-up dates and Notion sync.
+  follow-up dates and Notion sync, over charts of what went out in the last
+  thirty days, where those applications are, and how they are tiered.
 
 `blocked, asked 4h ago` hands the judgement to you; `blocked` alone claims
 something about right now that the log cannot support.
