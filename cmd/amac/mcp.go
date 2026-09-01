@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lgoyal6/amac/internal/account"
 	"github.com/lgoyal6/amac/internal/crew"
 	"github.com/lgoyal6/amac/internal/event"
 	"github.com/lgoyal6/amac/internal/health"
@@ -192,9 +193,10 @@ func cmdMCP(args []string) error {
 		},
 	}, {
 		Name: "agent_spend",
-		Description: "What the coding agents on this machine have cost recently, by project and " +
-			"model. Useful when deciding whether a long or repeated run is worth it, or when " +
-			"choosing a model for a job that will run many times.",
+		Description: "What the coding agents on this machine have cost recently, by account, " +
+			"project and model. Useful when deciding whether a long or repeated run is worth " +
+			"it, when choosing a model for a job that will run many times, or when checking " +
+			"which login is carrying the load.",
 		InputSchema: mcp.Schema(map[string]string{}),
 		Handler: func(ctx context.Context, raw json.RawMessage) (string, error) {
 			snap, err := spend.Read()
@@ -204,6 +206,14 @@ func cmdMCP(args []string) error {
 			var b strings.Builder
 			fmt.Fprintf(&b, "%s over %d days, %s today.\n\n",
 				spend.USD(snap.AgentCents()), snap.Usage.Days, spend.USD(snap.TodayCents(time.Now())))
+			fmt.Fprintf(&b, "by account:\n")
+			for _, a := range snap.Accounts(account.All()) {
+				who := a.Email
+				if !a.Present {
+					who = "not on this machine"
+				}
+				fmt.Fprintf(&b, "  %-28s %8s  %d%%  %s\n", a.Label, spend.USD(a.Cents), a.Share, who)
+			}
 			fmt.Fprintf(&b, "by project:\n")
 			for _, s := range snap.Breakdown("project", 5) {
 				fmt.Fprintf(&b, "  %-28s %8s  %d%%\n", s.Name, spend.USD(s.Cents), s.Share)
