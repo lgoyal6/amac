@@ -66,8 +66,8 @@ amac url         the link with the token in it
 - **Agents** — board, wall, queue and crew. Every session's live state, panes,
   work and handoffs are together without crowding the top-level navigation.
 - **Automations** — delivery health, schedule and host for every declared job.
-- **Money** — agent cost plus LooseAPI services, trials, credits, provider
-  health, alerts and recent billing events.
+- **Money** — agent cost split by login, plus LooseAPI services, trials,
+  credits, provider health, alerts and recent billing events.
 - **Jobs** — a fast local view of submitted applications, with search, status,
   follow-up dates and Notion sync.
 
@@ -168,8 +168,32 @@ notification is sent: a spurious ping costs a glance, a missed one costs a
 blocked agent nobody notices.
 
 `amac hooks` exists because a subsystem that broke and a wire that was never
-connected look identical from a phone. It reports, per agent, which signals
-actually reach amac.
+connected look identical from a phone. It reports, per agent and per account,
+which signals actually reach amac.
+
+## Two agents, four accounts
+
+Two CLIs is not the same as two accounts, and the difference is money. Codex
+runs here under two logins with separate homes and separate plans; Claude Code
+supports the same split through `CLAUDE_CONFIG_DIR`. Until amac knew that, the
+second Codex account was invisible everywhere: its sessions reached no hook, its
+tokens reached no cost report, and no screen said an account was missing. A
+dashboard that silently covers half the accounts is worse than one that covers
+none, because the number it prints looks complete.
+
+```
+amac agents      the adapters, and the accounts they run as
+```
+
+Which account a session belongs to arrives with the signal rather than being
+guessed at: `CODEX_HOME` is inherited by everything Codex spawns, including its
+notify hook, and a Claude Code transcript stamps its own account id on itself.
+A session that has not reached a hook yet is untagged, not assumed.
+
+The money page lists every known login, including one that spent nothing and one
+that is not installed on this machine. Rows lead from the roster rather than
+from the logs, because a table of only what was found cannot tell "this account
+was quiet" from "this account was never read".
 
 ## A queue, and the org
 

@@ -59,9 +59,9 @@ and a `cost` object straight from the protocol, so `amac cost` is a query over
 data already on disk rather than a subsystem.
 
 ```
-SESSION          AGENT    WHEN         COST       CTX  TURNS  ASKS
-claude-3c1297    claude   Aug08     $0.1338        3%      1     1
-codex-1a4f       codex    Aug08         n/a        7%      1     0
+SESSION                  AGENT    ACCOUNT        WHEN         COST       CTX  TURNS  ASKS
+claude-3c1297            claude   claude-gmi     Aug08     $0.1338        3%      1     1
+codex-1a4f               codex    codex-ish      Aug08         n/a        7%      1     0
 
 total $0.1338 across 1 priced session(s)
 1 session(s) reported no cost (agent does not expose it); total is a lower bound
@@ -71,6 +71,12 @@ Codex reports tokens but not money, so `Cost` is a `*float64` and an unpriced
 session prints `n/a`. Coercing it to `$0.00` would produce a report that
 silently understates spend, which is the one thing a cost report must never
 do.
+
+`ACCOUNT` is which login the session spent against, recorded when the session
+started rather than worked out when the report is read: an adapter is the
+daemon's own child and inherits its environment, and that environment is a fact
+about the moment the session started. A row from before accounts were recorded
+prints `-` instead of today's answer, for the same reason.
 
 ## Automation health
 
@@ -334,9 +340,18 @@ claude
   ok  Stop               idle: turn finished, carries what it said
   ok  PostToolUse        working: clears blocked once you approve
 codex
-  ok  notify             idle: turn finished, carries what it said
+  ok  notify/codex       idle: turn finished, carries what it said
+  ok  notify/codex-ish   idle: turn finished, carries what it said
   ok  alert-bell         blocked: the only signal Codex has for it
 ```
+
+**One row per account, not per agent.** Each Codex home is its own config file
+with its own `notify` line, and a report that covered only `~/.codex` said
+everything was fine while a second account ran, finished turns and rang nothing
+for as long as it had existed. The check also reads the whole `notify` value
+rather than the line the key sits on: it is routinely a multi-line array,
+because Codex takes exactly one notify program and chaining to another means
+passing it as an argument.
 
 **Claude's hooks are the shape Codex's should have been.** Everything below
 about bells and four-second races is a workaround for a signal that does not
@@ -547,6 +562,13 @@ that lives in another repo, and that one has more inputs. The snapshot is a fair
 thing to read rather than a cache to distrust: it is written only after the mail
 scan, the provider poll and the usage read have all completed, so a run that
 died halfway leaves the previous one in place.
+
+**Every account, or the total is a floor pretending to be a total.** looseapi
+used to read `~/.codex` alone, so a second Codex login contributed nothing to
+any figure and nothing said so. It now discovers every home by shape and tags
+usage with the one it came from; amac names the login behind each home, and the
+money page leads from that roster rather than from the logs, so an account that
+was quiet and an account that was never read cannot look the same.
 
 That artifact also upgraded the weakest probe in the health registry. `devspend`
 used to be judged on its log's mtime, which cannot tell a finished run from one
