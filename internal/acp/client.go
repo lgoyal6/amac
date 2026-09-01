@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Notification is an agent-initiated message with no reply expected. The one
@@ -82,6 +83,13 @@ type Client struct {
 	stderr  *tailBuffer
 	done    chan struct{}
 	readEr  error
+
+	// One Wait, shared. Both the read loop and Close need the process reaped,
+	// os/exec permits exactly one Wait, and a second one returns an error
+	// about Wait rather than about the agent.
+	waitOnce sync.Once
+	waited   chan struct{}
+	waitErr  error
 }
 
 // tailBuffer keeps the last N bytes written to it. Bounded so a chatty adapter
@@ -181,6 +189,7 @@ func Spawn(ctx context.Context, name string, argv []string, dir string, stderr i
 		notify:  make(chan Notification, 256),
 		ctx:     ctx,
 		done:    make(chan struct{}),
+		waited:  make(chan struct{}),
 	}
 	go c.readLoop()
 	return c, nil
@@ -192,7 +201,8 @@ func Spawn(ctx context.Context, name string, argv []string, dir string, stderr i
 func (c *Client) Notifications() <-chan Notification { return c.notify }
 
 // Done closes when the read loop ends, whether from EOF, a decode failure, or
-// the process exiting.
+// the process exiting. When it closes because the adapter's stream ended,
+// Stderr is complete: see readLoop.
 func (c *Client) Done() <-chan struct{} { return c.done }
 
 func (c *Client) Err() error {
@@ -203,23 +213,75 @@ func (c *Client) Err() error {
 
 func (c *Client) Name() string { return c.name }
 
+// readLoop drains the adapter until the stream ends, then settles the client.
+//
+// The reap is the part worth explaining. cmd.Stderr here is an ordinary
+// io.Writer, not a file, so os/exec copies the adapter's stderr on a goroutine
+// of its own and joins it in Wait. The read loop watches *stdout*, and those
+// two finish independently: a caller that woke on Done and immediately asked
+// for Stderr could be handed an empty string while the last words of a dying
+// adapter were still in flight. That is the exact failure Stderr exists to
+// prevent, and it showed up as a CI failure on a loaded runner while passing
+// two hundred times in a row on a quiet laptop.
+//
+// Before fail rather than after it, because the callers fail wakes are the
+// other half of the problem: a parked Initialize returns the moment fail
+// reaches it and hands its error straight to explain, which reads Stderr. The
+// handshake is precisely where a broken adapter shows up, so it is the one
+// caller that must not be woken early.
+//
+// Only on a stream that ended. A decode failure or an overflow leaves a live
+// process on the other end with nothing to wait for, and blocking there would
+// trade a rare empty string for a certain delay in reporting a session dead.
 func (c *Client) readLoop() {
-	defer close(c.done)
-	defer close(c.notify)
+	err := c.read()
+	if errors.Is(err, io.EOF) {
+		c.awaitExit(reapWait)
+	}
+	c.fail(err)
+	close(c.notify)
+	close(c.done)
+}
 
+// reapWait bounds the settle. A process that closes stdout and keeps running
+// would otherwise hold Done open forever, and a session stuck reading
+// "working" after its agent has gone is worse than a lost diagnostic.
+const reapWait = 5 * time.Second
+
+// awaitExit reaps the process, once, and gives up after limit. A client with
+// no process behind it has nothing to reap and nothing to lose by saying so.
+func (c *Client) awaitExit(limit time.Duration) {
+	if c.cmd == nil {
+		return
+	}
+	c.startWait()
+	select {
+	case <-c.waited:
+	case <-time.After(limit):
+	}
+}
+
+func (c *Client) startWait() {
+	c.waitOnce.Do(func() {
+		go func() {
+			c.waitErr = c.cmd.Wait()
+			close(c.waited)
+		}()
+	})
+}
+
+func (c *Client) read() error {
 	for {
 		raw, err := c.tr.recv()
 		if err != nil {
-			c.fail(err)
-			return
+			return err
 		}
 
 		var msg response
 		if err := json.Unmarshal(raw, &msg); err != nil {
 			// A frame we cannot parse means we have lost sync with the stream.
 			// Continuing would silently mis-attribute later replies.
-			c.fail(fmt.Errorf("decode message: %w (frame: %.200s)", err, raw))
-			return
+			return fmt.Errorf("decode message: %w (frame: %.200s)", err, raw)
 		}
 
 		if msg.Method != "" {
@@ -246,8 +308,7 @@ func (c *Client) readLoop() {
 			default:
 				// Bounded queue full. Say so rather than block the read loop,
 				// which would deadlock every in-flight request.
-				c.fail(fmt.Errorf("notification queue overflow on %s", msg.Method))
-				return
+				return fmt.Errorf("notification queue overflow on %s", msg.Method)
 			}
 			continue
 		}
@@ -362,8 +423,16 @@ func (c *Client) Initialize(ctx context.Context) (InitializeResult, error) {
 }
 
 func (c *Client) Close() error {
+	if c.cmd == nil {
+		return nil
+	}
 	if c.cmd.Process != nil {
 		_ = c.cmd.Process.Kill()
 	}
-	return c.cmd.Wait()
+	// Unbounded, as it always was: the process has just been killed, so this
+	// is a join and not a wait on anything that might not happen. Reading
+	// waitErr before the channel closes would be a race on it.
+	c.startWait()
+	<-c.waited
+	return c.waitErr
 }
