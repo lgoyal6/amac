@@ -90,6 +90,9 @@ type Client struct {
 	waitOnce sync.Once
 	waited   chan struct{}
 	waitErr  error
+	// drained closes when the adapter's stderr has been read to the end, which
+	// is the condition Stderr promises and is no longer implied by Wait.
+	drained chan struct{}
 }
 
 // tailBuffer keeps the last N bytes written to it. Bounded so a chatty adapter
@@ -162,11 +165,30 @@ func Spawn(ctx context.Context, name string, argv []string, dir string, stderr i
 	// "EOF" - which says nothing about the cause. The real message is on
 	// stderr, and it is worth exactly the few KB it costs to hold onto.
 	tail := &tailBuffer{limit: 4096}
+	var dst io.Writer = tail
 	if stderr != nil {
-		cmd.Stderr = io.MultiWriter(stderr, tail)
-	} else {
-		cmd.Stderr = tail
+		dst = io.MultiWriter(stderr, tail)
 	}
+
+	// Drained here rather than by handing os/exec an io.Writer, which is the
+	// obvious way to write this and quietly makes Close unbounded.
+	//
+	// Given a writer, os/exec copies stderr on a goroutine of its own and joins
+	// that goroutine in Wait. The copy ends when every write end of the pipe is
+	// closed, and an adapter that forks a child passes those write ends on. So
+	// a grandchild amac never started, and cannot see, held Wait open for as
+	// long as it felt like running: a shell that forks `sleep 10` and exits
+	// cost Close the whole ten seconds, and Close is what the daemon calls on
+	// every session on its way out.
+	//
+	// A pipe we read ourselves is not joined by Wait. Wait closes it after the
+	// process exits, which unblocks this copy even when a grandchild still
+	// holds the far end, so the drain cannot outlive the client either.
+	pipe, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("stderr pipe: %w", err)
+	}
+	drained := make(chan struct{})
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -179,6 +201,12 @@ func Spawn(ctx context.Context, name string, argv []string, dir string, stderr i
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", argv[0], err)
 	}
+	go func() {
+		defer close(drained)
+		// The error is always either EOF or the pipe being closed by Wait, and
+		// neither is worth reporting: whatever arrived is in the tail already.
+		_, _ = io.Copy(dst, pipe)
+	}()
 
 	c := &Client{
 		cmd:     cmd,
@@ -190,6 +218,7 @@ func Spawn(ctx context.Context, name string, argv []string, dir string, stderr i
 		ctx:     ctx,
 		done:    make(chan struct{}),
 		waited:  make(chan struct{}),
+		drained: drained,
 	}
 	go c.readLoop()
 	return c, nil
@@ -243,21 +272,36 @@ func (c *Client) readLoop() {
 	close(c.done)
 }
 
-// reapWait bounds the settle. A process that closes stdout and keeps running
-// would otherwise hold Done open forever, and a session stuck reading
-// "working" after its agent has gone is worse than a lost diagnostic.
+// reapWait bounds the settle. A process that closes stdout and keeps running,
+// or a grandchild sitting on the stderr it inherited, would otherwise hold Done
+// open forever, and a session stuck reading "working" after its agent has gone
+// is worse than a lost diagnostic.
 const reapWait = 5 * time.Second
 
-// awaitExit reaps the process, once, and gives up after limit. A client with
-// no process behind it has nothing to reap and nothing to lose by saying so.
+// awaitExit settles the client: everything the adapter said has been read, and
+// the process has been reaped. A client with no process behind it has nothing
+// to settle and nothing to lose by saying so.
+//
+// Stderr first, and reaped second, because Wait closes the stderr pipe as soon
+// as the process is gone. Reaping first would race the drain against that close
+// and lose the last thing a dying adapter said, which is the one thing this
+// whole path exists to keep.
+//
+// One deadline across both waits rather than one each, so the settle costs at
+// most limit however it goes wrong.
 func (c *Client) awaitExit(limit time.Duration) {
 	if c.cmd == nil {
 		return
 	}
+	deadline := time.Now().Add(limit)
+	select {
+	case <-c.drained:
+	case <-time.After(time.Until(deadline)):
+	}
 	c.startWait()
 	select {
 	case <-c.waited:
-	case <-time.After(limit):
+	case <-time.After(time.Until(deadline)):
 	}
 }
 
