@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lgoyal6/amac/internal/account"
 	"github.com/lgoyal6/amac/internal/acp"
 	"github.com/lgoyal6/amac/internal/agent"
 	"github.com/lgoyal6/amac/internal/event"
@@ -124,6 +125,12 @@ func (s *Supervisor) Start(ctx context.Context, agentName, dir string) (*Session
 	s.record(event.KindSessionStarted, id, map[string]any{
 		"agent": agentName, "adapter": init.AgentInfo.Name, "version": init.AgentInfo.Version,
 		"protocol": init.ProtocolVersion, "acpSessionId": ns.SessionID, "cwd": dir,
+		// Which login this session spends against. Recorded now rather than
+		// worked out when a cost report is read: the adapter is this process's
+		// own child and inherits its environment, and that environment is a
+		// fact about the moment the session started, not about the moment
+		// somebody asks what it cost.
+		"account": account.Default(agentName),
 	})
 	sess.setState(StateIdle, "ready")
 
