@@ -36,8 +36,18 @@ func RecordState(ctx context.Context, log *event.Log, s State) (reported bool, e
 	if s.Session == "" || s.State == "" {
 		return false, nil
 	}
-	if prev, ok := CurrentState(ctx, log, s.Session); ok &&
-		prev.State == s.State && prev.Detail == s.Detail && prev.Account == s.Account {
+	prev, known := CurrentState(ctx, log, s.Session)
+	// Not every writer knows whose session it is. The board records "answered
+	// from the board" when a key arrives from a phone and "continued in
+	// Terminal" when a session is opened on the Mac, and neither has any idea
+	// which login is running it. Taking their silence as an answer blanked the
+	// account off a card that had one, so a session was tagged right up until
+	// the moment it was touched. The account is a property of the session
+	// rather than of the event, so it is carried forward.
+	if s.Account == "" {
+		s.Account = prev.Account
+	}
+	if known && prev.State == s.State && prev.Detail == s.Detail && prev.Account == s.Account {
 		// An account arriving on a session that had none is a change: the
 		// board learns whose session it is, which is the whole point of
 		// recording it, and suppressing that write would leave the card
