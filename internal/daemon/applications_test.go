@@ -66,3 +66,39 @@ func TestApplicationsSyncExplainsMissingBackupWithoutFailingCache(t *testing.T) 
 
 func jsonBody(s string) *strings.Reader { return strings.NewReader(s) }
 func contains(s, sub string) bool       { return strings.Contains(s, sub) }
+
+// The loop is started with the daemon's shutdown context, so a stopping daemon
+// must not wait out the first timer before the goroutine exits.
+func TestNotionSyncLoopStopsWithItsContext(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("NOTION_TOKEN", "")
+	srv := testServer(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan struct{})
+	go func() { srv.SyncNotionPeriodically(ctx); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the sync loop ignored its cancelled context")
+	}
+}
+
+// A daemon with no Notion token still runs the loop. It must stay silent rather
+// than writing a failure the dashboard would show as a broken sync.
+func TestBackgroundSyncWithoutNotionRecordsNoFailure(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("NOTION_TOKEN", "")
+	t.Setenv("NOTION_DATABASE_ID", "")
+	srv := testServer(t)
+	srv.syncNotionQuietly(context.Background())
+
+	repo, err := apply.NewRepository(srv.log.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta, _ := repo.SyncMeta(context.Background())
+	if !meta.SyncedAt.IsZero() || meta.Error != "" {
+		t.Fatalf("a disconnected backup wrote sync state: %+v", meta)
+	}
+}

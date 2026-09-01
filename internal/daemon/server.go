@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lgoyal6/amac/internal/account"
@@ -38,6 +39,10 @@ type Server struct {
 	orch  *orchestrator.Orchestrator
 	queue *queue.Queue
 	token string
+	// Held for the length of a Notion sync. The button and the background loop
+	// run the same page walk against the same rows, and there is no reason for
+	// them ever to run it at the same time.
+	syncing sync.Mutex
 }
 
 func New(sup *supervisor.Supervisor, log *event.Log, orch *orchestrator.Orchestrator, q *queue.Queue, token string) *Server {

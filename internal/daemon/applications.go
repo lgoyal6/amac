@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -95,10 +97,66 @@ func (s *Server) syncApplications(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"ok": false, "warning": "Notion backup is not connected"})
 		return
 	}
-	meta, err := apply.SyncFromNotion(r.Context(), repo, notion)
+	meta, err := s.syncNotion(r.Context(), repo, notion)
 	if err != nil {
 		writeJSON(w, 502, map[string]any{"ok": false, "warning": "Notion sync did not finish", "syncedAt": meta.SyncedAt, "imported": meta.ItemCount})
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true, "syncedAt": meta.SyncedAt, "imported": meta.ItemCount})
+}
+
+// syncNotion is the one place the page walk actually runs, so the button and
+// the loop below cannot overlap.
+func (s *Server) syncNotion(ctx context.Context, repo *apply.Repository, n *apply.Notion) (apply.SyncMeta, error) {
+	s.syncing.Lock()
+	defer s.syncing.Unlock()
+	return apply.SyncFromNotion(ctx, repo, n)
+}
+
+// How often the daemon refreshes the application cache. Applications are filed
+// by hand a few times a day, so this is about how stale the jobs tab is allowed
+// to look rather than about keeping up with anything.
+const notionSyncInterval = 15 * time.Minute
+
+// SyncNotionPeriodically refreshes the cache until ctx ends.
+//
+// listApplications is deliberately cache-only and must stay that way, which
+// left the cache moving only when somebody pressed the button: applications
+// filed after the last press were simply absent from the dashboard, with
+// nothing on screen to say so until the 24-hour staleness flag caught up.
+// Refreshing out of band fixes that without putting Notion back in the path of
+// a page load.
+func (s *Server) SyncNotionPeriodically(ctx context.Context) {
+	// Not immediately. The daemon has just finished waiting for the tailnet,
+	// and a first call that beats the network up records a failure the
+	// dashboard would then show for a quarter of an hour.
+	timer := time.NewTimer(30 * time.Second)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			timer.Reset(notionSyncInterval)
+			s.syncNotionQuietly(ctx)
+		}
+	}
+}
+
+// syncNotionQuietly runs one background sync. A failure is not worth an event
+// or a crash: SyncFromNotion records it as sync metadata, which is what the
+// dashboard already reads to say the last sync did not finish.
+func (s *Server) syncNotionQuietly(ctx context.Context) {
+	repo, err := apply.NewRepository(s.log.DB())
+	if err != nil {
+		return
+	}
+	notion, err := apply.NewNotion()
+	if err != nil {
+		// Notion is not connected. The dashboard says so on every load.
+		return
+	}
+	if _, err := s.syncNotion(ctx, repo, notion); err != nil {
+		fmt.Printf("notion sync failed: %v\n", err)
+	}
 }

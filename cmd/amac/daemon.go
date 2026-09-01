@@ -74,9 +74,10 @@ func cmdDaemon(args []string) error {
 		return err
 	}
 
+	api := daemon.New(sup, log, orch, q, token)
 	srv := &http.Server{
 		Addr:              net.JoinHostPort(host, fmt.Sprint(*port)),
-		Handler:           daemon.New(sup, log, orch, q, token).Handler(),
+		Handler:           api.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		// No WriteTimeout: /api/stream is a long-lived SSE connection and a
 		// write deadline would sever it on a fixed schedule. Idle connections
@@ -99,6 +100,9 @@ func cmdDaemon(args []string) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// The jobs tab reads a local cache that nothing but the sync button moved.
+	go api.SyncNotionPeriodically(ctx)
 
 	select {
 	case err := <-errc:
