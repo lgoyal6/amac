@@ -34,6 +34,7 @@ import (
 	"github.com/lgoyal6/amac/internal/event"
 	macHandoff "github.com/lgoyal6/amac/internal/handoff"
 	"github.com/lgoyal6/amac/internal/health"
+	"github.com/lgoyal6/amac/internal/machine"
 	"github.com/lgoyal6/amac/internal/spend"
 )
 
@@ -300,6 +301,26 @@ func (s *Server) healthShell(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]string{
 		"session": name, "dir": a.Home, "attach": "tmux attach -t " + name,
 	})
+}
+
+// ---------------------------------------------------------------- machine ---
+
+// machine reports what this Mac has left, live.
+//
+// The board already warned about swap and disk, from two numbers scraped out
+// of the reaper's log every half hour. A warning with no breakdown tells you to
+// worry without telling you what to close, and a half-hour-old reading of a
+// number that moves in seconds is the staleness this whole system exists to
+// avoid.
+func (s *Server) machine(w http.ResponseWriter, r *http.Request) {
+	stats, err := machine.Read(r.Context())
+	if err != nil {
+		// Said rather than swallowed. An empty chart and an unreadable machine
+		// look identical on screen, and they are not the same thing.
+		writeJSON(w, 200, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, stats)
 }
 
 // ------------------------------------------------------------------ spend ---
