@@ -24,6 +24,16 @@
     --blocked:#ff9147; --working:#4c9aff; --idle:#6b7688;
     --ok:#3fb950; --fail:#f85149; --late:#d29922;
 
+    /* An ordinal ramp for charts: one hue, three monotone lightness steps.
+       Ordinal rather than categorical because every series drawn with it has a
+       real order - memory by how reclaimable it is, applications by tier - and
+       a reader who sees the order in the colour does not have to read a legend
+       to get the point. The status colours above are deliberately not reused
+       for series: they mean a state, and a chart band is not a state.
+       Checked against these surfaces rather than chosen by eye: worst adjacent
+       pair is dE 15.6 for normal vision and all three clear 3:1 on --raise. */
+    --c1:#a5d6ff; --c2:#58a6ff; --c3:#1f6feb; --track:#242a33;
+
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px;
     --r:10px;
     --header-h:90px; --keyboard-offset:0px;
@@ -32,7 +42,12 @@
   }
   @media (prefers-color-scheme: light) {
     :root { --bg:#f7f8fa; --surface:#fff; --raise:#f1f3f6; --line:#e3e7ee;
-            --fg:#11141a; --dim:#5f6878; --faint:#98a1b0; }
+            --fg:#11141a; --dim:#5f6878; --faint:#98a1b0;
+            /* Stepped again for the light surface rather than flipped: the
+               dark ramp's lightest step is 1.75:1 on #f1f3f6 and invisible.
+               The lightest step here is 2.27:1, which the checks allow only
+               because every band carries a visible label. */
+            --c1:#58a6ff; --c2:#1f6feb; --c3:#0d419d; --track:#e3e7ee; }
   }
 
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -279,6 +294,67 @@
   .tile-name { font:600 11.5px/1.4 var(--mono); flex:1 1 auto; min-width:0;
                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .tile-account { font:10px/1.4 var(--mono); color:var(--dim); flex:0 0 auto; }
+
+  /* ------------------------------------------------------------- charts -- */
+  /* Marks are thin and the surface shows through between them: a 2px gap is
+     what keeps two adjacent fills from reading as one longer fill. */
+  .chart { margin-top:var(--s4); }
+  .chart:first-child { margin-top:0; }
+  .chart-head { display:flex; align-items:baseline; gap:var(--s2); margin-bottom:var(--s2); }
+  .chart-title { font:600 11.5px/1.4 var(--mono); color:var(--fg); flex:1 1 auto; }
+  .chart-note { font:10.5px/1.4 var(--mono); color:var(--dim); }
+
+  /* A meter, not a two-slice pie: one ratio against a limit reads off a length
+     in one glance, and a circle spends half its ink drawing the part you do
+     not care about. */
+  .meter { display:flex; align-items:center; gap:var(--s3); padding:6px 0; }
+  .meter-label { width:64px; flex:0 0 auto; font:11.5px/1.4 var(--mono); color:var(--fg); }
+  .meter-track { flex:1 1 auto; height:10px; background:var(--track);
+                 border-radius:5px; overflow:hidden; }
+  .meter-fill { height:100%; border-radius:5px; }
+  .meter-fill.ok { background:var(--ok); }
+  .meter-fill.late { background:var(--late); }
+  .meter-fill.fail { background:var(--fail); }
+  /* Sized to its content and never wrapped: "398 GB / 460 GB · 86% tight" broken
+     across three lines is a paragraph, and the eye stops reading it as a value. */
+  .meter-val { flex:0 0 auto; text-align:right; font:11.5px/1.4 var(--mono);
+               color:var(--dim); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  @media (max-width:560px) {
+    /* Narrow enough that the track and the reading cannot share a line, so the
+       reading goes under the bar rather than squeezing it to nothing. */
+    .meter { flex-wrap:wrap; }
+    .meter-track { order:3; flex-basis:100%; margin-top:4px; }
+    .meter-label { flex:1 1 auto; }
+  }
+
+  /* A stacked bar for part-to-whole. The gap between segments is a surface
+     gap, so it works on either background without a colour of its own. */
+  .stack { display:flex; height:14px; border-radius:4px; overflow:hidden; background:var(--track); }
+  .stack > span { display:block; height:100%; }
+  .stack > span + span { margin-left:2px; }
+  .stack-legend { display:flex; flex-wrap:wrap; gap:var(--s2) var(--s3); margin-top:var(--s2); }
+  .stack-key { display:flex; align-items:center; gap:6px; font:10.5px/1.5 var(--mono); color:var(--dim); }
+  .stack-key i { width:9px; height:9px; border-radius:2px; flex:0 0 auto; }
+  .stack-key b { color:var(--fg); font-weight:600; font-variant-numeric:tabular-nums; }
+
+  /* Columns over time. Bars are anchored to the baseline with rounded tops,
+     and the whole column is the hit target so a one-pixel bar is still
+     hoverable. */
+  .cols { display:flex; align-items:flex-end; gap:2px; height:96px; }
+  .col { flex:1 1 0; min-width:0; height:100%; display:flex; align-items:flex-end;
+         position:relative; cursor:default; }
+  .col > i { display:block; width:100%; background:var(--c2); border-radius:3px 3px 0 0;
+             min-height:2px; }
+  .col:hover > i { background:var(--c1); }
+  .col-tip { position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%);
+             background:var(--surface); border:1px solid var(--line); border-radius:6px;
+             padding:4px 7px; font:10.5px/1.4 var(--mono); color:var(--fg);
+             white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .1s;
+             z-index:3; box-shadow:0 4px 14px rgba(0,0,0,.35); }
+  .col:hover .col-tip, .col:focus-visible .col-tip { opacity:1; }
+  .cols-axis { display:flex; justify-content:space-between; margin-top:6px;
+               font:10px/1.4 var(--mono); color:var(--faint); }
+  .chart-empty { font:11px/1.5 var(--mono); color:var(--dim); padding:var(--s3) 0; }
   .tile-body { padding:var(--s2) var(--s3); font:10px/1.4 var(--mono);
                color:#aab3c2; white-space:pre; overflow:hidden; height:180px;
                -webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent),
@@ -471,6 +547,7 @@
       <button class="on" role="tab" aria-selected="true" data-health-view="status">status now</button>
       <button role="tab" aria-selected="false" data-health-view="schedule">intended schedule</button>
     </div>
+    <div class="card" id="machineCard"><div id="machineOut" class="empty">loading</div></div>
     <div class="card" id="healthStatus"><div id="healthOut" class="empty">loading</div></div>
     <div class="card" id="healthSchedule" hidden><div id="scheduleOut" class="empty">loading</div></div>
   </section>
@@ -499,6 +576,7 @@
         <option value="none">not set</option>
       </select>
     </div>
+    <div class="card" id="jobCharts" hidden></div>
     <div class="section-head"><span id="jobCount" class="job-count"></span><span id="jobSyncState" class="job-count"></span></div>
     <div id="jobsOut" class="empty">loading</div>
   </section>
@@ -1332,9 +1410,12 @@ document.querySelectorAll('[data-health-view]').forEach(b => {
       x.classList.toggle('on', x === b);
       x.setAttribute('aria-selected', x === b ? 'true' : 'false');
     });
+    // The machine belongs to "status now": what it has left is a fact about
+    // this moment, and it says nothing at all about an intended schedule.
+    $('machineCard').hidden = schedule;
     $('healthStatus').hidden = schedule;
     $('healthSchedule').hidden = !schedule;
-    if (schedule) loadHealthSchedule(); else loadHealth();
+    if (schedule) loadHealthSchedule(); else { loadHealth(); loadMachine(); }
   };
 });
 
@@ -1497,6 +1578,95 @@ $('taskFile').onclick = fileTask;
 $('taskClaim').onclick = claimNext;
 $('taskTitle').addEventListener('keydown', ev => { if (ev.key === 'Enter') fileTask(); });
 
+// ----------------------------------------------------------------- charts --
+
+// Bytes at the precision a person reads them at. 396.5 GB is a fact about a
+// disk; 396,482,199,552 bytes is a fact about a filesystem.
+const bytes = n => {
+  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0, v = Number(n) || 0;
+  while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
+  return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${u[i]}`;
+};
+
+// A ratio against a limit is a meter, not a pie. The severity word travels with
+// the colour because a colour alone is not a reading: green and amber are the
+// same bar to a reader who cannot separate them, and to a printed page.
+function meter(label, used, total, pct) {
+  const level = pct >= 90 ? 'fail' : pct >= 75 ? 'late' : 'ok';
+  const word = pct >= 90 ? 'critical' : pct >= 75 ? 'tight' : 'healthy';
+  return `<div class="meter">
+    <div class="meter-label">${esc(label)}</div>
+    <div class="meter-track"><div class="meter-fill ${level}" style="width:${Math.min(pct, 100)}%"></div></div>
+    <div class="meter-val">${esc(bytes(used))} / ${esc(bytes(total))} · ${pct}% ${esc(word)}</div>
+  </div>`;
+}
+
+// Part-to-whole, with every band named and measured next to its swatch. Four
+// bands is inside the count where direct labels are still readable, so there is
+// no separate legend to look up: the legend IS the labels.
+function stack(bands) {
+  const total = bands.reduce((n, b) => n + b.value, 0) || 1;
+  return `<div class="stack">${bands.map(b =>
+      `<span style="width:${(b.value / total * 100).toFixed(2)}%;background:${b.color}"
+             title="${esc(b.name)} ${esc(bytes(b.value))}"></span>`).join('')}</div>
+    <div class="stack-legend">${bands.map(b =>
+      `<span class="stack-key"><i style="background:${b.color}"></i>${esc(b.name)} <b>${esc(bytes(b.value))}</b></span>`).join('')}</div>`;
+}
+
+// Columns over time. One series, so one hue and no legend: the title names it.
+// Every column carries its own value on hover rather than a number printed on
+// each bar, which at thirty bars is noise rather than information.
+function columns(points, label) {
+  if (!points.length) return `<div class="chart-empty">nothing in this window yet</div>`;
+  const peak = Math.max(...points.map(p => p.value), 1);
+  return `<div class="cols">${points.map(p => `
+      <div class="col" tabindex="0" aria-label="${esc(p.label)}: ${p.value} ${esc(label)}">
+        <i style="height:${Math.max(p.value / peak * 100, p.value ? 3 : 0)}%"></i>
+        <span class="col-tip">${esc(p.label)} · ${p.value} ${esc(label)}</span>
+      </div>`).join('')}</div>
+    <div class="cols-axis"><span>${esc(points[0].label)}</span><span>${esc(points[points.length - 1].label)}</span></div>`;
+}
+
+// ---------------------------------------------------------------- machine --
+
+// What the Mac has left, live. The board already warned about swap and disk
+// from two numbers scraped out of a log every half hour; a warning with no
+// breakdown tells you to worry without telling you what to close.
+async function loadMachine() {
+  const el = $('machineOut');
+  const r = await api('/api/machine');
+  if (!r.ok) { el.className = 'empty'; el.textContent = 'could not read the machine'; return; }
+  const m = await r.json();
+  if (m.error) { el.className = 'empty'; el.textContent = m.error; return; }
+
+  // Ordered by how hard it is to get back, which is what the reader is
+  // deciding about: wired cannot be reclaimed at all, available already is.
+  const bands = [
+    { name: 'wired', value: m.memory.wired, color: 'var(--c3)' },
+    { name: 'app', value: m.memory.app, color: 'var(--c2)' },
+    { name: 'compressed', value: m.memory.compressed, color: 'var(--c1)' },
+    { name: 'available', value: m.memory.available, color: 'var(--idle)' },
+  ];
+  el.className = '';
+  el.innerHTML = `
+    <div class="chart">
+      <div class="chart-head"><span class="chart-title">memory</span>
+        <span class="chart-note">${m.memory.percent}% in use of ${esc(bytes(m.memory.total))}</span></div>
+      ${stack(bands)}
+    </div>
+    <div class="chart">
+      <div class="chart-head"><span class="chart-title">storage and swap</span>
+        <span class="chart-note">${esc(m.disk.mount)}</span></div>
+      ${meter('disk', m.disk.used, m.disk.total, m.disk.percent)}
+      ${m.swap.total ? meter('swap', m.swap.used, m.swap.total, m.swap.percent) : ''}
+    </div>
+    <div class="hdetail" style="margin-top:12px">
+      Read live, not from the reaper's log. Compressed memory is the one to watch:
+      it is what the kernel does just before it starts swapping.
+    </div>`;
+}
+
 // ------------------------------------------------------------------ spend --
 
 // Read from looseapi rather than recomputed. amac can only see the sessions it
@@ -1630,7 +1800,79 @@ async function loadJobs() {
   const d = await r.json();
   applications = Array.isArray(d) ? d : (d.applications || []);
   jobMeta = Array.isArray(d) ? {} : d;
+  renderJobCharts();
   renderJobs();
+}
+
+// The shape of the pipeline, from the whole set rather than the filtered list:
+// a chart that moves when you type in the search box is answering a different
+// question from the one it is labelled with.
+function renderJobCharts() {
+  const card = $('jobCharts');
+  if (!applications.length) { card.hidden = true; return; }
+  card.hidden = false;
+
+  // Thirty days ending today, including the days with nothing on them. Dropping
+  // the empty days would compress a fortnight of silence into a neighbouring
+  // bar and turn a gap into a trend.
+  const day = 86400000;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const counts = new Map();
+  for (const a of applications) {
+    const k = (a.appliedAt || '').slice(0, 10);
+    if (k) counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  const series = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today.getTime() - i * day);
+    const key = d.toISOString().slice(0, 10);
+    series.push({ label: key.slice(5), value: counts.get(key) || 0 });
+  }
+  const sent = series.reduce((n, p) => n + p.value, 0);
+
+  // Tier is ordinal - T1 outranks T3 - so it takes the one-hue ramp and the
+  // reader sees the ranking in the colour. Untiered is not a fourth tier and
+  // is not given a tier's colour.
+  const tierOrder = [
+    { key: 'T1', color: 'var(--c3)' },
+    { key: 'T2', color: 'var(--c2)' },
+    { key: 'T3', color: 'var(--c1)' },
+  ];
+  const tiers = tierOrder
+    .map(t => ({ name: t.key, color: t.color, value: applications.filter(a => a.tier === t.key).length }))
+    .filter(t => t.value > 0);
+  const untiered = applications.filter(a => !a.tier).length;
+  if (untiered) tiers.push({ name: 'untiered', color: 'var(--idle)', value: untiered });
+
+  // Status is four or five numbers, not a chart. A bar chart of 188 against 1
+  // is a wall and a hairline, and reads as a rendering fault.
+  const statuses = ['Applied', 'In Review', 'Interview', 'Offer', 'Rejected']
+    .map(name => ({ name, value: applications.filter(a => a.status === name).length }))
+    .filter(x => x.value > 0);
+
+  card.innerHTML = `
+    <div class="chart">
+      <div class="chart-head"><span class="chart-title">applications sent</span>
+        <span class="chart-note">${sent} in the last 30 days</span></div>
+      ${columns(series, 'sent')}
+    </div>
+    <div class="chart">
+      <div class="chart-head"><span class="chart-title">where they are</span>
+        <span class="chart-note">${applications.length} tracked</span></div>
+      <div class="stack-legend">${statuses.map(x =>
+        `<span class="stack-key">${esc(x.name)} <b>${x.value}</b></span>`).join('')}</div>
+    </div>
+    ${tiers.length ? `<div class="chart">
+      <div class="chart-head"><span class="chart-title">by tier</span>
+        <span class="chart-note">T1 is the shortlist</span></div>
+      <div class="stack">${tiers.map(t => {
+        const total = tiers.reduce((n, x) => n + x.value, 0) || 1;
+        return `<span style="width:${(t.value / total * 100).toFixed(2)}%;background:${t.color}"
+                      title="${esc(t.name)} ${t.value}"></span>`;
+      }).join('')}</div>
+      <div class="stack-legend">${tiers.map(t =>
+        `<span class="stack-key"><i style="background:${t.color}"></i>${esc(t.name)} <b>${t.value}</b></span>`).join('')}</div>
+    </div>` : ''}`;
 }
 
 function renderJobs() {
@@ -1723,7 +1965,7 @@ function openTopTab(next) {
   $('mobileNew').hidden = !showComposer;
   if (tab === 'home') loadHome();
   if (tab === 'agents') setAgentView(agentView);
-  if (tab === 'automations') loadHealth();
+  if (tab === 'automations') { loadHealth(); loadMachine(); }
   if (tab === 'money') loadSpend();
   if (tab === 'jobs') loadJobs();
 }
