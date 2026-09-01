@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lgoyal6/amac/internal/account"
 	"github.com/lgoyal6/amac/internal/attention"
 	"github.com/lgoyal6/amac/internal/crew"
 	"github.com/lgoyal6/amac/internal/event"
@@ -304,25 +305,26 @@ func (s *Server) healthShell(w http.ResponseWriter, r *http.Request) {
 // ------------------------------------------------------------------ spend ---
 
 type spendView struct {
-	MonthlyUSD          string              `json:"monthlyUsd"`
-	AgentUSD            string              `json:"agentUsd"`
-	TodayUSD            string              `json:"todayUsd"`
-	Days                int                 `json:"days"`
-	Source              string              `json:"source"`
-	MessageCount        int                 `json:"messageCount"`
-	LedgerSize          int                 `json:"ledgerSize"`
-	RecoveredFromLedger int                 `json:"recoveredFromLedger"`
-	HiddenOutOfScope    int                 `json:"hiddenOutOfScope"`
-	Counts              spend.Counts        `json:"counts"`
-	Alerts              []spend.Alert       `json:"alerts"`
-	Services            []spendServiceView  `json:"services"`
-	Events              []spendEventView    `json:"events"`
-	Providers           []spendProviderView `json:"providers"`
-	NoAPI               []spend.NoAPI       `json:"noApi"`
-	ByProject           []spend.Slice       `json:"byProject"`
-	ByModel             []spend.Slice       `json:"byModel"`
-	At                  time.Time           `json:"at"`
-	Stale               bool                `json:"stale"`
+	MonthlyUSD          string               `json:"monthlyUsd"`
+	AgentUSD            string               `json:"agentUsd"`
+	TodayUSD            string               `json:"todayUsd"`
+	Days                int                  `json:"days"`
+	Source              string               `json:"source"`
+	MessageCount        int                  `json:"messageCount"`
+	LedgerSize          int                  `json:"ledgerSize"`
+	RecoveredFromLedger int                  `json:"recoveredFromLedger"`
+	HiddenOutOfScope    int                  `json:"hiddenOutOfScope"`
+	Counts              spend.Counts         `json:"counts"`
+	Alerts              []spend.Alert        `json:"alerts"`
+	Services            []spendServiceView   `json:"services"`
+	Events              []spendEventView     `json:"events"`
+	Providers           []spendProviderView  `json:"providers"`
+	NoAPI               []spend.NoAPI        `json:"noApi"`
+	ByProject           []spend.Slice        `json:"byProject"`
+	ByModel             []spend.Slice        `json:"byModel"`
+	ByAccount           []spend.AccountSlice `json:"byAccount"`
+	At                  time.Time            `json:"at"`
+	Stale               bool                 `json:"stale"`
 	// Caveat travels with the number. looseapi is careful to call the agent
 	// figure an equivalent API cost rather than spend, because on a flat
 	// subscription those tokens cost nothing marginal. Restating it here keeps
@@ -422,6 +424,10 @@ func (s *Server) spend(w http.ResponseWriter, r *http.Request) {
 		// buries that under the ones that do not.
 		ByProject: snap.Breakdown("project", 5),
 		ByModel:   snap.Breakdown("model", 5),
+		// Not five. There are four logins and one of them was invisible until
+		// it was looked for, so the account table shows all of them however
+		// small: the row worth seeing is the one nobody remembered.
+		ByAccount: snap.Accounts(account.All()),
 		At:        snap.GeneratedAt,
 		// The scan is daily, so a reading past two days has stopped tracking
 		// reality and the page has to say so rather than show it as current.

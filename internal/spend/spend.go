@@ -24,7 +24,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
+
+	"github.com/lgoyal6/amac/internal/account"
 )
 
 // Path is where looseapi's CLI leaves its snapshot.
@@ -135,6 +138,11 @@ type Tool struct {
 	ByDay     map[string]Totals `json:"byDay"`
 	ByProject map[string]Totals `json:"byProject"`
 	ByModel   map[string]Totals `json:"byModel"`
+	// ByAccount is keyed by the config home the usage was read from, without
+	// its leading dot: "codex", "codex-ish", "claude". looseapi reports the
+	// directory because that is the fact it has; naming the login behind it is
+	// this repo's job, in internal/account.
+	ByAccount map[string]Totals `json:"byAccount"`
 }
 
 // Slice is one line of a breakdown: a project, or a model, and what it came to.
@@ -142,6 +150,27 @@ type Slice struct {
 	Name  string `json:"name"`
 	Cents int64  `json:"cents"`
 	Share int    `json:"share"` // percent of the total, for reading at a glance
+}
+
+// AccountSlice is one login's share of the agent figure.
+//
+// Every known account gets a row, including one that spent nothing and one
+// that is not installed here. A table of only the accounts that showed up in
+// the logs cannot distinguish "this account was quiet" from "this account was
+// never read", and the second is the failure that hid a whole Codex login for
+// as long as it existed.
+type AccountSlice struct {
+	ID    string `json:"id"`
+	Agent string `json:"agent"`
+	Label string `json:"label"`
+	Email string `json:"email,omitempty"`
+	Plan  string `json:"plan,omitempty"`
+	Cents int64  `json:"cents"`
+	Share int    `json:"share"`
+	// Present is whether this account keeps its state on this machine. A false
+	// here is why the figure is zero, and saying so is the difference between
+	// a report and a missing row.
+	Present bool `json:"present"`
 }
 
 // Totals carries token counts and a cents figure that is deliberately not
@@ -383,5 +412,63 @@ func (s Snapshot) Breakdown(key string, top int) []Slice {
 	if len(out) > top {
 		out = out[:top]
 	}
+	return out
+}
+
+// Accounts is the agent figure split by login.
+//
+// The roster leads and the usage follows it, rather than the other way round.
+// That ordering is the whole guarantee: an account that spent nothing, and an
+// account whose home is not on this machine, both still get a row, so the table
+// can never quietly shrink to the accounts that happened to produce logs. A
+// home the roster does not recognise is appended rather than dropped, because
+// an unnamed account with real tokens in it is a fact worth showing even when
+// amac cannot say whose it is.
+// The roster is passed in rather than read here. This package's whole job is to
+// project a file it was handed, and a function that also goes looking at the
+// filesystem is one that cannot be tested without one.
+func (s Snapshot) Accounts(roster []account.Account) []AccountSlice {
+	cents := map[string]int64{}
+	for _, t := range s.Usage.Tools {
+		for home, v := range t.ByAccount {
+			cents[home] += v.Cents
+		}
+	}
+
+	total := s.AgentCents()
+	share := func(n int64) int {
+		if total <= 0 {
+			return 0
+		}
+		return int(float64(n) / float64(total) * 100)
+	}
+
+	out := make([]AccountSlice, 0, len(cents)+4)
+	claimed := map[string]bool{}
+	for _, a := range roster {
+		// looseapi keys usage by the home directory without its dot, which is
+		// the same string on both sides of this join.
+		home := strings.TrimPrefix(filepath.Base(a.Home), ".")
+		claimed[home] = true
+		out = append(out, AccountSlice{
+			ID: a.ID, Agent: a.Agent, Label: a.Label, Email: a.Email, Plan: a.Plan,
+			Cents: cents[home], Share: share(cents[home]), Present: a.Local,
+		})
+	}
+	for home, n := range cents {
+		if claimed[home] {
+			continue
+		}
+		out = append(out, AccountSlice{
+			ID: home, Label: home, Cents: n, Share: share(n), Present: true,
+		})
+	}
+
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Cents != out[j].Cents {
+			return out[i].Cents > out[j].Cents
+		}
+		return out[i].Label < out[j].Label
+	})
 	return out
 }

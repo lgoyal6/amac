@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lgoyal6/amac/internal/account"
 )
 
 const sample = `{
@@ -128,5 +130,68 @@ func TestMissingSnapshotIsAnError(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	if _, err := Read(); err == nil {
 		t.Fatal("a missing snapshot must be an error, not an empty report")
+	}
+}
+
+// The account split is the answer to "which login is this", and the reason it
+// exists is that a whole Codex account was invisible for as long as it had
+// been in use. So the roster leads: an account with no usage, and one that is
+// not installed here, both keep their row.
+func TestAccountsKeepEveryKnownLogin(t *testing.T) {
+	const withAccounts = `{
+	  "usage": {"days":30,"tools":[
+	    {"tool":"Claude Code","total":{"cents":1000},"byAccount":{"claude":{"cents":1000}}},
+	    {"tool":"Codex","total":{"cents":1000},"byAccount":{"codex":{"cents":900},"codex-ish":{"cents":100}}}
+	  ]}
+	}`
+	var s Snapshot
+	if err := json.Unmarshal([]byte(withAccounts), &s); err != nil {
+		t.Fatal(err)
+	}
+	roster := []account.Account{
+		{ID: "codex", Agent: "codex", Label: "codex", Home: "/h/.codex", Local: true},
+		{ID: "codex-ish", Agent: "codex", Label: "codex-ish", Home: "/h/.codex-ish", Local: true},
+		{ID: "claude-gmi", Agent: "claude", Label: "gmi", Home: "/h/.claude", Local: true},
+		{ID: "claude-lgoyal", Agent: "claude", Label: "lgoyal", Home: "/h/.claude-lgoyal"},
+	}
+
+	got := s.Accounts(roster)
+	if len(got) != 4 {
+		t.Fatalf("got %d rows, want one per known login", len(got))
+	}
+	// Ranked by cost, so the row that matters is at the top.
+	if got[0].ID != "claude-gmi" || got[0].Cents != 1000 {
+		t.Errorf("first row is %s at %d, want claude-gmi at 1000", got[0].ID, got[0].Cents)
+	}
+	// The second Codex login is the whole point: real money, small share.
+	var ish AccountSlice
+	for _, a := range got {
+		if a.ID == "codex-ish" {
+			ish = a
+		}
+	}
+	if ish.Cents != 100 || ish.Share != 5 {
+		t.Errorf("codex-ish = %d cents / %d%%, want 100 / 5", ish.Cents, ish.Share)
+	}
+	// An absent account reports zero AND says it is absent, so the zero can be
+	// read as "not here" rather than "spent nothing".
+	last := got[len(got)-1]
+	if last.ID != "claude-lgoyal" || last.Cents != 0 || last.Present {
+		t.Errorf("absent account = %+v, want claude-lgoyal at 0, present=false", last)
+	}
+}
+
+// A home nobody has registered still has real tokens in it. Dropping it would
+// leave the rows adding up to less than the total with nothing saying why.
+func TestUnknownHomeStillGetsARow(t *testing.T) {
+	const stray = `{"usage":{"days":30,"tools":[
+	  {"tool":"Codex","total":{"cents":500},"byAccount":{"codex-someone":{"cents":500}}}]}}`
+	var s Snapshot
+	if err := json.Unmarshal([]byte(stray), &s); err != nil {
+		t.Fatal(err)
+	}
+	got := s.Accounts(nil)
+	if len(got) != 1 || got[0].ID != "codex-someone" || got[0].Cents != 500 {
+		t.Fatalf("got %+v, want the unrecognised home carried through", got)
 	}
 }
