@@ -1,10 +1,13 @@
 package acp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -486,9 +489,8 @@ func TestTheHandshakeErrorCarriesTheAdaptersOwnWords(t *testing.T) {
 // end and nothing to wait for. Waiting there would turn a rare lost diagnostic
 // into a guaranteed delay in reporting a session dead.
 func TestALiveAdapterIsNotWaitedFor(t *testing.T) {
-	// exec, so the shell becomes the sleep rather than forking it. A forked
-	// grandchild survives Close's kill still holding the pipes, and Close waits
-	// on those, which costs this test the full thirty seconds for nothing.
+	// exec, so the shell becomes the sleep rather than forking it and leaving a
+	// stray behind for half a minute after the test has finished with it.
 	c, err := Spawn(context.Background(), "fake", []string{"sh", "-c",
 		"echo 'not json'; exec sleep 30"}, t.TempDir(), nil)
 	if err != nil {
@@ -537,4 +539,72 @@ func waitFor(t *testing.T, cond func() bool, what string) {
 		time.Sleep(2 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+// Close must not wait on a process it has never heard of.
+//
+// The shell here forks a sleep that inherits the adapter's pipes and then
+// exits, leaving the pipes held open by something amac never started. os/exec
+// copies an io.Writer stderr on a goroutine of its own and joins that goroutine
+// in Wait, so Close waited out the orphan rather than the adapter, and a daemon
+// shutting down waited with it.
+func TestCloseDoesNotWaitOnAnOrphanHoldingThePipes(t *testing.T) {
+	dir := t.TempDir()
+	c, err := Spawn(context.Background(), "fake",
+		[]string{"sh", "-c", "sleep 10 & touch forked; exit 0"}, dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Killing before the shell has forked would test nothing, so wait for the
+	// orphan to exist rather than assume it does.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "forked")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the shell never forked")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	start := time.Now()
+	_ = c.Close()
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("Close waited %s on an orphan that holds the pipes", elapsed.Round(time.Millisecond))
+	}
+
+	// And the drain does not outlive the client. Owning the read end only moves
+	// the problem if the goroutine reading it is still parked on an orphan
+	// after Close; Wait closing the pipe is what stops that.
+	select {
+	case <-c.drained:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the stderr drain is still parked on the orphan after Close")
+	}
+}
+
+// The caller's own writer still receives the adapter's stderr. It is how
+// AMAC_DEBUG shows a misbehaving adapter, and the copy that feeds it moved
+// into this package, so nothing outside would notice if it stopped.
+func TestSpawnForwardsStderrToTheCaller(t *testing.T) {
+	var seen bytes.Buffer
+	c, err := Spawn(context.Background(), "fake", []string{"sh", "-c",
+		"echo 'node: command not found' >&2; exit 1"}, t.TempDir(), &seen)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// Done is the synchronisation point: it closes only after the drain has
+	// finished, so reading the buffer here races nothing.
+	select {
+	case <-c.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("a process that exited did not end the read loop")
+	}
+	if got := seen.String(); !strings.Contains(got, "command not found") {
+		t.Fatalf("the caller's writer got %q", got)
+	}
 }
