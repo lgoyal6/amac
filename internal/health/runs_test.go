@@ -143,3 +143,48 @@ func TestEveryCompletedReaperTickIsReported(t *testing.T) {
 		}
 	}
 }
+
+// A start banner is not a run. hacklist-local-passes writes "local passes
+// starting" and "local passes done" on the same marker line shape, and while
+// the done-check was a disk-sweep carve-out it counted both: fourteen runs in a
+// week from a job that runs once a day.
+func TestOnlyCompletionMarkersAreRuns(t *testing.T) {
+	for _, tc := range []struct {
+		name, note string
+		want       bool
+	}{
+		{"hacklist-local-passes", "local passes starting", false},
+		{"hacklist-local-passes", "local passes done", true},
+		{"agents-sync", "sync starting ===", false},
+		{"agents-sync", "done (0 failures, no changes) ===", true},
+		{"devspend-refresh", "refresh starting ===", false},
+		{"devspend-refresh", "done (1 failures, gmail auth expired) ===", true},
+		{"hackqueue", "hackqueue starting", false},
+		{"hackqueue", "hackqueue done", true},
+		{"disk-sweep", "starting", false},
+		{"tmux-idle-reaper", "done (0 reaped)", true},
+	} {
+		if got := reportableRun(tc.name, tc.note); got != tc.want {
+			t.Errorf("reportableRun(%q, %q) = %v, want %v", tc.name, tc.note, got, tc.want)
+		}
+	}
+}
+
+// The roster and the run sources have to agree about who is watched, or the
+// board reports "no per-run history" for something that has been reporting.
+func TestNewlyWatchedJobsAreReported(t *testing.T) {
+	for _, name := range []string{
+		"hackqueue", "devspend-refresh", "docker-idle-reaper", "agents-sync",
+		"hacklist-local-passes", "brew-autoupgrade", "disk-sweep", "tmux-idle-reaper",
+		"morning-brief", "hacklist", "job-discovery",
+	} {
+		if !ReportsRuns(name) {
+			t.Errorf("%s should have per-run reporting", name)
+		}
+	}
+	// amac-daemon is a long-running service, not a series of runs. Claiming
+	// per-run history for it would be inventing one.
+	if ReportsRuns("amac-daemon") {
+		t.Error("a daemon has no runs to report")
+	}
+}
