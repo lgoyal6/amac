@@ -291,7 +291,7 @@ automation, because none of them expose it the same way:
 | automation | how a skip is identified |
 | --- | --- |
 | morning-brief | GitHub reports every step `success` either way, because the skip happens *inside* the steps. So the test is whether a delivery commit landed inside the run's own window. |
-| hacklist-sf | the gate skips a whole job, which GitHub does report: `job=discover conclusion=skipped`. |
+| hacklist | the gate skips a whole job, which GitHub does report: `job=discover conclusion=skipped`. |
 | job-discovery | a run with nothing to send still succeeds. Its pipeline report carries `shouldSend` and the counts behind it, which also makes the better message: "0 accepted of 61,268 scanned". |
 | launchd jobs | each completion marker is one run; brew prints its own failure tally. |
 

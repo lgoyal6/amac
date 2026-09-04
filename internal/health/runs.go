@@ -173,7 +173,7 @@ func deliveredIn(commits []time.Time, start, end time.Time) bool {
 // hacklistRuns reads the gate directly. Unlike morning-brief, this workflow
 // suppresses by skipping a whole job, which GitHub reports as such.
 func hacklistRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
-	repo, name := withOf("hacklist-sf", "repo"), "hacklist-sf"
+	repo, name := withOf("hacklist", "repo"), "hacklist"
 	fresh, err := ghRunsSince(ctx, repo, name, seen)
 	if err != nil || len(fresh) == 0 {
 		return nil, err
