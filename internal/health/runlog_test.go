@@ -221,3 +221,40 @@ func TestDedupeDoesNotCrossAutomations(t *testing.T) {
 		}
 	}
 }
+
+// A pipeline Laksh fixed two days ago should read as fixed. The old wording
+// opened with "8 runs failed", which is news about last week presented as news
+// about now.
+func TestRecoveredLeadsWithTheCleanStreak(t *testing.T) {
+	runs := []Run{
+		run("job-discovery", RunOK, 1),
+		run("job-discovery", RunOK, 4),
+		run("job-discovery", RunOK, 7),
+		run("job-discovery", RunFailed, 48),
+		run("job-discovery", RunOK, 60),
+	}
+	got := find(SummarizeRuns(runs, nil, runNow, 40), "job-discovery")
+
+	if got.CleanRuns != 3 {
+		t.Errorf("clean runs = %d, want 3", got.CleanRuns)
+	}
+	if !strings.HasPrefix(got.Headline, "3 runs clean") {
+		t.Errorf("headline should lead with the streak, got %q", got.Headline)
+	}
+	if !strings.Contains(got.Headline, "1 run failed before that") {
+		t.Errorf("headline should still name the failure, got %q", got.Headline)
+	}
+}
+
+// The streak counts only to the newest failure, so a pipeline that is broken
+// right now cannot show one.
+func TestBrokenHasNoCleanStreak(t *testing.T) {
+	got := find(SummarizeRuns([]Run{
+		run("hacklist", RunFailed, 1),
+		run("hacklist", RunOK, 5),
+	}, nil, runNow, 40), "hacklist")
+
+	if got.CleanRuns != 0 {
+		t.Errorf("a currently-failing automation has no clean streak, got %d", got.CleanRuns)
+	}
+}

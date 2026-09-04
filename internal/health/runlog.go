@@ -98,6 +98,11 @@ type RunLog struct {
 
 	Last        time.Time `json:"last,omitempty"`
 	LastFailure time.Time `json:"last_failure,omitempty"`
+	// CleanRuns is how many runs have succeeded since the last failure. It is
+	// the number that says whether a thing is still broken, and it is not
+	// derivable from the counts beside it: "8 failed" reads the same whether
+	// the last one was an hour ago or the pipeline has been fixed for two days.
+	CleanRuns int `json:"clean_runs"`
 
 	Verdict  Verdict `json:"verdict"`
 	Tone     string  `json:"tone"`
@@ -198,6 +203,12 @@ func summarizeOne(name string, runs []Run, now time.Time, keep int) RunLog {
 		}
 	}
 	l.Total = len(runs)
+	for _, r := range runs {
+		if r.Status == RunFailed {
+			break // runs are newest-first, so this ends the clean streak
+		}
+		l.CleanRuns++
+	}
 
 	for i, r := range runs {
 		if i == keep {
@@ -244,8 +255,11 @@ func headline(l RunLog, now time.Time) string {
 	case Broken:
 		return fmt.Sprintf("The most recent run failed, %s ago. Needs a look.", short(now.Sub(l.Last)))
 	case Recovered:
-		return fmt.Sprintf("%s failed, most recently %s ago, then it recovered on its own.",
-			plural(l.Failed, "run"), short(now.Sub(l.LastFailure)))
+		// Leads with the streak, not the failures. Laksh fixed three pipelines
+		// and the old wording still opened with "8 runs failed", which reads as
+		// news about now rather than about a week ago.
+		return fmt.Sprintf("%s clean since the last failure %s ago. %s failed before that.",
+			plural(l.CleanRuns, "run"), short(now.Sub(l.LastFailure)), plural(l.Failed, "run"))
 	}
 	if l.Worked == 0 {
 		return fmt.Sprintf("%s, every one of them correctly doing nothing.", plural(l.Total, "run"))
