@@ -566,9 +566,14 @@ func (s *Server) healthRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	since := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
 
-	// Filtered by at, which is indexed, rather than by walking the log from
-	// the head. The reaper alone writes 48 runs a day and the window is the
-	// only thing keeping this cheap.
+	// Two filters, and they are not the same filter. at is when amac recorded
+	// the run and is indexed; started is when the run actually happened, and
+	// is what a window over runs has to mean. A run is always recorded at or
+	// after it started, so the indexed test can only ever let too much
+	// through, never too little: it is a cheap prefilter that cannot produce a
+	// false negative, and the precise test below removes the backfilled
+	// markers it lets in. The reaper alone writes 48 runs a day, so keeping
+	// the prefilter is worth the second pass.
 	rows, err := s.log.DB().QueryContext(r.Context(),
 		`SELECT payload FROM events WHERE kind = ? AND at >= ? ORDER BY seq DESC`,
 		string(event.KindAutomationRun), since.UTC().Format(time.RFC3339Nano))
@@ -587,7 +592,7 @@ func (s *Server) healthRuns(w http.ResponseWriter, r *http.Request) {
 		var run health.Run
 		// A payload that will not parse is dropped rather than failing the
 		// request: one malformed row should cost its own line, not the screen.
-		if json.Unmarshal(payload, &run) == nil && run.Automation != "" {
+		if json.Unmarshal(payload, &run) == nil && run.Automation != "" && !run.Started.Before(since) {
 			runs = append(runs, run)
 		}
 	}

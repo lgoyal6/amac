@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lgoyal6/amac/internal/event"
 	"github.com/lgoyal6/amac/internal/handoff"
+	"github.com/lgoyal6/amac/internal/health"
 )
 
 const tok = "tok"
@@ -46,7 +48,7 @@ func TestEveryAPIRouteNeedsTheToken(t *testing.T) {
 		{"GET", "/api/applications"}, {"POST", "/api/applications"},
 		{"PATCH", "/api/applications/x"}, {"POST", "/api/applications/sync"},
 		{"GET", "/api/health"}, {"GET", "/api/spend"},
-		{"GET", "/api/health/schedule"},
+		{"GET", "/api/health/schedule"}, {"GET", "/api/health/runs"},
 		{"GET", "/api/tasks"}, {"POST", "/api/tasks"},
 		{"DELETE", "/api/tasks/x"}, {"DELETE", "/api/crew/x"},
 		{"POST", "/api/tasks/claim"}, {"GET", "/api/crew"},
@@ -253,6 +255,117 @@ func TestHealthScheduleExplainsIntent(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), "amac-health-monitor") {
 		t.Errorf("schedule omitted the monitor itself: %s", w.Body)
+	}
+}
+
+// The run log has to say something different from the status view or it is
+// not worth a tab: a pipeline that broke and recovered is green to the sweep,
+// and the recovery is the whole reason someone opens this.
+func TestHealthRunsSeparatesRecoveredFromClean(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/health.json"
+	if err := os.WriteFile(path, []byte(`{"automations":[
+		{"name":"job-discovery","what":"finds jobs","every":"3h","grace":"2h","probe":"n8n",
+		 "with":{"host":"n8n.example","workflow_id":"w"}},
+		{"name":"devspend","what":"checks spend","every":"24h","grace":"24h","probe":"launchd_marker",
+		 "with":{"label":"com.laksh.devspend","log":"`+dir+`/spend.log"}}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AMAC_HEALTH_CONFIG", path)
+
+	s := testServer(t)
+	now := time.Now()
+	for _, r := range []struct {
+		name, status string
+		ago          time.Duration
+	}{
+		{"job-discovery", "ok", time.Hour},
+		{"job-discovery", "failed", 5 * time.Hour},
+		{"job-discovery", "ok", 9 * time.Hour},
+	} {
+		payload := fmt.Sprintf(`{"automation":%q,"id":%q,"status":%q,"started":%q,"detail":"d"}`,
+			r.name, r.status+r.ago.String(), r.status, now.Add(-r.ago).Format(time.RFC3339))
+		if _, err := s.log.Append(t.Context(), event.Event{
+			Kind: event.KindAutomationRun, Source: "health", Session: r.name,
+			Payload: json.RawMessage(payload),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, authed("GET", "/api/health/runs", ""))
+	if w.Code != 200 {
+		t.Fatalf("got %d: %s", w.Code, w.Body)
+	}
+	var body struct {
+		Days        int             `json:"days"`
+		Automations []health.RunLog `json:"automations"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("not JSON: %s", w.Body)
+	}
+	if body.Days != 7 {
+		t.Errorf("default window = %d days, want 7", body.Days)
+	}
+	if len(body.Automations) != 2 {
+		t.Fatalf("want a row per declared automation, got %d", len(body.Automations))
+	}
+	got := body.Automations[0]
+	if got.Automation != "job-discovery" || got.Verdict != health.Recovered {
+		t.Fatalf("worst first: got %s/%s", got.Automation, got.Verdict)
+	}
+	if got.Failed != 1 || got.Total != 3 {
+		t.Errorf("counts = %d of %d failed, want 1 of 3", got.Failed, got.Total)
+	}
+	// devspend has no run source at all, and saying so is the point: an
+	// automation missing from this screen would read as one with nothing to
+	// report, which is the false all-clear the sweep exists to avoid.
+	if v := body.Automations[1].Verdict; v != health.Unwatched {
+		t.Errorf("devspend verdict = %q, want unwatched", v)
+	}
+}
+
+// Runs older than the window are the only thing keeping this cheap: the reaper
+// alone writes forty-eight a day.
+func TestHealthRunsHonoursTheWindow(t *testing.T) {
+	t.Setenv("AMAC_HEALTH_CONFIG", t.TempDir()+"/none.json")
+	s := testServer(t)
+	for _, ago := range []time.Duration{2 * time.Hour, 40 * 24 * time.Hour} {
+		payload := fmt.Sprintf(`{"automation":"disk-sweep","id":%q,"status":"ok","started":%q,"detail":"d"}`,
+			ago.String(), time.Now().Add(-ago).Format(time.RFC3339))
+		if _, err := s.log.Append(t.Context(), event.Event{
+			Kind: event.KindAutomationRun, Source: "health", Session: "disk-sweep",
+			Payload: json.RawMessage(payload),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct {
+		query string
+		want  int
+	}{
+		{"", 1}, {"?days=60", 2},
+	} {
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, authed("GET", "/api/health/runs"+tc.query, ""))
+		var body struct {
+			Automations []health.RunLog `json:"automations"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("not JSON: %s", w.Body)
+		}
+		// Found by name: the roster is process-cached, so an earlier test's
+		// config can still be supplying the other rows.
+		var got int
+		for _, a := range body.Automations {
+			if a.Automation == "disk-sweep" {
+				got = a.Total
+			}
+		}
+		if got != tc.want {
+			t.Errorf("%q: disk-sweep had %d runs in the window, want %d", tc.query, got, tc.want)
+		}
 	}
 }
 
