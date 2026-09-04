@@ -472,7 +472,7 @@
   .runline { display:flex; gap:var(--s2); padding:6px 0; align-items:baseline;
              border-bottom:1px solid var(--line); }
   .runline:last-child { border-bottom:none; }
-  .runline .when { font:10px/1.6 var(--mono); color:var(--faint); width:76px; flex:none;
+  .runline .when { font:10px/1.6 var(--mono); color:var(--faint); width:84px; flex:none;
                    font-variant-numeric:tabular-nums; }
   .runline .what { font-size:12px; color:var(--dim); min-width:0; flex:1; overflow-wrap:anywhere; }
   .runline .dot { width:6px; height:6px; border-radius:50%; background:var(--idle); flex:none;
@@ -480,6 +480,13 @@
   .runline .dot.ok { background:var(--ok); } .runline .dot.failed { background:var(--fail); }
   .runline .dot.skipped { background:var(--track); }
   .runline .took { font:10px/1.6 var(--mono); color:var(--faint); flex:none; }
+  /* Forty runs each underlined is a wall of blue, and the detail is the thing
+     to read, not the thing to click. The arrow carries the affordance instead,
+     which also works on a phone, where there is no hover to reveal one. */
+  .runline .what a { text-decoration:none; }
+  .runline .what a:hover { text-decoration:underline; text-decoration-color:var(--faint); }
+  .ext { color:var(--faint); font-size:10px; margin-left:4px; }
+  .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 
   .subnav { display:flex; gap:var(--s2); margin-bottom:var(--s3); }
   .subnav button { background:transparent; border:1px solid var(--line); color:var(--dim);
@@ -1480,6 +1487,133 @@ async function loadBoardHealth() {
   $('pressureDetails').onclick = () => openTopTab('automations');
 }
 
+// The run log answers the question the status view throws away.
+//
+// Status reads the newest piece of evidence, so an automation that broke and
+// was rescued by its next run is green there and always has been. Everything
+// drawn here is already in the event log, one automation.run event per run;
+// this is a read of it, not a second opinion about it.
+//
+// Rows stay collapsed to a shape and a sentence. The individual runs are one
+// tap away and the transcript is one tap past that, because on a phone the
+// useful question is almost always "is anything wrong" and almost never "what
+// did line 40 of the log say".
+let runsOpen = new Set();
+
+async function loadHealthRuns() {
+  const r = await api('/api/health/runs');
+  const el = $('runsOut');
+  if (!r.ok) { el.className = 'empty'; el.textContent = 'could not read the run history'; return; }
+  const { days, automations } = await r.json();
+  if (!automations || !automations.length) {
+    el.className = 'empty';
+    el.textContent = 'no runs recorded yet';
+    return;
+  }
+  el.className = '';
+
+  // Split rather than sorted-to-the-bottom. Six automations each spending four
+  // lines to say nobody is counting them is most of a phone screen, and they
+  // still have to be named: an automation silently missing from this list would
+  // read as one with nothing to report.
+  const watched = automations.filter(a => a.verdict !== 'unwatched');
+  const unwatched = automations.filter(a => a.verdict === 'unwatched');
+
+  const wrong = watched.filter(a => a.verdict === 'broken' || a.verdict === 'recovered');
+  // Counted against the watched ones only. "3 of 13" would quietly credit six
+  // automations for a clean week nobody actually checked.
+  const lead = wrong.length
+    ? `<b>${wrong.length} of ${watched.length} automations with run history had a failed run.</b>
+       A failure the next run recovered from never shows on the status screen, which is why it shows here.`
+    : `<b>No failed runs in the last ${days} days.</b>
+       This screen counts every run, including the ones a later run recovered from.`;
+
+  const footnote = unwatched.length ? `<div class="hdetail" style="margin-top:16px">
+      <b>${unwatched.length} automations have no per-run history:</b>
+      ${unwatched.map(a => esc(a.automation)).join(', ')}.
+      The status check is the only thing watching those.
+    </div>` : '';
+
+  el.innerHTML = `<div class="explain">${lead}</div>`
+    + watched.map(a => runRow(a, days)).join('') + footnote;
+
+  el.querySelectorAll('button.runs-toggle').forEach(b => {
+    b.onclick = () => {
+      const name = b.dataset.name;
+      const list = el.querySelector(`.runlist[data-name="${CSS.escape(name)}"]`);
+      const open = list.hidden;
+      list.hidden = !open;
+      b.textContent = open ? 'hide runs' : `show ${list.dataset.count} runs`;
+      b.setAttribute('aria-expanded', open ? 'true' : 'false');
+      // Remembered so a live automation.run event, which redraws the whole
+      // list, does not collapse the row someone is reading.
+      if (open) runsOpen.add(name); else runsOpen.delete(name);
+    };
+  });
+}
+
+function runRow(a, days) {
+  const shown = (a.runs || []).slice().reverse();  // oldest left, newest right
+  const strip = shown.length ? `<div class="strip" role="img" aria-label="${esc(stripLabel(a))}">`
+    + shown.map(x => `<span class="tick ${esc(x.status)}" title="${esc(runTitle(x))}"></span>`).join('')
+    + `</div>` : '';
+
+  const counts = a.total ? `<div class="runcounts">
+      <span><b>${a.worked}</b> did work</span>
+      <span><b>${a.noop}</b> nothing to do</span>
+      <span class="${a.failed ? 'bad' : ''}"><b>${a.failed}</b> failed</span>
+    </div>` : '';
+
+  const open = runsOpen.has(a.automation);
+  const more = shown.length ? `<div class="acts">
+      <button class="sm runs-toggle" data-name="${esc(a.automation)}" aria-expanded="${open}">
+        ${open ? 'hide runs' : `show ${shown.length} runs`}</button>
+    </div>
+    <div class="runlist" data-name="${esc(a.automation)}" data-count="${shown.length}" ${open ? '' : 'hidden'}>
+      ${(a.runs || []).map(runLine).join('')}
+      ${a.total > shown.length ? `<div class="runline"><span class="what" style="color:var(--faint)">
+        the ${shown.length} most recent of ${a.total} runs; the counts above cover all of them
+      </span></div>` : ''}
+    </div>` : '';
+
+  return `<div class="hrow">
+    <span class="hstate ${esc(a.tone)}">${esc(a.verdict)}</span>
+    <div style="min-width:0;flex:1">
+      <div class="hname">${esc(a.automation)}</div>
+      ${strip}
+      <div class="hdetail">${esc(a.headline)}</div>
+      ${counts}
+      ${more}
+    </div>
+  </div>`;
+}
+
+function runLine(x) {
+  // hour12:false, because "Sep 4, 09:07 AM" wraps the fixed-width stamp column
+  // onto two lines and a list of forty runs then reads as eighty.
+  const when = esc(new Date(x.at).toLocaleString([],
+    {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit', hour12:false}));
+  const what = esc(x.detail || x.status);
+  return `<div class="runline">
+    <span class="dot ${esc(x.status)}"></span>
+    <span class="when">${when}</span>
+    <span class="what">${x.url
+      ? `<a href="${esc(x.url)}" target="_blank" rel="noopener">${what}<span class="ext" aria-hidden="true">↗</span><span class="sr">, opens the transcript</span></a>`
+      : what}</span>
+    ${x.duration ? `<span class="took">${esc(x.duration)}</span>` : ''}
+  </div>`;
+}
+
+function runTitle(x) {
+  return `${new Date(x.at).toLocaleString()} - ${x.status}${x.detail ? ': ' + x.detail : ''}`;
+}
+
+// Said in words because the strip is the one place on this screen where colour
+// carries the meaning, and a screen reader gets nothing from a row of spans.
+function stripLabel(a) {
+  return `${a.total} runs: ${a.worked} did work, ${a.noop} had nothing to do, ${a.failed} failed`;
+}
+
 async function loadHealthSchedule() {
   const r = await api('/api/health/schedule');
   const el = $('scheduleOut');
@@ -1508,20 +1642,29 @@ async function loadHealthSchedule() {
     </div>`).join('') + `<div class="hdetail" style="margin-top:16px"><b>Machine status</b> is monitored separately. High swap or disk can warn without marking any automation failed.</div>`;
 }
 
+let healthView = 'status';
+
+function setHealthView(next) {
+  healthView = next;
+  document.querySelectorAll('[data-health-view]').forEach(x => {
+    const on = x.dataset.healthView === next;
+    x.classList.toggle('on', on);
+    x.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  // The machine belongs to "status now": what it has left is a fact about
+  // this moment, and it says nothing at all about an intended schedule or
+  // about runs that already happened.
+  $('machineCard').hidden = next !== 'status';
+  $('healthStatus').hidden = next !== 'status';
+  $('healthRuns').hidden = next !== 'runs';
+  $('healthSchedule').hidden = next !== 'schedule';
+  if (next === 'runs') loadHealthRuns();
+  else if (next === 'schedule') loadHealthSchedule();
+  else { loadHealth(); loadMachine(); }
+}
+
 document.querySelectorAll('[data-health-view]').forEach(b => {
-  b.onclick = () => {
-    const schedule = b.dataset.healthView === 'schedule';
-    document.querySelectorAll('[data-health-view]').forEach(x => {
-      x.classList.toggle('on', x === b);
-      x.setAttribute('aria-selected', x === b ? 'true' : 'false');
-    });
-    // The machine belongs to "status now": what it has left is a fact about
-    // this moment, and it says nothing at all about an intended schedule.
-    $('machineCard').hidden = schedule;
-    $('healthStatus').hidden = schedule;
-    $('healthSchedule').hidden = !schedule;
-    if (schedule) loadHealthSchedule(); else { loadHealth(); loadMachine(); }
-  };
+  b.onclick = () => setHealthView(b.dataset.healthView);
 });
 
 async function dispatch(btn, what, name) {
@@ -2070,7 +2213,7 @@ function openTopTab(next) {
   $('mobileNew').hidden = !showComposer;
   if (tab === 'home') loadHome();
   if (tab === 'agents') setAgentView(agentView);
-  if (tab === 'automations') { loadHealth(); loadMachine(); }
+  if (tab === 'automations') setHealthView(healthView);
   if (tab === 'money') loadSpend();
   if (tab === 'jobs') loadJobs();
 }
@@ -2151,7 +2294,10 @@ function connect() {
     const listChanged = ['session.state', 'session.started', 'session.ended', 'attention'].includes(e.kind)
       || (e.kind === 'session.update' && (p.state || p.name !== undefined || p.permissionMode));
     if (listChanged) scheduleRefresh();
-    if (e.kind === 'automation.check' && tab === 'automations') loadHealth();
+    if (e.kind === 'automation.check' && tab === 'automations' && healthView === 'status') loadHealth();
+    // A run lands as its own event, so the log can follow a pipeline live
+    // rather than waiting for the next fifteen-minute sweep to mention it.
+    if (e.kind === 'automation.run' && tab === 'automations' && healthView === 'runs') loadHealthRuns();
     if (e.kind === 'automation.check' && tab === 'home') { homeLoadedAt = 0; loadHome(); }
   };
 }
