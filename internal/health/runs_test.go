@@ -70,13 +70,13 @@ func TestRunBatch(t *testing.T) {
 	started := time.Date(2026, 8, 30, 9, 15, 0, 0, time.Local)
 	runs := []Run{
 		{Automation: "morning-brief", Status: RunOK, Detail: "delivered the brief", Started: started, Duration: 44 * time.Second},
-		{Automation: "hacklist-sf", Status: RunSkipped, Detail: "gate: swept recently enough", Duration: 8 * time.Second},
+		{Automation: "hacklist", Status: RunSkipped, Detail: "gate: swept recently enough", Duration: 8 * time.Second},
 	}
 	got := runBatchAt(runs, started.Add(time.Hour))
 	if !strings.HasPrefix(got, "**Automation activity**") {
 		t.Errorf("should say what the message is:\n%s", got)
 	}
-	for _, want := range []string{"Morning brief", "09:15", "delivered", "Hacklist SF", "gate:", "44s", "8s"} {
+	for _, want := range []string{"Morning brief", "09:15", "delivered", "Hacklist discovery", "gate:", "44s", "8s"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
 		}

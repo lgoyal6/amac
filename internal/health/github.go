@@ -152,7 +152,7 @@ func githubDeliveryFile(ctx context.Context, repo, path, field string, anchorHou
 // githubNewestFile reads a directory where each real run writes one file, and
 // takes the newest timestamp out of the filenames.
 //
-// hacklist-sf fires four crons a day and a gate lets one through, so a
+// hacklist fires four crons a day and a gate lets one through, so a
 // suppressed run exits green in about fifteen seconds. Counting runs would
 // report a healthy pipeline that had not swept in a week; counting the files a
 // sweep leaves behind cannot.

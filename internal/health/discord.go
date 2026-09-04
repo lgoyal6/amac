@@ -199,7 +199,7 @@ func automationLabel(name string) string {
 		"tmux-idle-reaper":      "Session cleanup",
 		"job-discovery":         "Job discovery",
 		"morning-brief":         "Morning brief",
-		"hacklist-sf":           "Hacklist SF",
+		"hacklist":              "Hacklist discovery",
 		"hacklist-local-passes": "Hacklist local passes",
 		"brew-autoupgrade":      "Homebrew update",
 		"disk-sweep":            "Disk cleanup",

@@ -267,8 +267,8 @@ func TestReadDeliveryReadsOnlyTheTail(t *testing.T) {
 // being buried inside a sentence.
 func TestDigestFitsAPhoneScreen(t *testing.T) {
 	reports := []Report{
-		{Name: "hacklist-sf", State: Failing, Last: time.Now().Add(-2 * time.Hour),
-			Detail: "last run failure (SF discovery, 51m ago) https://github.com/lgoyal6/hacklist-sf/actions/runs/32608022200",
+		{Name: "hacklist", State: Failing, Last: time.Now().Add(-2 * time.Hour),
+			Detail: "last run failure (SF discovery, 51m ago) https://github.com/lgoyal6/hacklist/actions/runs/32608022200",
 			Notes:  []string{`open pipeline-red issue #13, 15d old`}},
 		{Name: "morning-brief", State: OK, Detail: "delivered 2026-08-22"},
 		{Name: "brew-autoupgrade", State: OK, Detail: "last completed 2h ago"},
