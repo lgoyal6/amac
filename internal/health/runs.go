@@ -349,6 +349,10 @@ func launchdJobs() []struct{ name, log string } {
 		{"brew-autoupgrade", home + "/Library/Logs/brew-upgrade.log"},
 		{"disk-sweep", home + "/Library/Logs/sweep.log"},
 		{"tmux-idle-reaper", home + "/Library/Logs/tmux-idle-reaper.log"},
+		{"hackqueue", home + "/hackqueue/logs/sweep.log"},
+		{"devspend-refresh", home + "/Library/Logs/devspend-refresh.log"},
+		{"docker-idle-reaper", home + "/Library/Logs/docker-idle-reaper.log"},
+		{"agents-sync", home + "/Library/Logs/agents-sync.log"},
 	}
 }
 
@@ -427,15 +431,22 @@ func launchdWatermark(seen map[string]bool, automation string) (time.Time, bool)
 	return newest, !newest.IsZero()
 }
 
-// reportableRun decides whether a marker is a completed run. Reaper ticks are
-// deliberately all reportable, including "0 reaped": this installation uses
-// Discord as an activity journal and the operator explicitly wants to see each
-// thirty-minute tick. The disk sweep also writes a start banner, which is not
-// a completion and must still be filtered out.
+// reportableRun decides whether a marker is a completed run.
+//
+// Every one of these jobs writes "done" when it finishes, and several also write
+// a start banner on the same "=== <ts> ..." line shape. Requiring "done" is
+// therefore the rule, not a per-job carve-out. It used to be one, naming only
+// disk-sweep, and hacklist-local-passes had been counting its own start banners
+// as runs the whole time: 34 starts and 32 completions in its log, reported as
+// fourteen runs in a week by a job that runs once a day.
+//
+// The gap between those two numbers is the other reason to be strict. A start
+// with no matching completion is a run that died halfway, which is exactly the
+// event worth seeing, and it is invisible while a bare start counts as a
+// success.
+//
+// Reaper ticks stay reportable even at "0 reaped": this installation uses
+// Discord as an activity journal and the operator wants each tick.
 func reportableRun(name, note string) bool {
-	switch name {
-	case "disk-sweep":
-		return strings.Contains(note, "done")
-	}
-	return true
+	return strings.Contains(note, "done")
 }
