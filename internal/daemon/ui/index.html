@@ -447,6 +447,40 @@
   .hname { font:600 12.5px/1.5 var(--mono); }
   .hdetail { color:var(--dim); font-size:12px; margin-top:2px; }
   .acts { display:flex; gap:var(--s2); align-items:center; margin-top:var(--s2); flex-wrap:wrap; }
+  /* ---- run log --------------------------------------------------------- */
+  /* One tick per run, oldest on the left, so a week reads as a shape before it
+     reads as a number: a red tick with green after it is a recovery, a red tick
+     on the right edge is something to open now. Ticks are 4px and gap 2px
+     because the busiest automation shows forty of them and a phone gives this
+     row about 240px. Colour is never the only carrier - every tick has a title,
+     the strip has a text label under it, and the verdict is spelled out in
+     words beside it. */
+  .strip { display:flex; gap:2px; align-items:flex-end; margin:var(--s2) 0 var(--s1);
+           flex-wrap:wrap; }
+  .tick { width:4px; height:14px; border-radius:1px; background:var(--idle); flex:none; }
+  .tick.ok { background:var(--ok); }
+  .tick.failed { background:var(--fail); }
+  /* A no-op ran and correctly did nothing, which is neither good news nor bad.
+     Drawn short and faint so a week of them recedes and the runs that did
+     something stand up out of the row. */
+  .tick.skipped { background:var(--track); height:7px; }
+  .runcounts { display:flex; gap:var(--s2); flex-wrap:wrap; margin-top:var(--s1); }
+  .runcounts span { font:10px/1.6 var(--mono); color:var(--dim); }
+  .runcounts b { color:var(--fg); font-weight:600; font-variant-numeric:tabular-nums; }
+  .runcounts .bad b, .runcounts .bad { color:var(--fail); }
+  .runlist { margin-top:var(--s2); border-top:1px solid var(--line); }
+  .runline { display:flex; gap:var(--s2); padding:6px 0; align-items:baseline;
+             border-bottom:1px solid var(--line); }
+  .runline:last-child { border-bottom:none; }
+  .runline .when { font:10px/1.6 var(--mono); color:var(--faint); width:76px; flex:none;
+                   font-variant-numeric:tabular-nums; }
+  .runline .what { font-size:12px; color:var(--dim); min-width:0; flex:1; overflow-wrap:anywhere; }
+  .runline .dot { width:6px; height:6px; border-radius:50%; background:var(--idle); flex:none;
+                  align-self:center; }
+  .runline .dot.ok { background:var(--ok); } .runline .dot.failed { background:var(--fail); }
+  .runline .dot.skipped { background:var(--track); }
+  .runline .took { font:10px/1.6 var(--mono); color:var(--faint); flex:none; }
+
   .subnav { display:flex; gap:var(--s2); margin-bottom:var(--s3); }
   .subnav button { background:transparent; border:1px solid var(--line); color:var(--dim);
                    border-radius:8px; padding:8px 12px; }
@@ -595,10 +629,12 @@
     <div class="section-head"><div class="grow"><h2>automations</h2><p>What runs where, when it should run, and whether the evidence is current.</p></div></div>
     <div class="subnav" role="tablist" aria-label="health views">
       <button class="on" role="tab" aria-selected="true" data-health-view="status">status now</button>
+      <button role="tab" aria-selected="false" data-health-view="runs">run log</button>
       <button role="tab" aria-selected="false" data-health-view="schedule">intended schedule</button>
     </div>
     <div class="card" id="machineCard"><div id="machineOut" class="empty">loading</div></div>
     <div class="card" id="healthStatus"><div id="healthOut" class="empty">loading</div></div>
+    <div class="card" id="healthRuns" hidden><div id="runsOut" class="empty">loading</div></div>
     <div class="card" id="healthSchedule" hidden><div id="scheduleOut" class="empty">loading</div></div>
   </section>
 

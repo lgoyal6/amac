@@ -338,17 +338,43 @@ func n8nGet(ctx context.Context, key, path string) ([]byte, error) {
 
 // ------------------------------------------------------------ launchd ---
 
-// launchdRuns treats each completion marker in the log as one run.
-func launchdRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
+// launchdJobs are the local jobs whose logs carry a completion marker this
+// package knows how to read. It is a list rather than four literals inside the
+// loop so that ReportsRuns can answer, from the same place, which automations
+// have per-run history at all.
+func launchdJobs() []struct{ name, log string } {
 	home := os.Getenv("HOME")
-	jobs := []struct{ name, log string }{
+	return []struct{ name, log string }{
 		{"hacklist-local-passes", home + "/luma-hackathon-calendar/logs/local-passes.log"},
 		{"brew-autoupgrade", home + "/Library/Logs/brew-upgrade.log"},
 		{"disk-sweep", home + "/Library/Logs/sweep.log"},
 		{"tmux-idle-reaper", home + "/Library/Logs/tmux-idle-reaper.log"},
 	}
+}
+
+// ReportsRuns says whether individual runs are collected for an automation.
+//
+// Most of the roster is watched only by the sweep, which reads the newest
+// piece of evidence and says nothing about the runs behind it. The run log has
+// to tell "nothing has run" apart from "nobody is counting", because the two
+// look identical on screen and mean opposite things.
+func ReportsRuns(name string) bool {
+	switch Canonical(name) {
+	case "morning-brief", "hacklist", "job-discovery":
+		return true
+	}
+	for _, j := range launchdJobs() {
+		if j.name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// launchdRuns treats each completion marker in the log as one run.
+func launchdRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
 	var out []Run
-	for _, j := range jobs {
+	for _, j := range launchdJobs() {
 		markers := allMarkers(j.log)
 		watermark, hasWatermark := launchdWatermark(seen, j.name)
 		// A newly monitored log can contain months of valid completion lines.
