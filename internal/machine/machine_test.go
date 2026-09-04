@@ -121,3 +121,39 @@ func TestPercentOfNothing(t *testing.T) {
 		t.Errorf("percent(1, 4) = %d, want 25", got)
 	}
 }
+
+// A browser is dozens of helper processes with the same name. Ranking the raw
+// rows would fill the list with five renderers of one application, which is not
+// an answer to "what should I close".
+func TestTopRollsHelpersUpIntoTheApp(t *testing.T) {
+	for _, tc := range []struct{ cmd, want string }{
+		{"/Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper (Renderer).app/Contents/MacOS/Google Chrome Helper (Renderer)", "Google Chrome"},
+		{"/Applications/Claude.app/Contents/MacOS/Claude", "Claude"},
+		{"/opt/homebrew/bin/node", "node"},
+		{"kernel_task", "kernel_task"},
+	} {
+		if got := appName(tc.cmd); got != tc.want {
+			t.Errorf("appName(%q) = %q, want %q", tc.cmd, got, tc.want)
+		}
+	}
+}
+
+// The breakdown is help, not the reading, so it is ranked and bounded and a
+// failure to gather it must not take the capacity numbers down with it.
+func TestTopIsRankedAndBounded(t *testing.T) {
+	top, err := readTop(t.Context(), 3)
+	if err != nil {
+		t.Skip("ps unavailable")
+	}
+	if len(top) > 3 {
+		t.Errorf("asked for 3, got %d", len(top))
+	}
+	for i := 1; i < len(top); i++ {
+		if top[i-1].RSS < top[i].RSS {
+			t.Error("processes should be ranked by memory, largest first")
+		}
+	}
+	if len(top) > 0 && top[0].Count < 1 {
+		t.Error("a rolled-up process should count at least one pid")
+	}
+}

@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,22 @@ type Stats struct {
 	Disk   Disk      `json:"disk"`
 	Memory Memory    `json:"memory"`
 	Swap   Swap      `json:"swap"`
+	// Top is what is actually holding the memory, which is the question a
+	// percentage provokes and cannot answer. Categories say the App total is
+	// 12 GB; only this says which program to quit.
+	Top []Process `json:"top,omitempty"`
+}
+
+// Process is one program's footprint, rolled up across its helpers.
+//
+// Rolled up because the raw table is useless here: a browser or an Electron app
+// is dozens of helper processes with the same name, and a list of the top five
+// rows is five renderers of the same thing. Grouping by command answers "what
+// should I close", which is a question about applications, not pids.
+type Process struct {
+	Name  string `json:"name"`
+	RSS   int64  `json:"rss"`
+	Count int    `json:"count"`
 }
 
 type Disk struct {
@@ -111,8 +128,74 @@ func Read(ctx context.Context) (Stats, error) {
 	}
 	// A machine with swap disabled is not an error, and it has no swap row.
 
+	if top, err := readTop(ctx, 5); err == nil {
+		s.Top = top
+	}
+	// Nor is a ps that failed. The capacity numbers are the reading; the
+	// breakdown is the help, and help that could not be gathered must not take
+	// the reading down with it.
+
 	cache.at, cache.last = time.Now(), s
 	return s, nil
+}
+
+// readTop returns the n applications holding the most resident memory.
+//
+// RSS, with all the usual caveats: shared pages are counted once per process,
+// so the column sums to more than the machine has. That is tolerable for
+// ranking, which is all this is for, and the honest alternative (footprint via
+// the memory graph) costs a private API. The number beside a name is a size to
+// compare against the other names, not a share of RAM.
+func readTop(ctx context.Context, n int) ([]Process, error) {
+	out, err := exec.CommandContext(ctx, "ps", "-A", "-o", "rss=,comm=").Output()
+	if err != nil {
+		return nil, fmt.Errorf("ps: %w", err)
+	}
+	by := map[string]*Process{}
+	sc := bufio.NewScanner(strings.NewReader(string(out)))
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) < 2 {
+			continue
+		}
+		kb, err := strconv.ParseInt(fields[0], 10, 64)
+		if err != nil {
+			continue
+		}
+		name := appName(strings.Join(fields[1:], " "))
+		p := by[name]
+		if p == nil {
+			p = &Process{Name: name}
+			by[name] = p
+		}
+		p.RSS += kb * 1024
+		p.Count++
+	}
+	out2 := make([]Process, 0, len(by))
+	for _, p := range by {
+		out2 = append(out2, *p)
+	}
+	sort.Slice(out2, func(i, j int) bool { return out2[i].RSS > out2[j].RSS })
+	if len(out2) > n {
+		out2 = out2[:n]
+	}
+	return out2, nil
+}
+
+// appName turns a executable path into the application a person would recognise
+// and quit. /Applications/Foo.app/Contents/MacOS/Foo Helper (Renderer) is Foo,
+// because "quit Foo Helper (Renderer)" is not an instruction anyone can follow.
+func appName(cmd string) string {
+	if i := strings.Index(cmd, ".app/"); i >= 0 {
+		if j := strings.LastIndex(cmd[:i], "/"); j >= 0 {
+			return cmd[j+1 : i]
+		}
+		return cmd[:i]
+	}
+	if i := strings.LastIndex(cmd, "/"); i >= 0 {
+		return cmd[i+1:]
+	}
+	return cmd
 }
 
 // readDisk uses statfs rather than parsing df, because the numbers are the
