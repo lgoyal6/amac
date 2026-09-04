@@ -209,7 +209,12 @@ func automationLabel(name string) string {
 	return strings.ReplaceAll(name, "-", " ")
 }
 
-var reaperDetail = regexp.MustCompile(`^done \((\d+) reaped(?:, swap (\d+)%, disk (\d+)%)?\)$`)
+// The reaper's marker has grown fields since this was written (swapram, then
+// disk24h), and an exact-match regex that stopped matching does not fail
+// loudly: it silently falls through to printing the raw log line. Each trailing
+// group is optional and unanchored to the ones after it so the next added field
+// costs one more group rather than the whole simplification.
+var reaperDetail = regexp.MustCompile(`^done \((\d+) reaped(?:, swap (\d+)%)?(?:, swapram (\d+)%)?(?:, disk (\d+)%)?(?:, disk24h [+-]?\d+%)?\)$`)
 
 func runDetail(r Run) string {
 	if r.Automation != "tmux-idle-reaper" {
@@ -226,7 +231,10 @@ func runDetail(r Run) string {
 		closed = "1 session closed"
 	}
 	if m[2] != "" {
-		closed += " · swap " + m[2] + "% · disk " + m[3] + "%"
+		closed += " · swap " + m[2] + "%"
+	}
+	if m[4] != "" {
+		closed += " · disk " + m[4] + "%"
 	}
 	return closed
 }
@@ -234,9 +242,9 @@ func runDetail(r Run) string {
 func runIcon(r Run) string {
 	if r.Automation == "tmux-idle-reaper" {
 		m := reaperDetail.FindStringSubmatch(r.Detail)
-		if len(m) == 4 {
+		if m != nil {
 			swap, _ := strconv.Atoi(m[2])
-			disk, _ := strconv.Atoi(m[3])
+			disk, _ := strconv.Atoi(m[4])
 			if swap >= 80 || disk >= 85 {
 				return "⚠️"
 			}

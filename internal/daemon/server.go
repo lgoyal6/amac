@@ -103,6 +103,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/crew/artifact", s.auth(s.crewArtifact))
 	mux.HandleFunc("GET /api/health", s.auth(s.health))
 	mux.HandleFunc("GET /api/health/schedule", s.auth(s.healthSchedule))
+	mux.HandleFunc("GET /api/health/runs", s.auth(s.healthRuns))
 	mux.HandleFunc("POST /api/beat/{name}", s.auth(s.beat))
 	mux.HandleFunc("POST /api/health/{name}/fix", s.auth(s.healthFix))
 	mux.HandleFunc("POST /api/health/{name}/shell", s.auth(s.healthShell))
@@ -496,6 +497,60 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 
 	swept, _ := time.Parse(time.RFC3339Nano, at)
 	writeJSON(w, 200, map[string]any{"at": swept, "reports": out})
+}
+
+// healthRuns reads the recorded runs behind the roster.
+//
+// The status view is a read of the newest sweep; this is a read of every
+// automation.run event in a window. Both are reads of what was already decided
+// elsewhere, for the same reason: a second implementation of "did this run go
+// well" living in the web server is one that can disagree with the one that
+// sends the Discord message.
+func (s *Server) healthRuns(w http.ResponseWriter, r *http.Request) {
+	days := 7
+	if n, err := strconv.Atoi(r.URL.Query().Get("days")); err == nil && n > 0 && n <= 90 {
+		days = n
+	}
+	since := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+
+	// Filtered by at, which is indexed, rather than by walking the log from
+	// the head. The reaper alone writes 48 runs a day and the window is the
+	// only thing keeping this cheap.
+	rows, err := s.log.DB().QueryContext(r.Context(),
+		`SELECT payload FROM events WHERE kind = ? AND at >= ? ORDER BY seq DESC`,
+		string(event.KindAutomationRun), since.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		writeJSON(w, 500, map[string]string{"error": err.Error()})
+		return
+	}
+	defer rows.Close()
+
+	var runs []health.Run
+	for rows.Next() {
+		var payload []byte
+		if rows.Scan(&payload) != nil {
+			continue
+		}
+		var run health.Run
+		// A payload that will not parse is dropped rather than failing the
+		// request: one malformed row should cost its own line, not the screen.
+		if json.Unmarshal(payload, &run) == nil && run.Automation != "" {
+			runs = append(runs, run)
+		}
+	}
+
+	var declared []string
+	for _, a := range health.All(s.log) {
+		if a.Category != "machine" {
+			declared = append(declared, a.Name)
+		}
+	}
+
+	// 40 is roughly a day of the busiest automation and a month of the
+	// quietest, which is as much as the strip can show and more than anyone
+	// scrolls on a phone.
+	logs := health.SummarizeRuns(runs, declared, time.Now(), 40)
+	writeJSON(w, 200, map[string]any{"days": days, "automations": logs})
 }
 
 type scheduleView struct {

@@ -68,6 +68,8 @@ func main() {
 		err = cmdHealth(args)
 	case "attention":
 		err = cmdAttention(args)
+	case "notify":
+		err = cmdNotify(args)
 	case "hooks":
 		err = cmdHooks(args)
 	case "daemon":
@@ -127,6 +129,8 @@ func usage() {
         Write a starter health roster, then validate it.
   amac daemon [-port N] [-localhost]
         Run the control plane and dashboard (tailnet only).
+  amac notify [-title T] [-dry] <body...>
+        Send one Discord message, and fail loudly if it cannot be delivered.
   amac url
         Print the dashboard link, token included, for opening on a phone.
   amac mcp
