@@ -126,26 +126,41 @@ type RunEntry struct {
 // read as one with nothing to report, which is the same false all-clear the
 // sweep is built to avoid.
 func SummarizeRuns(runs []Run, declared []string, now time.Time, keep int) []RunLog {
+	// Folded onto the canonical name and deduped by the run's own ID, which
+	// runs.go already declares the stable dedupe key.
+	//
+	// The rename made both necessary, not just the fold: reporting is
+	// suppressed by an automation/id key, so renaming hacklist made every run
+	// it had already seen look new, and the overlap sits in the log twice
+	// under two names. Counting those twice would inflate a week and print
+	// each of them as two rows an hour apart from nothing.
 	byName := map[string][]Run{}
+	seen := map[string]bool{}
 	for _, r := range runs {
 		n := Canonical(r.Automation)
+		if k := n + "/" + r.ID; r.ID != "" {
+			if seen[k] {
+				continue
+			}
+			seen[k] = true
+		}
 		byName[n] = append(byName[n], r)
 	}
 
 	names := make([]string, 0, len(byName)+len(declared))
-	seen := map[string]bool{}
+	listed := map[string]bool{}
 	for _, n := range declared {
 		n = Canonical(n)
-		if !seen[n] {
-			seen[n], names = true, append(names, n)
+		if !listed[n] {
+			listed[n], names = true, append(names, n)
 		}
 	}
 	// A name with recorded runs but no declaration is still shown. It means an
 	// automation was retired from the roster while its history is still inside
 	// the window, and dropping it would silently shorten the week.
 	for n := range byName {
-		if !seen[n] {
-			seen[n], names = true, append(names, n)
+		if !listed[n] {
+			listed[n], names = true, append(names, n)
 		}
 	}
 

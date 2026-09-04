@@ -178,3 +178,46 @@ func TestEntriesKeepTheirURL(t *testing.T) {
 		t.Errorf("duration = %q, want 1m", got.Runs[0].Duration)
 	}
 }
+
+// The rename did more than split the history: reporting is suppressed by an
+// automation/id key, so renaming hacklist made every run it had already seen
+// look new, and eight of them sit in the log twice under two names.
+func TestTheSameRunRecordedTwiceIsCountedOnce(t *testing.T) {
+	shared := Run{Automation: "hacklist-sf", ID: "33793730994", Status: RunFailed,
+		Started: runNow.Add(-30 * time.Hour), Detail: "run failure"}
+	underNewName := shared
+	underNewName.Automation = "hacklist"
+
+	logs := SummarizeRuns([]Run{shared, underNewName, run("hacklist", RunOK, 1)},
+		[]string{"hacklist"}, runNow, 40)
+
+	if got := logs[0].Total; got != 2 {
+		t.Errorf("total = %d, want 2: the duplicated run counts once", got)
+	}
+	if got := logs[0].Failed; got != 1 {
+		t.Errorf("failed = %d, want 1", got)
+	}
+	if got := len(logs[0].Runs); got != 2 {
+		t.Errorf("listed %d runs, want 2 rows rather than a repeat", got)
+	}
+}
+
+// launchd runs are keyed by their marker timestamp, and two automations can
+// legitimately complete in the same second. Dedupe is per automation.
+func TestDedupeDoesNotCrossAutomations(t *testing.T) {
+	at := runNow.Add(-2 * time.Hour)
+	id := at.Format(time.RFC3339)
+	logs := SummarizeRuns([]Run{
+		{Automation: "disk-sweep", ID: id, Status: RunOK, Started: at},
+		{Automation: "tmux-idle-reaper", ID: id, Status: RunOK, Started: at},
+	}, nil, runNow, 40)
+
+	if len(logs) != 2 {
+		t.Fatalf("got %d automations, want 2", len(logs))
+	}
+	for _, l := range logs {
+		if l.Total != 1 {
+			t.Errorf("%s lost its run to another automation's key", l.Automation)
+		}
+	}
+}
