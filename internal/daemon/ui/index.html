@@ -1,6 +1,32 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>
+// Runs before the stylesheet paints, so a stored choice does not flash the
+// other theme on the way in. Cycles auto, light, dark; auto is the default and
+// keeps following the OS.
+(function () {
+  var K = "amac-theme";
+  function read() { try { return localStorage.getItem(K) || "auto"; } catch (e) { return "auto"; } }
+  function apply(v) {
+    var r = document.documentElement;
+    if (v === "auto") r.removeAttribute("data-theme"); else r.setAttribute("data-theme", v);
+    var b = document.querySelector("[data-theme-toggle]");
+    if (b) b.textContent = v;
+  }
+  apply(read());
+  document.addEventListener("DOMContentLoaded", function () {
+    apply(read());
+    var b = document.querySelector("[data-theme-toggle]");
+    if (!b) return;
+    b.addEventListener("click", function () {
+      var next = { auto: "light", light: "dark", dark: "auto" }[read()] || "auto";
+      try { localStorage.setItem(K, next); } catch (e) {}
+      apply(next);
+    });
+  });
+})();
+</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -41,7 +67,7 @@
     --sans: -apple-system, "SF Pro Text", system-ui, sans-serif;
   }
   @media (prefers-color-scheme: light) {
-    :root { --bg:#f7f8fa; --surface:#fff; --raise:#f1f3f6; --line:#e3e7ee;
+    :root:not([data-theme="dark"]) { --bg:#f7f8fa; --surface:#fff; --raise:#f1f3f6; --line:#e3e7ee;
             --fg:#11141a; --dim:#5f6878; --faint:#98a1b0;
             /* Stepped again for the light surface rather than flipped: the
                dark ramp's lightest step is 1.75:1 on #f1f3f6 and invisible.
@@ -49,6 +75,16 @@
                because every band carries a visible label. */
             --c1:#58a6ff; --c2:#1f6feb; --c3:#0d419d; --track:#e3e7ee; }
   }
+
+  :root[data-theme="light"] {
+    --bg:#f7f8fa; --surface:#fff; --raise:#f1f3f6; --line:#e3e7ee;
+    --fg:#11141a; --dim:#5f6878; --faint:#98a1b0;
+    --c1:#58a6ff; --c2:#1f6feb; --c3:#0d419d; --track:#e3e7ee;
+  }
+  .themebtn { background:none; border:1px solid var(--line); color:var(--dim);
+    border-radius:6px; padding:3px 9px; font:inherit; font-size:11px; font-weight:600;
+    cursor:pointer; letter-spacing:.04em; }
+  .themebtn:hover { color:var(--fg); border-color:var(--dim); }
 
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   [hidden] { display:none !important; }
@@ -471,6 +507,7 @@
     <span class="summary" id="summary"></span>
     <div class="conn"><span class="dot" id="dot"></span><span id="connText">connecting</span></div>
     <button class="sm mobile-new" id="mobileNew" aria-expanded="false" hidden>new</button>
+    <button class="themebtn" type="button" data-theme-toggle aria-label="Change colour theme">auto</button>
   </div>
   <nav>
     <button data-tab="home" class="on">home<span class="badge" id="actionCount" hidden></span></button>
