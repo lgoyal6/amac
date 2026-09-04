@@ -69,6 +69,14 @@
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) { --bg:#f7f8fa; --surface:#fff; --raise:#f1f3f6; --line:#e3e7ee;
             --fg:#11141a; --dim:#5f6878; --faint:#98a1b0;
+            /* Status colours were only ever defined for the dark surface, so on
+               white every one of them failed 4.5:1: blocked 2.24, late 2.52, ok
+               2.54, working 2.85, fail 3.35, all at 10px and all carrying the
+               only meaning on the automations tab. These are the same hues
+               darkened until they clear 4.5 on both --surface #fff and --raise
+               #f1f3f6: measured 5.08, 5.88, 5.54, 6.21, 5.99 and 4.57 upward. */
+            --blocked:#a34400; --working:#0b5cd5; --idle:#5f6878;
+            --ok:#1a7f37; --fail:#c0272d; --late:#8a6100;
             /* Stepped again for the light surface rather than flipped: the
                dark ramp's lightest step is 1.75:1 on #f1f3f6 and invisible.
                The lightest step here is 2.27:1, which the checks allow only
@@ -80,6 +88,8 @@
     --bg:#f7f8fa; --surface:#fff; --raise:#f1f3f6; --line:#e3e7ee;
     --fg:#11141a; --dim:#5f6878; --faint:#98a1b0;
     --c1:#58a6ff; --c2:#1f6feb; --c3:#0d419d; --track:#e3e7ee;
+    --blocked:#a34400; --working:#0b5cd5; --idle:#5f6878;
+    --ok:#1a7f37; --fail:#c0272d; --late:#8a6100;
   }
   .themebtn { background:none; border:1px solid var(--line); color:var(--dim);
     border-radius:6px; padding:3px 9px; font:inherit; font-size:11px; font-weight:600;
@@ -392,7 +402,10 @@
                font:10px/1.4 var(--mono); color:var(--faint); }
   .chart-empty { font:11px/1.5 var(--mono); color:var(--dim); padding:var(--s3) 0; }
   .tile-body { padding:var(--s2) var(--s3); font:10px/1.4 var(--mono);
-               color:#aab3c2; white-space:pre; overflow:hidden; height:180px;
+               /* Was a hardcoded #aab3c2, which is 2.11 on the light surface
+                  because it never followed the theme. --dim is 5.4 dark and
+                  7.58 light. */
+               color:var(--dim); white-space:pre; overflow:hidden; height:180px;
                -webkit-mask-image:linear-gradient(to bottom,#000 78%,transparent),
                                   linear-gradient(to right,#000 calc(100% - 16px),transparent);
                -webkit-mask-composite:source-in;
@@ -1267,10 +1280,19 @@ async function loadHome(force = false) {
   ]);
   homeLoading = false;
   homeLoadedAt = Date.now();
-  const health = hr.ok ? await hr.json() : {};
-  const tasks = tr.ok ? await tr.json() : [];
-  const spend = sr.ok ? await sr.json() : {};
-  const jobData = jr.ok ? await jr.json() : {};
+  // Every feed that did not answer is named, not silently treated as empty.
+  // Previously a non-200 /api/health produced {}, which produced zero actions,
+  // which rendered "nothing needs you": a blind monitor and a healthy machine
+  // were pixel identical, on the surface that is checked most and trusted most.
+  const unread = [];
+  const feed = async (res, label, fallback) => {
+    if (!res || !res.ok) { unread.push(`${label} (${res ? res.status : "no response"})`); return fallback; }
+    try { return await res.json(); } catch (e) { unread.push(`${label} (unreadable)`); return fallback; }
+  };
+  const health = await feed(hr, "health", {});
+  const tasks = await feed(tr, "tasks", []);
+  const spend = await feed(sr, "money", {});
+  const jobData = await feed(jr, "jobs", {});
   const apps = Array.isArray(jobData) ? jobData : (jobData.applications || []);
   if (unauthorized || !$('homeOut')) return;
   const actions = [];
@@ -1301,11 +1323,21 @@ async function loadHome(force = false) {
   const count = actions.length;
   $('actionCount').hidden = count === 0;
   $('actionCount').textContent = count;
-  if (!count) {
-    out.innerHTML = '<div class="all-clear"><b>nothing needs you</b><span>Agents, automations, money, and job follow-ups have no current action.</span></div>';
+  // A feed that did not answer is never an all-clear. Build the banner first,
+  // then the actions, so the two compose instead of one overwriting the other.
+  const banner = unread.length
+    ? `<div class="action bad"><b>cannot tell</b><span>Could not read ${esc(unread.join(", "))}. `
+      + `${count ? `${count} action${count === 1 ? "" : "s"} found in what did load.` : "Nothing below is a clear signal."} `
+      + `Check the daemon and reload.</span></div>`
+    : "";
+
+  if (!unread.length && !count) {
+    out.innerHTML = '<div class="all-clear"><b>nothing needs you</b>'
+      + `<span>Agents, automations, money, and job follow-ups have no current action. Read ${esc(new Date().toLocaleTimeString())}.</span></div>`;
     return;
   }
-  out.innerHTML = actions.map((a, i) => `<div class="action ${esc(a.tone)}">
+
+  out.innerHTML = banner + actions.map((a, i) => `<div class="action ${esc(a.tone)}">
     <div class="action-copy"><b>${esc(a.title)}</b><span>${esc(a.detail)}</span></div>
     <button class="sm" data-action="${i}">${esc(a.label)}</button>
   </div>`).join('');
