@@ -193,7 +193,20 @@ func (s *Server) Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		s.page(w, s.tokenOK(r.URL.Query().Get("token")))
+		// The page is the entry point, so this is where the cookie has to be
+		// minted and honoured. Reading only the query parameter meant the
+		// dashboard worked exactly once per `amac url`: a reload of the bare
+		// address dropped the token and the board came back unauthorised.
+		if tok := r.URL.Query().Get("token"); s.tokenOK(tok) {
+			setTokenCookie(w, s.token)
+			s.page(w, true)
+			return
+		}
+		if c, err := r.Cookie(tokenCookie); err == nil && s.tokenOK(c.Value) {
+			s.page(w, true)
+			return
+		}
+		s.page(w, false)
 	})
 
 	return mux
@@ -239,17 +252,57 @@ func (s *Server) page(w http.ResponseWriter, tokened bool) {
 // options page's connection check hits /api/agents, and when only
 // /api/applications carried the headers that check failed with a bare
 // TypeError indistinguishable from the daemon being down.
+// tokenCookie is how a browser keeps hold of the token across a reload.
+//
+// The token itself never rotates: it is a file in ~/.amac written once. What
+// used to expire was the browser's possession of it, because the only ways in
+// were an X-Amac-Token header and a ?token= query parameter. Open the link from
+// `amac url`, then reload without the query string, bookmark the bare address,
+// or follow any link back to the root, and every request 401s. The dashboard
+// looked like it had a rotating token when nothing had rotated at all.
+const tokenCookie = "amac_token"
+
+// SameSite=Strict because every route behind this starts agents or approves
+// their tool calls, and none of them should ever be reachable from another
+// site's page. No Secure flag: this is served over plain HTTP on the tailnet,
+// and setting it would make the cookie silently never stick.
+func setTokenCookie(w http.ResponseWriter, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     tokenCookie,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   365 * 24 * 60 * 60,
+	})
+}
+
 func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		allowExtensionOrigin(w, r)
 
 		got := r.Header.Get("X-Amac-Token")
+		fromQuery := false
 		if got == "" {
-			got = r.URL.Query().Get("token")
+			if q := r.URL.Query().Get("token"); q != "" {
+				got, fromQuery = q, true
+			}
+		}
+		if got == "" {
+			if c, err := r.Cookie(tokenCookie); err == nil {
+				got = c.Value
+			}
 		}
 		if subtle.ConstantTimeCompare([]byte(got), []byte(s.token)) != 1 {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
+		}
+		// Only mint the cookie when the token arrived in the URL, which is the
+		// one moment a person is actually opening the dashboard. Doing it on
+		// every authenticated API call would add a Set-Cookie to hundreds of
+		// polls for no gain.
+		if fromQuery {
+			setTokenCookie(w, s.token)
 		}
 		next(w, r)
 	}
