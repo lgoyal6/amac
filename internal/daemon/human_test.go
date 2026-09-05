@@ -16,14 +16,15 @@ import (
 // is instead of anything a human did.
 func TestPollingIsNotAHumanAction(t *testing.T) {
 	s := testServer(t)
-	// Deliberately not /api/health or anything that reaches it. The roster is
-	// cached process-wide behind a sync.Once, so the first test to touch it
-	// fixes it for every test after, and this one would pin the real machine's
-	// roster onto a later test that declares its own. The endpoints below make
-	// the same point without the side effect.
+	// The health endpoints are back in, and they are the important ones: they
+	// are what the board polls hardest. They were left out while the roster was
+	// cached process-wide behind a sync.Once, which made merely reading one
+	// here pin this machine's roster onto a later test that declares its own.
+	// The cache is keyed by path now, so a read is just a read.
 	for _, path := range []string{
 		"/api/sessions", "/api/tasks", "/api/spend", "/api/machine",
-		"/api/panes", "/api/agents",
+		"/api/panes", "/api/agents", "/api/health", "/api/health/runs",
+		"/api/summary",
 	} {
 		w := httptest.NewRecorder()
 		s.Handler().ServeHTTP(w, authed("GET", path, ""))

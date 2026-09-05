@@ -19,22 +19,43 @@ import (
 	"github.com/lgoyal6/amac/internal/event"
 )
 
+type loaded struct {
+	list []Automation
+	err  error
+}
+
 var (
-	rosterOnce sync.Once
-	roster     []Automation
-	rosterErr  error
+	rosterMu sync.Mutex
+	rosters  = map[string]loaded{}
 )
 
 // Roster returns the declared automations.
 //
-// Loaded once per process. A sweep runs every fifteen minutes from launchd, so
-// each run is a fresh process and picks up an edited roster without anything
-// having to watch the file.
+// Loaded once per path, and cached under the path it came from. A sweep runs
+// every fifteen minutes from launchd, so each run is a fresh process and picks
+// up an edited roster without anything having to watch the file; nothing here
+// reloads on its own, and nothing watches the filesystem.
+//
+// Keyed by path rather than held behind a plain sync.Once, because the once
+// made the whole package order-dependent. The first caller to ask fixed the
+// answer for the process, so a test that set AMAC_HEALTH_CONFIG and then
+// declared its own automations got whichever roster some earlier test had
+// already caused to load. That is not hypothetical: a new test elsewhere that
+// merely issued a GET to /api/health made an unrelated one fail by pinning this
+// machine's thirteen real automations onto a test that declares two, and a
+// comment in that file already noted the process cache as something to work
+// around. In production the path does not change mid-process, so this loads
+// exactly as often as it did before.
 func Roster(log *event.Log) ([]Automation, error) {
-	rosterOnce.Do(func() {
-		roster, rosterErr = Load(ConfigPath(), log)
-	})
-	return roster, rosterErr
+	path := ConfigPath()
+	rosterMu.Lock()
+	defer rosterMu.Unlock()
+	if got, ok := rosters[path]; ok {
+		return got.list, got.err
+	}
+	list, err := Load(path, log)
+	rosters[path] = loaded{list: list, err: err}
+	return list, err
 }
 
 // All returns the roster, or nothing if it could not be read.
