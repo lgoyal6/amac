@@ -133,6 +133,29 @@
   .section-head p { margin:0; color:var(--dim); font-size:12px; }
   .section-head .grow { flex:1; }
 
+  /* One tile per tab, so the home screen answers "how is everything" before
+     you touch anything. The action list above it stays the lede: these are a
+     glance, not a to-do. auto-fit rather than a fixed column count, because the
+     same grid has to hold five tiles on a phone and five across a laptop. */
+  .tiles { display:grid; gap:var(--s2); grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); }
+  .tile { background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
+          padding:var(--s3) var(--s4); text-align:left; color:inherit; cursor:pointer;
+          display:flex; flex-direction:column; gap:var(--s1); min-width:0; }
+  .tile:hover { border-color:var(--faint); }
+  .tile-head { display:flex; align-items:baseline; gap:var(--s2); }
+  .tile-head b { font:600 11px/1.6 var(--mono); letter-spacing:.04em; color:var(--dim); flex:1; }
+  .tile-head .go { font:10px/1.6 var(--mono); color:var(--faint); white-space:nowrap; flex:none; }
+  .tile-big { font:600 20px/1.2 var(--mono); letter-spacing:-.02em;
+              font-variant-numeric:tabular-nums; color:var(--fg); }
+  .tile-big.ok { color:var(--ok); } .tile-big.bad { color:var(--fail); }
+  .tile-big.warn { color:var(--late); }
+  .tile-sub { font-size:12px; color:var(--dim); }
+  .tile-row { display:flex; gap:var(--s3); flex-wrap:wrap; margin-top:var(--s1); }
+  .tile-row span { font:10px/1.6 var(--mono); color:var(--dim); }
+  .tile-row b { color:var(--fg); font-variant-numeric:tabular-nums; }
+  /* Reuses the run log's tick vocabulary rather than inventing a second one. */
+  .tile .strip { margin:var(--s1) 0 0; }
+
   .action-list { display:grid; gap:var(--s2); }
   .action { display:flex; align-items:flex-start; gap:var(--s3); background:var(--surface);
             border:1px solid var(--line); border-left:2px solid var(--late);
@@ -591,6 +614,10 @@
       <button class="sm" id="refreshHome">refresh</button>
     </div>
     <div id="homeOut" class="action-list"><div class="empty">checking</div></div>
+    <div class="section-head" style="margin-top:var(--s5)">
+      <div class="grow"><h2>everything else</h2><p>One tile per tab. Tap any of them to open it.</p></div>
+    </div>
+    <div id="homeTiles" class="tiles"><div class="empty">loading</div></div>
   </section>
 
   <section id="agents" hidden>
@@ -1330,8 +1357,9 @@ let homeLoading = false;
 async function loadHome(force = false) {
   if (homeLoading || (!force && Date.now() - homeLoadedAt < 30000)) return;
   homeLoading = true;
-  const [hr, tr, sr, jr] = await Promise.all([
-    api('/api/health'), api('/api/tasks'), api('/api/spend'), api('/api/applications?limit=200'),
+  const [hr, tr, sr, jr, rr, mr, ssr] = await Promise.all([
+    api('/api/health'), api('/api/tasks'), api('/api/spend'), api('/api/applications?limit=1000'),
+    api('/api/health/runs'), api('/api/machine'), api('/api/sessions'),
   ]);
   homeLoading = false;
   homeLoadedAt = Date.now();
@@ -1349,6 +1377,16 @@ async function loadHome(force = false) {
   const spend = await feed(sr, "money", {});
   const jobData = await feed(jr, "jobs", {});
   const apps = Array.isArray(jobData) ? jobData : (jobData.applications || []);
+  // The tiles are a glance, not the alarm. A feed they cannot read costs that
+  // one tile its numbers and nothing else, so they are read without the unread
+  // bookkeeping above, which exists to stop a blind monitor looking healthy.
+  const runs = rr && rr.ok ? await rr.json().catch(() => ({})) : {};
+  const mach = mr && mr.ok ? await mr.json().catch(() => ({})) : {};
+  // Read from the endpoint, not from the `sessions` map. That map is filled by
+  // the agents tab and the live stream, so on a cold load of the home tab it is
+  // empty and the tile confidently reported zero sessions while five were running.
+  const sessRaw = ssr && ssr.ok ? await ssr.json().catch(() => []) : [];
+  const sessList = Array.isArray(sessRaw) ? sessRaw : (sessRaw.sessions || []);
   if (unauthorized || !$('homeOut')) return;
   const actions = [];
   const blocked = [...sessions.values()].filter(s => s.state === 'blocked');
@@ -1385,6 +1423,8 @@ async function loadHome(force = false) {
       + `${count ? `${count} action${count === 1 ? "" : "s"} found in what did load.` : "Nothing below is a clear signal."} `
       + `Check the daemon and reload.</span></div>`
     : "";
+
+  renderTiles({ health, spend, apps, runs, mach, sessList, tasks: Array.isArray(tasks) ? tasks : [] });
 
   if (!unread.length && !count) {
     out.innerHTML = '<div class="all-clear"><b>nothing needs you</b>'
@@ -1472,6 +1512,90 @@ async function loadHealth() {
   });
   el.querySelectorAll('button.shell').forEach(b => {
     b.onclick = () => dispatch(b, 'shell', b.dataset.name);
+  });
+}
+
+// One tile per tab, because a home screen whose only content is a to-do list
+// answers "what is broken" and never "how is everything". The action list above
+// stays the lede; these are the state of each tab at a glance, and each one
+// opens the tab it summarises.
+//
+// Every number here is read from the same endpoint the tab itself uses, so the
+// tile and the tab cannot disagree. Nothing is recomputed.
+function renderTiles({ health, spend, apps, runs, mach, sessList, tasks }) {
+  const el = $('homeTiles');
+  if (!el) return;
+  const reports = (health.reports || []).filter(r => r.category !== 'machine');
+  const healthy = reports.filter(r => r.state === 'ok').length;
+  const sess = sessList && sessList.length ? sessList : [...sessions.values()];
+  const blocked = sess.filter(s => s.state === 'blocked').length;
+  const ready = tasks.filter(t => t.state === 'ready').length;
+
+  const watched = (runs.automations || []).filter(a => a.verdict !== 'unwatched');
+  const failedRuns = watched.reduce((n, a) => n + (a.failed || 0), 0);
+  // Broken means the newest run failed. Without this the tile said "13 failed
+  // runs" for a week in which every one of them was fixed days ago, which is
+  // the exact confusion the run log's clean streak exists to remove.
+  const broken = watched.filter(a => a.verdict === 'broken');
+  // Newest last, so the strip reads left to right like the run log's does.
+  const recent = watched.flatMap(a => (a.runs || []).slice(0, 6))
+    .sort((x, y) => new Date(x.at) - new Date(y.at)).slice(-28);
+
+  const today = new Date(); today.setHours(23, 59, 59, 999);
+  const due = apps.filter(a => a.followUpAt && new Date(a.followUpAt) <= today
+    && !['Offer', 'Rejected'].includes(a.status)).length;
+  const sent30 = apps.filter(a => a.appliedAt
+    && (Date.now() - new Date(a.appliedAt)) < 30 * 864e5).length;
+
+  const m = mach.memory || {}, sw = mach.swap || {}, dk = mach.disk || {};
+  const top = (mach.top || [])[0];
+
+  const tiles = [
+    { tab: 'agents', view: 'board', name: 'agents',
+      big: sess.length, bigClass: blocked ? 'warn' : '',
+      sub: blocked ? `${blocked} waiting on you` : 'none waiting on you',
+      rows: [['live', sess.length], ['blocked', blocked], ['queued', ready]] },
+    { tab: 'automations', name: 'automations',
+      big: `${healthy}/${reports.length}`, bigClass: broken.length || healthy !== reports.length ? 'bad' : 'ok',
+      sub: broken.length ? `${broken.length} failing right now`
+         : failedRuns ? `all recovered, ${failedRuns} failed earlier this week`
+         : `no failed runs in ${runs.days || 7} days`,
+      strip: recent },
+    { tab: 'money', name: 'money',
+      big: spend.monthlyUsd || '$0', sub: 'recurring per month, actually billed',
+      rows: [['today', (spend.todayUsd || '$0') + ' eq'],
+             ['30d', (spend.agentUsd || '$0') + ' eq'],
+             ['alerts', (spend.alerts || []).length]] },
+    { tab: 'jobs', name: 'jobs',
+      big: sent30, bigClass: due ? 'warn' : '',
+      sub: 'applications sent in 30 days',
+      rows: [['follow-ups due', due], ['tracked', apps.length]] },
+    { tab: 'automations', name: 'machine',
+      big: m.percent != null ? m.percent + '%' : '--',
+      bigClass: m.percent >= 90 ? 'bad' : m.percent >= 80 ? 'warn' : '',
+      sub: top ? `most of it is ${top.name}` : 'memory in use',
+      rows: [['swap', (sw.percent || 0) + '%'], ['disk', (dk.percent || 0) + '%']] },
+  ];
+
+  el.className = 'tiles';
+  el.innerHTML = tiles.map((t, i) => `
+    <button class="tile" data-tile="${i}">
+      <span class="tile-head"><b>${esc(t.name)}</b><span class="go">open &rsaquo;</span></span>
+      <span class="tile-big ${esc(t.bigClass || '')}">${esc(String(t.big))}</span>
+      <span class="tile-sub">${esc(t.sub)}</span>
+      ${t.strip && t.strip.length ? `<span class="strip" role="img" aria-label="${t.strip.length} recent runs">`
+        + t.strip.map(x => `<span class="tick ${esc(x.status)}" title="${esc(runTitle(x))}"></span>`).join('')
+        + `</span>` : ''}
+      ${t.rows ? `<span class="tile-row">${t.rows.map(([k, v]) =>
+        `<span>${esc(k)} <b>${esc(String(v))}</b></span>`).join('')}</span>` : ''}
+    </button>`).join('');
+
+  el.querySelectorAll('[data-tile]').forEach(b => {
+    b.onclick = () => {
+      const t = tiles[Number(b.dataset.tile)];
+      openTopTab(t.tab);
+      if (t.view) setAgentView(t.view);
+    };
   });
 }
 
@@ -2075,7 +2199,7 @@ const safeHref = value => {
 
 async function loadJobs() {
   const out = $('jobsOut');
-  const r = await api('/api/applications?limit=200');
+  const r = await api('/api/applications?limit=1000');
   if (!r.ok) {
     out.className = 'empty';
     out.textContent = 'could not load applications from the local Notion mirror';
