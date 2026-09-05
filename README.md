@@ -11,10 +11,23 @@ to run on yours.
 
 ![The board: what needs you, then one tile per tab](docs/img/home.png)
 
+## See it without adopting it
+
 ```bash
 git clone https://github.com/lgoyal6/amac && cd amac
 go build -o bin/amac ./cmd/amac
+bin/amac demo
+```
 
+A seeded week on a throwaway log, bound to localhost. No tailnet, no roster to
+write, no hooks installed, and nothing written to `~/.amac`. It opens on a
+roster that includes one automation failing right now and one that failed six
+times and has been green for three days, because telling those two apart is the
+thing worth looking at. Deleting the directory it prints is the whole uninstall.
+
+## Run it for real
+
+```bash
 bin/amac hooks -install     # so your agents tell amac what they are doing
 bin/amac init               # declare what your automations are meant to deliver
 bin/amac daemon             # the board, bound to your tailnet and nothing else
@@ -264,6 +277,8 @@ output it is about to trust delivered this morning.
 
 | tool | when an agent should reach for it |
 | --- | --- |
+| `claim_files` | before the first edit, to take the files you are about to change |
+| `release_files` | when you stop editing, so somebody else can have them |
 | `working_here` | before editing a tree, so two agents do not produce a diff neither can explain |
 | `automation_health` | before trusting a file or feed something else generates |
 | `file_task` | for work it found and is not going to do |
@@ -271,7 +286,24 @@ output it is about to trust delivered this morning.
 | `agent_spend` | when choosing a model for a job that will run many times |
 | `report_done` | so a scheduled job it owns is missed when it stops |
 
-Read-mostly on purpose. The two that write are additive. Nothing stops a session
+**Claims, not courtesy.** `working_here` reports presence: which sessions have a
+shell open in a tree. That is a hint, and it says so in its own output. It could
+not have prevented what happened to this repository while it was being written:
+a peer session ran `git add -A` and swept another session's in-progress files
+into a commit about something else, and an hour later a second session branched
+under the first. Both were visible to the presence check. Neither was stopped.
+
+`claim_files` is exclusion. It takes a set of paths or none of them, refuses the
+whole set if any path is held and names who holds what, and hands back a fencing
+token. Holding a directory conflicts with holding a file inside it, in both
+directions. Claims carry a lease, so an agent that dies frees its files instead
+of locking them until somebody notices, and a revived agent's release is
+rejected on arrival rather than trusted because it arrived.
+
+It is the queue's mechanism pointed at a different resource, deliberately, since
+that one is already proved against SIGKILL.
+
+Read-mostly on purpose. The three that write are additive. Nothing stops a session
 or answers a permission request, because an agent approving another agent's tool
 call is the entire reason permission prompts reach a human at all.
 
