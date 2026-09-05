@@ -137,10 +137,10 @@ type ListOptions struct {
 	Limit         int
 }
 
-func (r *Repository) List(ctx context.Context, o ListOptions) ([]Application, error) {
-	if o.Limit <= 0 || o.Limit > 1000 {
-		o.Limit = 200
-	}
+// filter builds the WHERE shared by List and Count. Shared rather than written
+// twice because the two drifting apart is exactly how "200 of 200" happens: a
+// count that does not mean the same thing as the rows beside it.
+func (o ListOptions) filter() (string, []any) {
 	where, args := []string{"1=1"}, []any{}
 	if o.Query != "" {
 		where = append(where, `(lower(company) LIKE ? OR lower(role) LIKE ? OR lower(location) LIKE ?)`)
@@ -151,6 +151,28 @@ func (r *Repository) List(ctx context.Context, o ListOptions) ([]Application, er
 		where = append(where, "status=?")
 		args = append(args, o.Status)
 	}
+	return strings.Join(where, " AND "), args
+}
+
+// Count is how many applications match, ignoring Limit.
+//
+// It exists because the board used to report the page size as the total, so
+// the jobs tab read "200 of 200 applications" against 257 rows and would have
+// read 200 forever: every new application pushed an old one out of the page and
+// the number never moved.
+func (r *Repository) Count(ctx context.Context, o ListOptions) (int, error) {
+	where, args := o.filter()
+	var n int
+	err := r.db.QueryRowContext(ctx, `SELECT count(*) FROM applications WHERE `+where, args...).Scan(&n)
+	return n, err
+}
+
+func (r *Repository) List(ctx context.Context, o ListOptions) ([]Application, error) {
+	if o.Limit <= 0 || o.Limit > 1000 {
+		o.Limit = 200
+	}
+	whereSQL, args := o.filter()
+	where := []string{whereSQL}
 	args = append(args, o.Limit)
 	rows, err := r.db.QueryContext(ctx, `SELECT key,notion_id,notion_url,company,role,url,ats,source,applied_at,status,category,cycle,location,work_auth,tier,sponsorship,follow_up_at,updated_at,sync_state,sync_error
       FROM applications WHERE `+strings.Join(where, " AND ")+` ORDER BY applied_at DESC, company LIMIT ?`, args...)

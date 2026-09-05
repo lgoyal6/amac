@@ -36,8 +36,15 @@ func (s *Server) listApplications(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
+	// Counted, not measured off the page. Total used to be len(apps), which
+	// cannot exceed the limit, so the jobs tab read "200 of 200 applications"
+	// against 257 rows and would have read 200 forever.
+	total, err := repo.Count(r.Context(), apply.ListOptions{Query: r.URL.Query().Get("q"), Status: r.URL.Query().Get("status")})
+	if err != nil {
+		total = len(apps)
+	}
 	meta, _ := repo.SyncMeta(r.Context())
-	resp := applicationListResponse{Applications: apps, Total: len(apps), Source: "local", Stale: meta.SyncedAt.IsZero() || time.Since(meta.SyncedAt) > 24*time.Hour}
+	resp := applicationListResponse{Applications: apps, Total: total, Source: "local", Stale: meta.SyncedAt.IsZero() || time.Since(meta.SyncedAt) > 24*time.Hour}
 	if !meta.SyncedAt.IsZero() {
 		v := meta.SyncedAt
 		resp.SyncedAt = &v

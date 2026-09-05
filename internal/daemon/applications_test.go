@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -100,5 +101,64 @@ func TestBackgroundSyncWithoutNotionRecordsNoFailure(t *testing.T) {
 	meta, _ := repo.SyncMeta(context.Background())
 	if !meta.SyncedAt.IsZero() || meta.Error != "" {
 		t.Fatalf("a disconnected backup wrote sync state: %+v", meta)
+	}
+}
+
+// The jobs tab read "200 of 200 applications" against 257 rows, because Total
+// was the length of the limited page and so could never exceed the limit. The
+// number would have read 200 forever: each new application pushed an old one
+// out of the page and the total never moved.
+func TestApplicationTotalCountsBeyondThePage(t *testing.T) {
+	s := testServer(t)
+	repo, err := apply.NewRepository(s.log.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 7; i++ {
+		if _, err := repo.UpsertLocal(t.Context(), apply.Application{
+			ID: fmt.Sprintf("k%d", i), Company: fmt.Sprintf("Co %d", i), Role: "SWE", Status: "Applied",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, authed("GET", "/api/applications?limit=3", ""))
+	if w.Code != 200 {
+		t.Fatalf("got %d: %s", w.Code, w.Body)
+	}
+	var body struct {
+		Applications []map[string]any `json:"applications"`
+		Total        int              `json:"total"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("not JSON: %s", w.Body)
+	}
+	if len(body.Applications) != 3 {
+		t.Errorf("page = %d rows, want the 3 asked for", len(body.Applications))
+	}
+	if body.Total != 7 {
+		t.Errorf("total = %d, want 7: the count must not be the page size", body.Total)
+	}
+}
+
+// A filtered count has to mean the same thing as the rows beside it, which is
+// why List and Count share one WHERE.
+func TestApplicationTotalRespectsTheFilter(t *testing.T) {
+	s := testServer(t)
+	repo, _ := apply.NewRepository(s.log.DB())
+	for i, status := range []string{"Applied", "Applied", "Rejected"} {
+		repo.UpsertLocal(t.Context(), apply.Application{
+			ID: fmt.Sprintf("f%d", i), Company: "Co", Role: "SWE", Status: status,
+		})
+	}
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, authed("GET", "/api/applications?status=Applied", ""))
+	var body struct {
+		Total int `json:"total"`
+	}
+	json.Unmarshal(w.Body.Bytes(), &body)
+	if body.Total != 2 {
+		t.Errorf("filtered total = %d, want 2", body.Total)
 	}
 }
