@@ -162,3 +162,67 @@ func TestApplicationTotalRespectsTheFilter(t *testing.T) {
 		t.Errorf("filtered total = %d, want 2", body.Total)
 	}
 }
+
+// The home tab needs two numbers, the total and how many follow-ups are due,
+// and used to download every row to compute them: 150KB on a phone for two
+// integers. The due filter runs on the server so it can ask for a count.
+func TestDueFilterReturnsOnlyOpenFollowUpsOnOrBeforeToday(t *testing.T) {
+	s := testServer(t)
+	repo, err := apply.NewRepository(s.log.DB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	yesterday, tomorrow := now.Add(-24*time.Hour), now.Add(48*time.Hour)
+	for _, r := range []struct {
+		id, status string
+		follow     *time.Time
+	}{
+		{"overdue", "Applied", &yesterday},
+		{"today", "Interview", &now},
+		{"future", "Applied", &tomorrow},
+		{"none", "Applied", nil},
+		{"closed", "Rejected", &yesterday}, // due but closed: not actionable
+		{"won", "Offer", &yesterday},
+	} {
+		a := apply.Application{ID: r.id, Company: r.id, Role: "SWE", Status: r.status}
+		if r.follow != nil {
+			a.FollowUpAt = r.follow
+		}
+		if _, err := repo.UpsertLocal(t.Context(), a); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	s.Handler().ServeHTTP(w, authed("GET", "/api/applications?due=1&limit=1000", ""))
+	if w.Code != 200 {
+		t.Fatalf("got %d: %s", w.Code, w.Body)
+	}
+	var body struct {
+		Applications []struct {
+			Key string `json:"key"`
+		} `json:"applications"`
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("not JSON: %s", w.Body)
+	}
+	got := map[string]bool{}
+	for _, a := range body.Applications {
+		got[a.Key] = true
+	}
+	if !got["overdue"] || !got["today"] {
+		t.Errorf("overdue and today should both be due: %v", got)
+	}
+	for _, k := range []string{"future", "none", "closed", "won"} {
+		if got[k] {
+			t.Errorf("%q should not be due", k)
+		}
+	}
+	// The total must agree with the filter, or "2 due" on the tile and two
+	// rows in the list would be computed from different questions.
+	if body.Total != 2 {
+		t.Errorf("total = %d, want 2", body.Total)
+	}
+}
