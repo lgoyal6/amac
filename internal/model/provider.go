@@ -185,6 +185,7 @@ func FromEnv() (*Registry, []string) {
 			key:    k,
 			model:  envOr("AMAC_STRONG_MODEL", "claude-sonnet-5"),
 			rateIn: 3.0, rateOut: 15.0,
+			base: os.Getenv("ANTHROPIC_BASE_URL"),
 		})
 	}
 
@@ -227,6 +228,21 @@ func envOr(k, def string) string {
 type anthropic struct {
 	key, model      string
 	rateIn, rateOut float64 // USD per million tokens
+	// base is the API root, so a gateway or proxy can be put in front. Empty
+	// means Anthropic itself. This is not only for tests: running Claude
+	// through LiteLLM or a company gateway is ordinary, ANTHROPIC_BASE_URL is
+	// the variable everything else already honours, and hardcoding the host
+	// meant amac was the one client that ignored it.
+	base string
+}
+
+const anthropicAPI = "https://api.anthropic.com"
+
+func (a *anthropic) endpoint() string {
+	if a.base != "" {
+		return strings.TrimSuffix(a.base, "/") + "/v1/messages"
+	}
+	return anthropicAPI + "/v1/messages"
 }
 
 func (a *anthropic) Name() string  { return "anthropic" }
@@ -256,7 +272,7 @@ func (a *anthropic) Complete(ctx context.Context, req Request) (Response, error)
 			OutputTokens int `json:"output_tokens"`
 		} `json:"usage"`
 	}
-	err := postJSON(ctx, "https://api.anthropic.com/v1/messages", map[string]string{
+	err := postJSON(ctx, a.endpoint(), map[string]string{
 		"x-api-key":         a.key,
 		"anthropic-version": "2023-06-01",
 	}, body, &out)
