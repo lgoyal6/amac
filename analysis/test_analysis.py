@@ -15,8 +15,8 @@ import pandas as pd
 import pytest
 
 import amaclog
-from notifications import (density_check, instrumentation_check, label, readiness,
-                           timewise_split)
+from notifications import (answered, density_check, instrumentation_check, label,
+                           readiness, timewise_split)
 
 T0 = pd.Timestamp("2026-09-01 12:00:00", tz="UTC")
 
@@ -285,3 +285,84 @@ def test_readiness_says_ready_only_with_enough_positives():
     assert got["positives"] == 300
     assert got["ready"] is True
     assert got["days_left"] == 0.0
+
+
+def test_answered_needs_no_window_at_all():
+    """The only label here that is an identity rather than a coincidence.
+
+    Every other outcome is "something happened soon after", and soon is an
+    argument. This one is the notification's own id coming back on the act, so
+    a response an hour later still counts and an unrelated act a second later
+    does not.
+    """
+    notifs = pd.DataFrame({
+        "at": pd.to_datetime(["2026-09-05T10:00:00Z", "2026-09-05T11:00:00Z"]),
+        "session": ["s1", "s2"],
+        "id": ["abc123", "def456"],
+    })
+    acts = pd.DataFrame({
+        "at": pd.to_datetime(["2026-09-05T12:30:00Z"]),  # long past any window
+        "session": ["s1"],
+        "notice": ["abc123"],
+    })
+    got = answered(notifs, acts)
+    assert list(got["answered"]) == [True, False]
+
+
+def test_answered_ignores_acts_that_name_no_notification():
+    """A write through the API is a human action, not an answer to an alert.
+
+    Counting one would put a positive against whichever notification happened
+    to be nearby, which is the coincidence this label exists to avoid.
+    """
+    notifs = pd.DataFrame({
+        "at": pd.to_datetime(["2026-09-05T10:00:00Z"]),
+        "session": ["s1"],
+        "id": ["abc123"],
+    })
+    acts = pd.DataFrame({
+        "at": pd.to_datetime(["2026-09-05T10:01:00Z"]),
+        "session": ["s1"],
+        "notice": [None],
+    })
+    assert list(answered(notifs, acts)["answered"]) == [False]
+
+
+def test_readiness_counts_acts_as_well_as_opens():
+    """Opens alone were the reason the label barely accumulated."""
+    base = pd.Timestamp("2026-09-01T00:00:00Z")
+    at = pd.to_datetime([base + pd.Timedelta(hours=i) for i in range(10)])
+    notifs = pd.DataFrame({"at": at, "session": ["s1"] * 10, "id": [f"n{i}" for i in range(10)]})
+    empty = pd.DataFrame(columns=["at", "session"])
+    acts = pd.DataFrame({
+        "at": at + pd.Timedelta(minutes=1),
+        "session": ["s1"] * 10,
+        "notice": [f"n{i}" for i in range(10)],
+    })
+
+    without = readiness(notifs, empty, None, want=200)
+    with_acts = readiness(notifs, empty, acts, want=200)
+    assert without["positives"] == 0
+    assert with_acts["positives"] == 10, "acts were not counted towards the label"
+    assert with_acts["answered"] == 10, "the exact label was not counted"
+
+
+def test_answered_refuses_to_label_without_a_join_key():
+    """A missing join key must fail, not quietly label everything False.
+
+    The reader did not lift `id` off the attention payload, so `answered` hit
+    its own guard and reported no engagement at all. Nothing failed: the label
+    just looked pessimistic, which is exactly the shape of wrongness that gets
+    trained on.
+    """
+    notifs = pd.DataFrame({
+        "at": pd.to_datetime(["2026-09-05T10:00:00Z"]),
+        "session": ["s1"],
+    })
+    acts = pd.DataFrame({
+        "at": pd.to_datetime(["2026-09-05T10:01:00Z"]),
+        "session": ["s1"],
+        "notice": ["abc123"],
+    })
+    with pytest.raises(KeyError, match="join key"):
+        answered(notifs, acts)

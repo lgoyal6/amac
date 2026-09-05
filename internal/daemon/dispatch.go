@@ -59,6 +59,21 @@ func (s *Server) signedHandoff(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 401, map[string]string{"error": "handoff link is invalid or expired"})
 		return
 	}
+	// The strongest label amac can collect: a signed link out of a specific
+	// notification, followed by a person. It names the alert it answers, and
+	// no agent can produce it.
+	//
+	// Here rather than on the GET, because the GET only serves a page and a
+	// link scanner fetching a preview is not a person. The POST comes from
+	// that page having actually run.
+	//
+	// And before the open, deliberately unlike every other act, which is only
+	// recorded once the request succeeded. The rule there is that a thumb
+	// landing on a session that is gone is not a decision about it. This is
+	// the opposite case: somebody read the alert and answered it, and whether
+	// the session outlived their walk to the phone says nothing about that.
+	// The act being recorded is following the link, not opening the session.
+	s.recordAct(r, "handoff", q.Get("n"))
 	s.openSessionOnMac(w, r, q.Get("session"))
 }
 
