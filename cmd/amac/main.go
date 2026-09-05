@@ -74,6 +74,8 @@ func main() {
 		err = cmdHooks(args)
 	case "daemon":
 		err = cmdDaemon(args)
+	case "demo":
+		err = cmdDemo(args)
 	case "mcp":
 		err = cmdMCP(args)
 	case "url":
