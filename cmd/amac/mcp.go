@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 	"github.com/lgoyal6/amac/internal/crew"
 	"github.com/lgoyal6/amac/internal/event"
 	"github.com/lgoyal6/amac/internal/health"
+	"github.com/lgoyal6/amac/internal/holds"
 	"github.com/lgoyal6/amac/internal/mcp"
 	"github.com/lgoyal6/amac/internal/queue"
 	"github.com/lgoyal6/amac/internal/spend"
@@ -39,6 +42,10 @@ func cmdMCP(args []string) error {
 	}
 	defer log.Close()
 	q, err := queue.Open(log)
+	if err != nil {
+		return err
+	}
+	hold, err := holds.Open(log)
 	if err != nil {
 		return err
 	}
@@ -95,13 +102,119 @@ func cmdMCP(args []string) error {
 				}
 				here = append(here, fmt.Sprintf("  %s (%s, %s)", t.Name, t.Agent(), state))
 			}
-			if len(here) == 0 {
-				return "No other agent session is working in " + dir + ". Safe to proceed.", nil
+			// Presence and exclusion are different answers and are reported
+			// as such. Sessions in the tree is a hint; a hold is a fact about
+			// a specific file that somebody took and can lose by expiry.
+			var lines []string
+			if len(here) > 0 {
+				lines = append(lines, fmt.Sprintf("%d other agent session(s) are in %s:", len(here), dir),
+					strings.Join(here, "\n"),
+					"That is presence, not proof they are touching the same files.")
 			}
-			return fmt.Sprintf("%d other agent session(s) are in %s:\n%s\n\n"+
-				"Coordinate before editing, or work somewhere else. This does not prove they "+
-				"are touching the same files, only that they are in the same tree.",
-				len(here), dir, strings.Join(here, "\n")), nil
+			held, err := hold.Who(ctx, dir)
+			if err == nil {
+				var others []holds.Hold
+				for _, x := range held {
+					if x.Owner != self {
+						others = append(others, x)
+					}
+				}
+				if len(others) > 0 {
+					lines = append(lines, fmt.Sprintf("\n%d path(s) here are CLAIMED right now:", len(others)))
+					for _, x := range others {
+						lines = append(lines, fmt.Sprintf("  %s held by %s%s, expires in %s",
+							x.Path, x.Owner, note(x.Note), time.Until(x.Lease).Round(time.Second)))
+					}
+					lines = append(lines, "\nDo not edit those paths. Claim what you need with claim_files "+
+						"so the next agent is told the same thing about you.")
+				}
+			}
+			if len(lines) == 0 {
+				return "No other agent session is working in " + dir + ", and no path here is claimed. " +
+					"Safe to proceed. Call claim_files on what you are about to edit.", nil
+			}
+			return strings.Join(lines, "\n"), nil
+		},
+	}, {
+		Name: "claim_files",
+		Description: "Claim the files you are about to edit, so another agent is refused them " +
+			"while you work. Call this before your first edit, with absolute paths. A claim is " +
+			"all or nothing: if any path is already held you get none of them and are told who " +
+			"holds what, so say what you found rather than editing anyway. Claims expire on " +
+			"their own, so an agent that dies does not lock a file forever. Release them when " +
+			"you are done.",
+		InputSchema: mcp.Schema(map[string]string{
+			"paths":   "absolute paths you are about to edit, comma separated",
+			"note":    "what you are doing to them, shown to whoever is refused",
+			"minutes": "how long you need them, default 30",
+		}, "paths"),
+		Handler: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			paths := splitPaths(arg(raw, "paths"))
+			if len(paths) == 0 {
+				return "", fmt.Errorf("paths is required")
+			}
+			lease := 30 * time.Minute
+			if m := arg(raw, "minutes"); m != "" {
+				if n, err := strconv.Atoi(m); err == nil && n > 0 && n <= 480 {
+					lease = time.Duration(n) * time.Minute
+				}
+			}
+			owner := callerSession()
+			if owner == "" {
+				owner = "unknown-session"
+			}
+			got, err := hold.Claim(ctx, owner, paths, lease, arg(raw, "note"))
+			if errors.Is(err, holds.ErrHeld) {
+				var b strings.Builder
+				fmt.Fprintf(&b, "REFUSED. %d path(s) are held by another session, so none of your %d were claimed:\n",
+					len(got), len(paths))
+				for _, x := range got {
+					fmt.Fprintf(&b, "  %s held by %s%s, expires in %s\n",
+						x.Path, x.Owner, note(x.Note), time.Until(x.Lease).Round(time.Second))
+				}
+				b.WriteString("\nDo not edit them anyway. Work on something else, or tell the human who holds what.")
+				return b.String(), nil
+			}
+			if err != nil {
+				return "", err
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "Claimed %d path(s) as %s for %s, fencing token %d:\n",
+				len(got), owner, lease, got[0].Token)
+			for _, x := range got {
+				fmt.Fprintf(&b, "  %s\n", x.Path)
+			}
+			b.WriteString("\nRelease them with release_files when you are done. " +
+				"They expire on their own if this session dies.")
+			return b.String(), nil
+		},
+	}, {
+		Name: "release_files",
+		Description: "Release file claims you took with claim_files, so another agent can have " +
+			"them. Call this as soon as you stop editing, rather than waiting for the claim to " +
+			"expire. Omit paths to release everything this session holds.",
+		InputSchema: mcp.Schema(map[string]string{
+			"paths": "paths to release, comma separated, or omit for all of them",
+			"token": "the fencing token claim_files gave you, required when naming paths",
+		}),
+		Handler: func(ctx context.Context, raw json.RawMessage) (string, error) {
+			owner := callerSession()
+			if owner == "" {
+				owner = "unknown-session"
+			}
+			paths := splitPaths(arg(raw, "paths"))
+			if len(paths) == 0 {
+				n, err := hold.ReleaseAll(ctx, owner)
+				if err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("Released all %d path(s) held by %s.", n, owner), nil
+			}
+			token, _ := strconv.ParseInt(arg(raw, "token"), 10, 64)
+			if err := hold.Release(ctx, owner, token, paths); err != nil {
+				return fmt.Sprintf("Nothing released: %v. If your claim expired, another session may hold these now.", err), nil
+			}
+			return fmt.Sprintf("Released %d path(s).", len(paths)), nil
 		},
 	}, {
 		Name: "automation_health",
@@ -283,4 +396,25 @@ func attentionStates(ctx context.Context, log *event.Log) map[string]string {
 		}
 	}
 	return out
+}
+
+// splitPaths accepts the comma-separated list the schema asks for, and also
+// tolerates newlines, because an agent filling in a free-text field will use
+// whichever separator its own output happened to produce.
+func splitPaths(s string) []string {
+	var out []string
+	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == '\n' }) {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// note renders a claim's reason inline, or nothing when the agent did not say.
+func note(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return ""
+	}
+	return " (" + s + ")"
 }

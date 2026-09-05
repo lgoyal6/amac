@@ -50,3 +50,19 @@ func TestPrefixIsNotTheKey(t *testing.T) {
 		t.Error("found a key that is not there")
 	}
 }
+
+// Two agents outside tmux must not both be nobody. File claims are per session,
+// so a shared empty identity would let them hold the same file by both failing
+// to identify themselves, which is the bug this replaced: the first end to end
+// run had agent A and agent B both claim the same path successfully.
+func TestCallerSessionPrefersAnExplicitName(t *testing.T) {
+	t.Setenv("AMAC_SESSION", "agent-A")
+	t.Setenv("TMUX_PANE", "")
+	if got := callerSession(); got != "agent-A" {
+		t.Errorf("callerSession() = %q, want agent-A", got)
+	}
+	t.Setenv("AMAC_SESSION", "  ")
+	if got := callerSession(); got != "" {
+		t.Errorf("blank name should not become an identity, got %q", got)
+	}
+}

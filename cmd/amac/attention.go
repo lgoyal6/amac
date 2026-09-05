@@ -185,6 +185,13 @@ func cmdAttention(args []string) error {
 
 // callerSession asks tmux which session the calling process sits in.
 func callerSession() string {
+	// An explicit name wins. File claims are per session, so an agent outside
+	// tmux still needs an identity distinct from every other agent; falling
+	// back to one shared empty name would let two agents hold the same file by
+	// both being nobody.
+	if s := strings.TrimSpace(os.Getenv("AMAC_SESSION")); s != "" {
+		return s
+	}
 	pane := os.Getenv("TMUX_PANE")
 	if pane == "" {
 		return ""
