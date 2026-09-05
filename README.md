@@ -357,6 +357,13 @@ holding. They run in CI on every push.
 | A probe that fails reports `unknown` | A false all-clear is worse than no monitor | `TestProbeErrorIsUnknown` |
 | A start banner is not a run | Several jobs write a start line in the same shape as a completion; counting both doubled one job's history | `TestOnlyCompletionMarkersAreRuns` |
 | The digest fits a phone screen | Discord's mobile column is about 40 characters, and a roster that wraps is a roster nobody reads | `TestDigestFitsAPhoneScreen` |
+| Two agents cannot hold one file | A claim is all or nothing, conflicts on directory containment both ways, and a revived holder is refused | `TestTwoSessionsCannotHoldTheSameFile`, `TestARevivedHolderCannotReleaseItsReplacement` |
+| A permission request blocks until answered | It is the path where an agent asks to do something dangerous and a human approves it | `TestPermissionRequestBlocksUntilAnswered` |
+| Auto mode takes the narrowest allow | Standing permission changes what every future turn may do without anyone deciding that | `TestAutoPolicyTakesTheNarrowestAllow` |
+| Nothing is observed without an allowlist | A missing policy denies everything, and the kill switch stops it without the daemon cooperating | `TestNoPolicyFileObservesNothing`, `TestTheKillSwitchStopsObservationImmediately` |
+| The miner never automates a decision you make | Five approvals and one denial produces nothing; the denial is the judgement the prompt exists to collect | `TestNeverSuggestAutomatingSomethingYouHaveDenied` |
+| A cost report never understates spend | Codex reports tokens and no money, so a missing cost is unpriced rather than free | `TestASessionWithoutMoneyIsUnpricedNotFree` |
+| Retention never touches the audit trail | An audit log with a retention policy is not an audit log | `TestTheAuditTrailIsNeverTouched` |
 
 ## Does this run on my machine
 
@@ -384,6 +391,48 @@ elsewhere the notification is simply sent.
 - [How it works, and why](docs/design.md), the long version: what each
   subsystem is guarding against, and the bug that put it there
 - [Contributing](CONTRIBUTING.md)
+
+## Keeping the log small
+
+An append-only log grows forever, and the rows do not all age the same way. On
+this installation, at 6,839 events and 4.9MB of payload, `attention` is 29% of
+the rows and 60% of the bytes because each carries the full text of the message
+sent, while `session.state` is 39% of the rows and 8% of the bytes.
+
+So the expensive thing is one field, not the number of decisions, and the tool
+is redaction rather than deletion. Dropping the body from an old notification
+keeps the timestamp, session, reason and outcome, which is everything the board
+reads and everything the analysis is computed from.
+
+```
+amac prune            print the plan, change nothing
+amac prune -apply     carry it out
+amac prune -apply -vacuum   and reclaim the file space
+```
+
+Permission requests and answers, actuations, session starts and ends and
+automation runs are never touched. That is the audit trail, it is tiny, and an
+audit log with a retention policy is not an audit log.
+
+On a copy of the real log with the clock moved forward, 4.9MB becomes 738KB.
+
+## Reading the log in Python
+
+`analysis/` is read-only pandas over the same rows, for questions that want a
+dataframe. It is also where the honest answer lives about whether the
+notification rule could be learned: it cannot, because the obvious outcome
+label measures which adapter reports telemetry rather than what you did. See
+[analysis/README.md](analysis/README.md).
+
+## On a phone
+
+The board is a PWA: it installs to the home screen and opens as an app, with no
+store and no account. It is designed for that first rather than shrunk to fit.
+Every view is checked at 375px, the Discord digest is laid out for a mobile
+column about 40 characters wide with tests that fail if a line runs long or a
+URL is left inline to spawn a preview card, and a pane is mirrored rather than
+parsed so a permission prompt can be answered from a phone by reading the bytes
+with your own eyes.
 
 ## Writing
 
