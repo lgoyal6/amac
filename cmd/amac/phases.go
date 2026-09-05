@@ -43,8 +43,10 @@ func cmdModels(args []string) error {
 		for _, m := range missing {
 			fmt.Printf("  %s\n", m)
 		}
-		fmt.Printf("\nOne GMI key fills every tier:\n")
-		fmt.Printf("  export GMI_API_KEY=$(security find-generic-password -w -s GMI_API_KEY -a \"$USER\")\n")
+		fmt.Printf("\nOne GMI key fills every tier. Store it once and the daemon\n")
+		fmt.Printf("finds it too, which an exported variable cannot do because\n")
+		fmt.Printf("launchd starts it with no environment:\n")
+		fmt.Printf("  security add-generic-password -a \"$USER\" -s GMI_API_KEY -w '<key>' -U\n")
 		fmt.Printf("\nOverride any single tier with any OpenAI-compatible host:\n")
 		fmt.Printf("  export AMAC_MID_BASE_URL=... AMAC_MID_API_KEY=... AMAC_MID_MODEL=...\n")
 	}

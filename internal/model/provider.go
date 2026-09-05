@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -160,12 +161,35 @@ var gmiDefaults = map[Tier]struct {
 //	ANTHROPIC_API_KEY                    -> strong tier (overrides GMI strong)
 //	AMAC_<TIER>_BASE_URL + _API_KEY      -> that tier, any OpenAI-compatible host
 //	AMAC_<TIER>_MODEL                    -> that tier's model
+//
+// keyFor reads a credential from the environment, then from the login keychain.
+//
+// The keychain half is what makes this work under launchd, which strips the
+// environment: the daemon is where routing actually happens, and a key that
+// only resolves in a shell is a key the daemon never has. `amac setup` already
+// tells you to store it there, so this reads the place it told you to put it.
+//
+// Deliberately not shared with the identical fallback in internal/discord.
+// Two callers is not yet a package, and the alternative is a utility package
+// whose whole contents is one exec.
+func keyFor(name string) string {
+	if k := os.Getenv(name); k != "" {
+		return k
+	}
+	out, err := exec.Command("security", "find-generic-password",
+		"-w", "-s", name, "-a", os.Getenv("USER")).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func FromEnv() (*Registry, []string) {
 	r := NewRegistry()
 	var missing []string
 
 	// 1. One GMI key fills every tier.
-	if k := os.Getenv("GMI_API_KEY"); k != "" {
+	if k := keyFor("GMI_API_KEY"); k != "" {
 		for tier, d := range gmiDefaults {
 			r.Set(&openAICompatible{
 				base:  GMIBaseURL,
@@ -175,12 +199,12 @@ func FromEnv() (*Registry, []string) {
 			})
 		}
 	} else {
-		missing = append(missing, "GMI_API_KEY (fills all three tiers)")
+		missing = append(missing, "GMI_API_KEY (fills all three tiers; env or login keychain)")
 	}
 
 	// 2. Anthropic, when present, takes the strong tier. Frontier judgement is
 	// the one place a closed model still earns its price.
-	if k := os.Getenv("ANTHROPIC_API_KEY"); k != "" {
+	if k := keyFor("ANTHROPIC_API_KEY"); k != "" {
 		r.Set(&anthropic{
 			key:    k,
 			model:  envOr("AMAC_STRONG_MODEL", "claude-sonnet-5"),

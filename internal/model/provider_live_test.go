@@ -255,3 +255,44 @@ func TestReasoningBesideAnAnswerIsNotAnError(t *testing.T) {
 		t.Errorf("text = %q, want the answer rather than the reasoning", res.Text)
 	}
 }
+
+// The daemon runs under launchd, which strips the environment, so a key that
+// only resolves in a shell is a key the daemon never has. That is why routing
+// on this machine reported "no model available" while the same key worked in a
+// terminal. keyFor reads the environment first and the login keychain second,
+// which is where `amac setup` already tells you to put it.
+func TestKeyForPrefersTheEnvironmentThenFallsBack(t *testing.T) {
+	t.Setenv("AMAC_TEST_CREDENTIAL", "from-env")
+	if got := keyFor("AMAC_TEST_CREDENTIAL"); got != "from-env" {
+		t.Errorf("keyFor = %q, want the environment value", got)
+	}
+	// A name in neither place is empty rather than an error, because a missing
+	// provider is a configuration state and not a failure: amac runs without
+	// one and says so.
+	if got := keyFor("AMAC_NO_SUCH_CREDENTIAL_ANYWHERE"); got != "" {
+		t.Errorf("keyFor on an unset name = %q, want empty", got)
+	}
+}
+
+// The report of what is missing has to name both places it looked, or somebody
+// who stored the key in the keychain is told to set an environment variable
+// they have deliberately not set.
+func TestMissingProvidersNameBothPlaces(t *testing.T) {
+	t.Setenv("GMI_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	_, missing := FromEnv()
+	// The primary guidance line, not the per-tier override lines, several of
+	// which also name GMI_API_KEY.
+	var gmi string
+	for _, m := range missing {
+		if strings.Contains(m, "fills all three tiers") {
+			gmi = m
+		}
+	}
+	if gmi == "" {
+		t.Skip("a GMI key is configured on this machine, so nothing is missing")
+	}
+	if !strings.Contains(gmi, "keychain") {
+		t.Errorf("%q does not mention the keychain", gmi)
+	}
+}
