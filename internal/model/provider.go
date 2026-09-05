@@ -326,13 +326,21 @@ func (o *openAICompatible) Complete(ctx context.Context, req Request) (Response,
 	start := time.Now()
 	var out struct {
 		Choices []struct {
-			Message struct {
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
 				Content string `json:"content"`
+				// Reasoning models put their working here and the answer in
+				// Content. Parsed so an empty answer can be told apart from a
+				// model that said nothing at all.
+				ReasoningContent string `json:"reasoning_content"`
 			} `json:"message"`
 		} `json:"choices"`
 		Usage struct {
 			PromptTokens     int `json:"prompt_tokens"`
 			CompletionTokens int `json:"completion_tokens"`
+			Details          struct {
+				ReasoningTokens int `json:"reasoning_tokens"`
+			} `json:"completion_tokens_details"`
 		} `json:"usage"`
 	}
 	err := postJSON(ctx, o.base+"/chat/completions",
@@ -343,8 +351,25 @@ func (o *openAICompatible) Complete(ctx context.Context, req Request) (Response,
 	if len(out.Choices) == 0 {
 		return Response{}, fmt.Errorf("%s returned no choices", o.Name())
 	}
+	choice := out.Choices[0]
+
+	// A reasoning model spends its budget thinking before it answers, so a
+	// small max_tokens buys reasoning tokens and no answer: the call is billed,
+	// content comes back empty, and finish_reason is "length". Silently
+	// returning "" makes that look like a model with nothing to say, and every
+	// caller with a tight budget then falls back forever while paying each time.
+	//
+	// Found the first time this ever ran against a live provider. GMI's cheap
+	// tier is DeepSeek-V4-Flash: at max_tokens 16 all sixteen went to reasoning
+	// and content was empty; at 64 it spent 21 reasoning and 2 answering.
+	if choice.Message.Content == "" && choice.Message.ReasoningContent != "" {
+		return Response{}, fmt.Errorf(
+			"%s spent its whole %d-token budget reasoning and never answered (finish_reason %q); raise MaxTokens",
+			o.model, orDefault(req.MaxTokens, 1024), choice.FinishReason)
+	}
+
 	return Response{
-		Text: out.Choices[0].Message.Content, Model: o.model, Tier: o.tier, Latency: time.Since(start),
+		Text: choice.Message.Content, Model: o.model, Tier: o.tier, Latency: time.Since(start),
 		Usage: Usage{
 			InputTokens: out.Usage.PromptTokens, OutputTokens: out.Usage.CompletionTokens,
 			CostUSD: cost(out.Usage.PromptTokens, out.Usage.CompletionTokens, o.rateIn, o.rateOut),

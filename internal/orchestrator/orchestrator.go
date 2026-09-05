@@ -130,7 +130,14 @@ team = touches several files or systems, or a mistake is expensive
 Task: %s
 
 Answer with one word.`, task),
-			MaxTokens: 8,
+			// Eight is what one word costs and it is not what to ask for. A
+			// reasoning model spends its budget thinking before it answers, so
+			// a budget sized to the answer buys reasoning and no answer: the
+			// call is billed, the text is empty, and triage falls back to the
+			// heuristic every time while paying for it. Measured against GMI's
+			// cheap tier, which reasons for about twenty tokens before saying
+			// one word.
+			MaxTokens: 256,
 		}
 		resp, _, err := o.router.Call(ctx, req, router.OneOfVerifier("solo", "pair", "team"))
 		if err == nil {
