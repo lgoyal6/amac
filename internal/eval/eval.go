@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"regexp"
 	"slices"
@@ -206,6 +207,37 @@ func (a ArmSummary) Quality() float64 {
 // score of zero.
 func (a ArmSummary) Measured() bool { return a.Total > 0 && a.Errored < a.Total }
 
+// Margin is the half-width of the 95% interval on Quality, in points.
+//
+// A table of bare percentages invites a conclusion the sample cannot support.
+// Seventy tasks put roughly seven points either side of every figure here, so
+// 90.0% against 87.1% is one suite, not one model beating another, and the
+// reader has no way to know that from the number alone.
+func (a ArmSummary) Margin() float64 {
+	if !a.Measured() {
+		return 0
+	}
+	p := a.Quality()
+	return 1.96 * math.Sqrt(p*(1-p)/float64(a.Total)) * 100
+}
+
+// distinguishable reports whether two arms' qualities differ by more than
+// sampling noise, by the standard two-proportion test. It is the question the
+// savings line is really asking when it prints a quality delta.
+func distinguishable(a, b ArmSummary) bool {
+	if !a.Measured() || !b.Measured() || a.Total == 0 || b.Total == 0 {
+		return false
+	}
+	n1, n2 := float64(a.Total), float64(b.Total)
+	p1, p2 := a.Quality(), b.Quality()
+	pooled := float64(a.Passed+b.Passed) / (n1 + n2)
+	se := math.Sqrt(pooled * (1 - pooled) * (1/n1 + 1/n2))
+	if se == 0 {
+		return false
+	}
+	return math.Abs((p1-p2)/se) > 1.96
+}
+
 type Report struct {
 	Arms    []ArmSummary
 	Results []Result
@@ -222,8 +254,8 @@ type Report struct {
 // "is cheap cheaper" but "what did choosing cheap cost me".
 func (r Report) Table() string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%-14s %8s %10s %12s %10s %7s\n",
-		"ARM", "QUALITY", "COST", "COST/TASK", "P50 LAT", "ERRORS")
+	fmt.Fprintf(&sb, "%-14s %14s %10s %12s %10s %7s\n",
+		"ARM", "QUALITY 95%", "COST", "COST/TASK", "P50 LAT", "ERRORS")
 	var baseline *ArmSummary
 	for i := range r.Arms {
 		if r.Arms[i].Arm == "strong" {
@@ -235,15 +267,15 @@ func (r Report) Table() string {
 		if a.Total > 0 {
 			per = a.CostUSD / float64(a.Total)
 		}
-		quality := fmt.Sprintf("%6.1f%%", a.Quality()*100)
+		quality := fmt.Sprintf("%.1f%% +/-%.1f", a.Quality()*100, a.Margin())
 		if !a.Measured() {
-			quality = "      -"
+			quality = "-"
 		}
 		errs := ""
 		if a.Errored > 0 {
 			errs = fmt.Sprintf("%d", a.Errored)
 		}
-		fmt.Fprintf(&sb, "%-14s %8s %10s %12s %10s %7s\n",
+		fmt.Fprintf(&sb, "%-14s %14s %10s %12s %10s %7s\n",
 			a.Arm, quality, money(a.CostUSD), money(per), a.Latency.Round(time.Millisecond), errs)
 	}
 	// An arm that failed to answer is a configuration report, not a result.
@@ -277,6 +309,13 @@ func (r Report) Table() string {
 			saving := (1 - a.CostUSD/baseline.CostUSD) * 100
 			quality := (a.Quality() - baseline.Quality()) * 100
 			fmt.Fprintf(&sb, "  %-12s %+.0f%% cost, %+.1f pts quality", a.Arm, -saving, quality)
+			// The cost difference is arithmetic; the quality difference is a
+			// sample. Printing them side by side as though both were measured
+			// to the same precision is how a suite this size gets quoted as
+			// though it had ranked the models.
+			if !distinguishable(a, *baseline) {
+				sb.WriteString(" (within noise)")
+			}
 			if a.Escalated > 0 {
 				fmt.Fprintf(&sb, " (%d escalated)", a.Escalated)
 			}

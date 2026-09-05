@@ -330,9 +330,9 @@ amac log -n 20                 recent events
 ships it. What is left is what Remote Control does not reach.
 
 1. ~~**Daemon**: supervise sessions, API, board on the tailnet~~, shipped
-2. **Gateway and router**: the cascade is in, the harness measures it without
-   showing it the answer key, and it now runs against a live provider rather
-   than stubs. What is left is the curve across a real task set
+2. ~~**Gateway and router**: the cascade is in, the harness measures it without
+   showing it the answer key, it runs against a live provider, and the curve
+   across a real task set is below~~, measured
 3. **Orchestrator**: grade the prompt, convene as many agents as it warrants,
    with a per-task token budget
 4. ~~**Sensors**: browser extension and email parsing for an application
@@ -340,6 +340,74 @@ ships it. What is left is what Remote Control does not reach.
 5. **Observer**: what I am working on, metadata first, pixels only for
    allowlisted apps
 6. **Miner**: patterns in the log become suggested automations
+
+## The curve
+
+Seventy tasks drawn from the work amac actually routes: the orchestrator's own
+sizing prompt, extraction from real `git`, `tmux`, `launchd`, `ps` and ACP
+output, the transcript-tail classification the attention subsystem makes today
+by pattern match, and the recall and reasoning the top tier is supposed to earn
+its price on. Forty-six of the seventy can be gated the way production gates
+them. Run against GMI on 2026-09-05, `amac eval`:
+
+```
+ARM               QUALITY 95%       COST    COST/TASK    P50 LAT  ERRORS
+cheap            88.6% +/-7.5   $0.00331     $0.00005      2.75s       1
+mid              87.1% +/-7.8   $0.00237     $0.00003      1.32s        
+strong           90.0% +/-7.0    $0.0296     $0.00042     3.753s        
+routed           90.0% +/-7.0   $0.00864     $0.00012     2.765s        
+
+cheap: 1 of 70 calls returned no answer
+  deepseek-ai/DeepSeek-V4-Flash spent its whole 2048-token budget reasoning and never answered (finish_reason "length"); raise MaxTokens
+
+versus the strong-model baseline:
+  cheap        -89% cost, -1.4 pts quality (within noise)
+  mid          -92% cost, -2.9 pts quality (within noise)
+  routed       -71% cost, +0.0 pts quality (within noise)
+
+routed gating: 46 of 70 tasks gated as production would; 24 carry their
+answer in the check and fell back to non-empty output.
+```
+
+**Routing reached the strong model's quality for 71% less.** That is the number
+the cascade was built for, and it is the least interesting thing here.
+
+**No quality difference between any two arms survives the sample.** Every
+pairwise z is under 0.6, every interval is about seven points wide, and the
+whole spread from best arm to worst is 2.9 points. The quality column ranks
+nothing. Separating arms three points apart would need something like two
+thousand tasks, which is why the table prints its interval and marks every
+delta rather than letting four tidy percentages imply an ordering.
+
+The cost column is not a sample. It spans **12.5x**, and the strong tier buys
+nothing this suite can measure for it.
+
+Two things fall out that were not the question:
+
+- **The cheap tier is not the cheapest.** DeepSeek-V4-Flash reasons before
+  answering, so it spent more than the mid tier while scoring within a point of
+  it, and once burned its entire 2048-token budget thinking and never answered.
+  A tier named for its rate card is not a tier ordered by cost.
+- **On triage, the one call amac makes on its own behalf, the cheap tier scored
+  20/20 and the strong tier 19/20.** The orchestrator already sends triage to
+  the cheap tier. That was a judgement call when it was written; it is now a
+  measurement.
+
+Where the arms actually differ is by family, and it is not where the tiers are
+priced:
+
+| family | n | cheap | mid | strong | routed |
+| --- | --- | --- | --- | --- | --- |
+| extract | 16 | 94% | 100% | 100% | 100% |
+| triage | 20 | 100% | 90% | 95% | 95% |
+| state | 10 | 100% | 100% | 90% | 90% |
+| recall | 12 | 92% | 83% | 92% | 100% |
+| reason | 12 | 50% | 58% | 67% | 58% |
+
+Reasoning is where every arm is weak and where the gate is weakest: those
+twelve carry their answer in the check, so the cascade falls back to "did it
+answer at all" and the graded number is the honest one while the routed number
+is not load-bearing there.
 
 ## What is guaranteed, and what proves it
 
@@ -365,6 +433,10 @@ holding. They run in CI on every push.
 | The miner never automates a decision you make | Five approvals and one denial produces nothing; the denial is the judgement the prompt exists to collect | `TestNeverSuggestAutomatingSomethingYouHaveDenied` |
 | A cost report never understates spend | Codex reports tokens and no money, so a missing cost is unpriced rather than free | `TestASessionWithoutMoneyIsUnpricedNotFree` |
 | Retention never touches the audit trail | An audit log with a retention policy is not an audit log | `TestTheAuditTrailIsNeverTouched` |
+| The cascade never sees the answer key | A gate built from the correct answer makes the router escalate until it guesses right, and the routed arm records a quality production cannot reach | `TestGateNeverCarriesTheAnswerKey`, `TestASingleLabelGateWouldMakeTheCascadeOmniscient` |
+| An arm that never answered has no score | The strong tier's model id 404'd for its whole life and was reported as 0% quality at $0, which reads as a bad model rather than an absent one | `TestAnArmThatNeverAnsweredHasNoQualityScore`, `TestNoSavingsAreQuotedAgainstABrokenBaseline` |
+| Every default model is one the vendor serves | A model id is a string agreed with somebody else, and ids are case-sensitive | `TestEveryDefaultModelIsServed` |
+| The curve never claims more than its sample | Four tidy percentages imply an ordering that 70 tasks cannot support | `TestTheMeasuredCurveIsReportedAsIndistinguishable`, `TestARealQualityGapIsNotDismissedAsNoise` |
 
 ## Does this run on my machine
 
