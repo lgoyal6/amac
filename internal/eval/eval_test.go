@@ -289,6 +289,76 @@ func TestTableOmitsTheGateNoteWhenEveryGateIsReal(t *testing.T) {
 	}
 }
 
+// A model that could not be reached is not a model that answered badly, and a
+// table that cannot tell them apart is how the strong tier spent its whole
+// existence 404ing without anyone noticing. It scored 0% at $0 in 81ms, which
+// is indistinguishable from a fast, free, useless model.
+func TestAnArmThatNeverAnsweredHasNoQualityScore(t *testing.T) {
+	rep := Report{Arms: []ArmSummary{
+		{Arm: "cheap", Passed: 7, Total: 8, CostUSD: 0.0004},
+		{Arm: "strong", Passed: 0, Total: 8, Errored: 8,
+			ErrDetail: "404 Not Found: No matching target server found for model MoonshotAI/Kimi-K3"},
+	}}
+	out := rep.Table()
+
+	if strings.Contains(out, "0.0%") {
+		t.Errorf("an arm that never answered was scored as 0%% quality:\n%s", out)
+	}
+	for _, want := range []string{
+		"strong: 8 of 8 calls returned no answer",
+		"so it has no quality score",
+		"No matching target server", // the actionable half
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// The savings line is quoted against strong. A strong arm that never ran spent
+// nothing, so every other arm would show as a 100% saving against it: the
+// worse the baseline is broken, the better the router looks.
+func TestNoSavingsAreQuotedAgainstABrokenBaseline(t *testing.T) {
+	rep := Report{Arms: []ArmSummary{
+		{Arm: "cheap", Passed: 7, Total: 8, CostUSD: 0.0004},
+		{Arm: "strong", Passed: 0, Total: 8, Errored: 8, ErrDetail: "404"},
+		{Arm: "routed", Passed: 6, Total: 8, CostUSD: 0.0002, Escalated: 2},
+	}}
+	out := rep.Table()
+
+	if strings.Contains(out, "% cost,") {
+		t.Errorf("savings were quoted against a baseline that never answered:\n%s", out)
+	}
+	if !strings.Contains(out, "the strong baseline never answered") {
+		t.Errorf("table did not say why the comparison is absent:\n%s", out)
+	}
+}
+
+// Some errors are normal. An arm that mostly answered still has a quality
+// worth reading, and the failures are disclosed beside it rather than hidden
+// or allowed to suppress the score.
+func TestPartialErrorsAreDisclosedButStillScored(t *testing.T) {
+	rep := Report{Arms: []ArmSummary{
+		{Arm: "strong", Passed: 8, Total: 10, CostUSD: 0.01},
+		{Arm: "cheap", Passed: 5, Total: 10, Errored: 2, ErrDetail: "429 rate limited", CostUSD: 0.001},
+	}}
+	out := rep.Table()
+
+	if !strings.Contains(out, "50.0%") {
+		t.Errorf("an arm that mostly answered lost its score:\n%s", out)
+	}
+	if !strings.Contains(out, "cheap: 2 of 10 calls returned no answer") {
+		t.Errorf("partial failures were not disclosed:\n%s", out)
+	}
+	if strings.Contains(out, "no quality score") {
+		t.Errorf("an arm with a score was said to have none:\n%s", out)
+	}
+	// It is still comparable, because it answered.
+	if !strings.Contains(out, "-90% cost") {
+		t.Errorf("a partially failing arm was dropped from the comparison:\n%s", out)
+	}
+}
+
 // ---------------------------------------------------------------- checks ----
 
 func TestVerifyPerCheckKind(t *testing.T) {
