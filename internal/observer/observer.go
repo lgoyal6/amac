@@ -99,10 +99,20 @@ func New(log *event.Log, p Policy) *Observer {
 	return &Observer{log: log, policy: p}
 }
 
-// frontmost asks System Events for the active app. This needs no
+// frontmost and windowTitle are variables rather than plain functions so the
+// loop above them can be tested. Everything interesting here is a privacy
+// decision, and a privacy decision that cannot be exercised without a Mac in
+// front of it is one nobody checks: the kill switch and the deny path had never
+// been executed by a test before this seam existed. Production assigns them
+// once, below, and never rebinds them.
+var frontmost = frontmostViaSystemEvents
+
+var windowTitle = windowTitleViaSystemEvents
+
+// frontmostViaSystemEvents asks System Events for the active app. This needs no
 // screen-recording permission; on a locked-down Mac it needs Automation
 // permission for the calling process, which macOS prompts for once.
-func frontmost() (app, title string, err error) {
+func frontmostViaSystemEvents() (app, title string, err error) {
 	out, err := exec.Command("osascript", "-e",
 		`tell application "System Events" to name of first application process whose frontmost is true`).Output()
 	if err != nil {
@@ -115,7 +125,7 @@ func frontmost() (app, title string, err error) {
 	return app, "", nil
 }
 
-func windowTitle(app string) string {
+func windowTitleViaSystemEvents(app string) string {
 	out, err := exec.Command("osascript", "-e", fmt.Sprintf(
 		`tell application "System Events" to tell process %q to get name of front window`, app)).Output()
 	if err != nil {
