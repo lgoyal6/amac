@@ -115,6 +115,7 @@ func cmdEval(args []string) error {
 	tasksPath := fs.String("tasks", "evals/tasks.json", "task set")
 	dbPath := fs.String("db", defaultLogPath(), "event log path")
 	out := fs.String("out", "", "write full results as JSON here")
+	maxTokens := fs.Int("max-tokens", eval.DefaultMaxTokens, "token budget per call, the same for every arm")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -134,7 +135,7 @@ func cmdEval(args []string) error {
 		return fmt.Errorf("no providers configured, nothing to compare. Missing: %s", strings.Join(missing, ", "))
 	}
 
-	runner := &eval.Runner{Reg: reg, Router: router.New(reg, log)}
+	runner := &eval.Runner{Reg: reg, Router: router.New(reg, log), MaxTokens: *maxTokens}
 	fmt.Printf("running %d tasks across %d arms...\n\n", len(tasks), len(reg.Tiers())+1)
 
 	rep, err := runner.Run(context.Background(), tasks)
