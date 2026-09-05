@@ -71,13 +71,21 @@ func (s *Server) openOnMac(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) openSessionOnMac(w http.ResponseWriter, r *http.Request, id string) {
-	if runtime.GOOS != "darwin" {
-		writeJSON(w, 409, map[string]string{"error": "opening a terminal is only supported on macOS"})
-		return
-	}
+	// Whether the session exists is asked first, and deliberately.
+	//
+	// The platform guard used to come before it, so on Linux a request naming
+	// a session that does not exist was answered "only supported on macOS".
+	// That is a true sentence and the wrong answer: it sends someone to check
+	// their operating system over a request that was invalid on any of them,
+	// and it makes the reply depend on which machine happened to receive it.
+	// Found by running the suite on Linux for the first time.
 	name, err := s.attachableSession(r.Context(), id)
 	if err != nil {
 		writeJSON(w, 404, map[string]string{"error": err.Error()})
+		return
+	}
+	if runtime.GOOS != "darwin" {
+		writeJSON(w, 409, map[string]string{"error": "opening a terminal is only supported on macOS"})
 		return
 	}
 	before := attachedClients(name)

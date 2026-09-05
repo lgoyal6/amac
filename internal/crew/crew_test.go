@@ -59,8 +59,15 @@ func TestOpenSeedsTheSession(t *testing.T) {
 	_ = exec.Command("tmux", "kill-session", "-t", "="+name).Run()
 	t.Cleanup(func() { _ = exec.Command("tmux", "kill-session", "-t", "="+name).Run() })
 
+	// printf, not cat. The command Open builds is `<agent> "$(cat brief)"`, so
+	// the agent receives the brief as one argument; cat then tries to open that
+	// argument as a filename and fails. This test passed on macOS anyway,
+	// because it was matching the brief inside the shell's own error message,
+	// and it failed the first time it ran on Linux, where bash renders an
+	// apostrophe in that message as Don'\''t. printf echoes the argument, which
+	// is what the assertion below always meant to be reading.
 	s := Session{
-		Name: name, Role: "planner", Agent: "cat", Dir: dir,
+		Name: name, Role: "planner", Agent: "printf '%s'", Dir: dir,
 		Output: filepath.Join(dir, "planner.md"),
 	}
 	// Quotes, newlines and an apostrophe: everything that breaks a naive
@@ -76,8 +83,8 @@ func TestOpenSeedsTheSession(t *testing.T) {
 		t.Fatal("opening an existing session must fail rather than clobber it")
 	}
 
-	// `cat <brief>` echoes the brief into the pane, so the pane proves the
-	// brief arrived intact rather than mangled by quoting.
+	// The fake agent echoes its argument, so the pane proves the brief arrived
+	// intact rather than mangled by quoting on the way through send-keys.
 	var pane string
 	for i := 0; i < 40; i++ {
 		out, err := exec.Command("tmux", "capture-pane", "-p", "-t", "="+name+":").Output()
