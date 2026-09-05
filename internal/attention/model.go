@@ -45,10 +45,6 @@ var (
 	model     *Recommender
 )
 
-// onceReset exists so a test can load a different artifact. Production loads
-// once per process and never calls this.
-func onceReset() sync.Once { return sync.Once{} }
-
 // ModelPath is where the trainer writes, and is a variable so a test can point
 // it somewhere else without reaching into the environment of a live machine.
 var ModelPath = func() string {
