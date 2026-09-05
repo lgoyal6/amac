@@ -58,13 +58,18 @@ func (d *dist) quantile(q float64) time.Duration {
 	return d.samples[i]
 }
 
+// report prints the shape. Deliberately no p99.9: four hundred samples cannot
+// resolve it. Nearest-rank puts q=0.999 at index 398 of 0..399, which is the
+// second largest sample rather than a percentile, and printing it under a
+// percentile's name is what invited an assertion on a single observation. The
+// largest sample is still here, honestly labelled as the largest sample.
 func (d *dist) report(t *testing.T) {
 	t.Helper()
 	sort.Slice(d.samples, func(i, j int) bool { return d.samples[i] < d.samples[j] })
-	fmt.Printf("  %-28s n=%-6d p50=%-9v p90=%-9v p99=%-9v p999=%-9v max=%v\n",
+	fmt.Printf("  %-28s n=%-6d p50=%-9v p90=%-9v p99=%-9v max=%v\n",
 		d.name, len(d.samples), d.quantile(0.50).Round(time.Microsecond),
 		d.quantile(0.90).Round(time.Microsecond), d.quantile(0.99).Round(time.Microsecond),
-		d.quantile(0.999).Round(time.Microsecond), d.samples[len(d.samples)-1].Round(time.Microsecond))
+		d.samples[len(d.samples)-1].Round(time.Microsecond))
 }
 
 func benchQueue(t *testing.T) (*Queue, func()) {
@@ -137,17 +142,53 @@ func TestClaimLatencyDistribution(t *testing.T) {
 	}
 
 	// The property, rather than the numbers: contention must not collapse the
-	// claim path. A p99 that is orders of magnitude past p50 means workers are
+	// claim path. A tail orders of magnitude past p50 means workers are
 	// starving on the transaction rather than queueing for it, and that is a
 	// regression worth failing a build over even though the absolute figures
 	// are machine-specific.
-	if len(solo.samples) > 0 {
-		sort.Slice(solo.samples, func(i, j int) bool { return solo.samples[i] < solo.samples[j] })
-		p50, p999 := solo.quantile(0.50), solo.quantile(0.999)
-		if p50 > 0 && p999 > 500*p50 {
-			t.Errorf("uncontended tail is %v against a p50 of %v; the claim path is not stable", p999, p50)
-		}
+	//
+	// Read at p99, not at q=0.999, which is the whole reason this used to fail
+	// on a shared runner. Nearest-rank over 400 samples puts q=0.999 at index
+	// 398: the second largest observation, not a percentile. Two descheduled
+	// goroutines were therefore enough to fail a build, and two strays in four
+	// hundred samples is an ordinary morning on a shared runner. GitHub's
+	// ubuntu runner produced exactly that, 211ms at index 398 with a 248ms max
+	// above it, against a p50 of 250us; the same commit passed on a re-run.
+	//
+	// p99 leaves four samples above it, so a handful of strays cannot move it,
+	// while a genuine collapse must make at least one claim in a hundred slow
+	// and still fails. That is the property this was always trying to state.
+	//
+	// The threshold is unchanged at 500x on purpose. It is a collapse detector
+	// and not a tuning knob: measured over twenty local runs the uncontended
+	// ratio sits between 1.4x and 3.9x, and the CI run that failed on the old
+	// statistic had a p99 ratio of 5.7x. Anything approaching 500x is a broken
+	// claim path, not a busy machine.
+	if p50, p99, ok := tailIsProportionate(solo.samples, maxTailRatio); !ok {
+		t.Errorf("uncontended p99 is %v against a p50 of %v; the claim path is not stable", p99, p50)
 	}
+}
+
+// maxTailRatio is how far past the median the 99th percentile may sit before
+// the claim path is called broken.
+const maxTailRatio = 500
+
+// tailIsProportionate is the assertion above, as a function, so that what it
+// does with a stray sample and what it does with a fat tail are both things a
+// test can state rather than things a reader has to believe. An empty
+// distribution is proportionate: there is nothing to be disproportionate about,
+// and a failing claim loop already fails elsewhere.
+func tailIsProportionate(samples []time.Duration, ratio float64) (p50, p99 time.Duration, ok bool) {
+	if len(samples) == 0 {
+		return 0, 0, true
+	}
+	d := &dist{samples: append([]time.Duration(nil), samples...)}
+	sort.Slice(d.samples, func(i, j int) bool { return d.samples[i] < d.samples[j] })
+	p50, p99 = d.quantile(0.50), d.quantile(0.99)
+	if p50 <= 0 {
+		return p50, p99, true
+	}
+	return p50, p99, float64(p99) <= ratio*float64(p50)
 }
 
 // TestAppendLatencyDistribution does the same for the log, whose durability
@@ -191,4 +232,84 @@ func TestAppendLatencyDistribution(t *testing.T) {
 	// The distributions are printed so a reader can see that spread rather than
 	// be handed a point estimate that a second run would contradict.
 	fmt.Println("  (no pass/fail on the gap: it does not reproduce across runs, by measurement)")
+}
+
+// The two cases the statistic has to tell apart, which is the only reason to
+// have changed it.
+//
+// A shared CI runner deschedules a goroutine now and then and produces a couple
+// of enormous samples. That is the machine, not the queue, and it used to fail
+// the build because the check read q=0.999, which over 400 samples is index
+// 398: the second largest observation rather than a percentile. Two strays
+// were enough, which is what the failing run showed, 211ms at that index with
+// a 248ms max above it.
+//
+// A claim path that has actually collapsed makes many claims slow, not one. p99
+// leaves four samples above it out of 400, so strays cannot reach it and a
+// sustained tail cannot avoid it.
+func TestTheStabilityCheckIgnoresStraysAndCatchesAFatTail(t *testing.T) {
+	const n = 400
+	base := func() []time.Duration {
+		out := make([]time.Duration, 0, n)
+		for i := range n {
+			// A tight middle, as the uncontended path really looks: p50 near
+			// 200us with a little spread.
+			out = append(out, time.Duration(180+i%40)*time.Microsecond)
+		}
+		return out
+	}
+
+	// The failing run, reconstructed: two samples past 200ms out of 400.
+	strays := func() []time.Duration {
+		s := base()
+		s[0], s[1] = 211*time.Millisecond, 248*time.Millisecond
+		return s
+	}
+
+	t.Run("the runner's strays are the runner, not the queue", func(t *testing.T) {
+		if _, p99, ok := tailIsProportionate(strays(), maxTailRatio); !ok {
+			t.Errorf("two stray samples failed the check (p99 %v); this is the flake", p99)
+		}
+	})
+
+	t.Run("four strays still cannot reach p99", func(t *testing.T) {
+		s := base()
+		for i := range 4 {
+			s[i] = 211 * time.Millisecond
+		}
+		if _, p99, ok := tailIsProportionate(s, maxTailRatio); !ok {
+			t.Errorf("four strays out of 400 failed the check (p99 %v)", p99)
+		}
+	})
+
+	t.Run("one claim in twenty being slow is a collapse and must fail", func(t *testing.T) {
+		s := base()
+		for i := range n / 20 {
+			s[i] = 211 * time.Millisecond
+		}
+		if p50, p99, ok := tailIsProportionate(s, maxTailRatio); ok {
+			t.Errorf("a fat tail passed: p99 %v against p50 %v", p99, p50)
+		}
+	})
+
+	// The old statistic on the same samples, kept because it is the reason for
+	// the change. Read at q=0.999 the second stray IS the assertion, so the
+	// flake was not bad luck: it was what the check was measuring. If this ever
+	// stops holding, the reasoning above is wrong and should be rewritten
+	// rather than quietly kept.
+	t.Run("the old statistic fails on the same samples, which is why it moved", func(t *testing.T) {
+		sorted := strays()
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i] < sorted[j] })
+		d := &dist{samples: sorted}
+		p50, p999 := d.quantile(0.50), d.quantile(0.999)
+		if float64(p999) <= maxTailRatio*float64(p50) {
+			t.Fatalf("q=0.999 gave %v against p50 %v and would have passed; "+
+				"the stated reason for moving to p99 does not hold", p999, p50)
+		}
+	})
+
+	// And an empty distribution is not a failure.
+	if _, _, ok := tailIsProportionate(nil, maxTailRatio); !ok {
+		t.Error("an empty distribution was called unstable")
+	}
 }
