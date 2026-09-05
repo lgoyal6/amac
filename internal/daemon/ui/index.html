@@ -598,6 +598,17 @@
   .service-main b { display:block; font:600 12.5px/1.4 var(--mono); }
   .service-main span { color:var(--dim); font-size:11.5px; }
   .service-cost { flex:none; text-align:right; font:600 12px/1.4 var(--mono); }
+  .findbar { flex:none; display:flex; gap:var(--s2); align-items:center; }
+  .findbar input { width:150px; max-width:30vw; background:var(--raise); color:var(--fg);
+                   border:1px solid var(--line); border-radius:6px; padding:4px 8px;
+                   font:400 12px/1.5 var(--mono); }
+  .findbar input:focus { outline:none; border-color:var(--faint); }
+  .hit { display:block; padding:var(--s3) 0; border-bottom:1px solid var(--line); }
+  .hit:last-child { border-bottom:0; }
+  .hit-meta { display:flex; gap:var(--s2); align-items:baseline; flex-wrap:wrap;
+              color:var(--dim); font:400 11px/1.5 var(--mono); }
+  .hit-meta b { color:var(--fg); font-weight:600; }
+  .hit-text { margin-top:2px; font:400 12.5px/1.55 var(--mono); word-break:break-word; }
 </style>
 </head>
 <body>
@@ -607,6 +618,9 @@
     <span class="summary" id="summary"></span>
     <div class="conn"><span class="dot" id="dot"></span><span id="connText">connecting</span></div>
     <button class="sm mobile-new" id="mobileNew" aria-expanded="false" hidden>new</button>
+    <form class="findbar" id="findForm" role="search"><input id="findQ" type="search"
+      placeholder="search the log" aria-label="Search the log" autocomplete="off" spellcheck="false"
+      ><button class="sm" type="submit" aria-label="Search">go</button></form>
     <button class="themebtn" type="button" data-theme-toggle aria-label="Change colour theme">auto</button>
   </div>
   <nav>
@@ -629,6 +643,14 @@
       <div class="grow"><h2>everything else</h2><p>One tile per tab. Tap any of them to open it.</p></div>
     </div>
     <div id="homeTiles" class="tiles"><div class="empty">loading</div></div>
+  </section>
+
+  <section id="search" hidden>
+    <div class="section-head">
+      <div class="grow"><h2>search</h2><p id="findWhat">Everything amac has recorded, by what was said.</p></div>
+      <button class="sm" id="findClear">clear</button>
+    </div>
+    <div id="findOut" class="action-list"><div class="empty">type a word or two</div></div>
   </section>
 
   <section id="agents" hidden>
@@ -892,6 +914,7 @@ async function refresh() {
   ].filter(Boolean).join(' · ');
   if (tab === 'agents' && agentView === 'board') render();
   if (tab === 'home') loadHome();
+  if (tab === 'search') loadSearch();
 }
 
 function push(id, line) {
@@ -2390,12 +2413,51 @@ $('syncJobs').onclick = async () => {
   setTimeout(() => { btn.textContent = 'sync Notion'; }, 1500);
 };
 
+// ----------------------------------------------------------------- search --
+
+// The log holds thousands of events of natural language, and until there was a
+// box for it the only way to find one was to scroll until it went past.
+let findQuery = '';
+
+async function loadSearch() {
+  const q = findQuery.trim();
+  const out = $('findOut');
+  if (!q) { out.innerHTML = '<div class="empty">type a word or two</div>'; $('findWhat').textContent = 'Everything amac has recorded, by what was said.'; return; }
+  out.innerHTML = '<div class="empty">searching</div>';
+  const r = await api('/api/search?q=' + encodeURIComponent(q) + '&limit=50');
+  if (!r) { out.innerHTML = '<div class="empty">no response</div>'; return; }
+  const body = await r.json().catch(() => ({}));
+  // A query the engine cannot parse and a query with no matches are different
+  // news, and a box that says "nothing found" for both has told you neither.
+  if (!r.ok) {
+    out.innerHTML = '<div class="empty">' + esc(body.error || ('search failed (' + r.status + ')')) + '</div>';
+    $('findWhat').textContent = 'That query could not be read.';
+    return;
+  }
+  const hits = body.hits || [];
+  $('findWhat').textContent = hits.length
+    ? hits.length + ' event' + (hits.length === 1 ? '' : 's') + ' mentioning ' + q
+    : 'Nothing recorded mentions ' + q + '.';
+  if (!hits.length) { out.innerHTML = '<div class="empty">no matches</div>'; return; }
+  out.innerHTML = hits.map(h => '<div class="hit"><div class="hit-meta"><b>' + esc(h.kind) + '</b>'
+    + (h.session ? '<span>' + esc(h.session) + '</span>' : '')
+    + '<span>' + esc(ago(h.at)) + '</span><span>#' + h.seq + '</span></div>'
+    + '<div class="hit-text">' + esc(h.snippet) + '</div></div>').join('');
+}
+
+$('findForm').onsubmit = (e) => {
+  e.preventDefault();
+  findQuery = $('findQ').value;
+  openTopTab('search');
+};
+$('findClear').onclick = () => { $('findQ').value = ''; findQuery = ''; openTopTab('home'); };
+
 // ------------------------------------------------------------------- tabs --
 
 function openTopTab(next) {
   tab = next;
   document.querySelectorAll('header nav button').forEach(x => x.classList.toggle('on', x.dataset.tab === tab));
-  for (const id of ['home', 'agents', 'automations', 'money', 'jobs']) $(id).hidden = id !== tab;
+  for (const id of ['home', 'search', 'agents', 'automations', 'money', 'jobs']) $(id).hidden = id !== tab;
   document.body.classList.remove('compose-open');
   $('mobileNew').textContent = 'new';
   $('mobileNew').setAttribute('aria-expanded', 'false');
@@ -2403,6 +2465,7 @@ function openTopTab(next) {
   $('startBar').hidden = !showComposer;
   $('mobileNew').hidden = !showComposer;
   if (tab === 'home') loadHome();
+  if (tab === 'search') loadSearch();
   if (tab === 'agents') setAgentView(agentView);
   if (tab === 'automations') setHealthView(healthView);
   if (tab === 'money') loadSpend();

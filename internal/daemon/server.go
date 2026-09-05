@@ -93,6 +93,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/sessions/{id}/open-on-mac", s.auth(s.openOnMac))
 	mux.HandleFunc("GET /api/machine", s.auth(s.machine))
 	mux.HandleFunc("GET /api/summary", s.auth(s.summary))
+	mux.HandleFunc("GET /api/search", s.auth(s.search))
 	mux.HandleFunc("GET /handoff", s.handoffPage)
 	mux.HandleFunc("POST /handoff", s.signedHandoff)
 	mux.HandleFunc("GET /api/sessions/{id}/files", s.auth(s.files))
