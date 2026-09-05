@@ -45,3 +45,34 @@ jobs:
           if [ -n "$found" ]; then
             echo "unreachable:"; echo "$found"; exit 1
           fi
+
+      - name: analysis tests
+        # The Python layer reads the same log the board does, and its tests use
+        # synthetic databases so they run anywhere. One of them exists because
+        # pandas 3 changed what astype("int64") means on a tz-aware column.
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install -q -r analysis/requirements.txt
+          cd analysis && /tmp/venv/bin/python -m pytest -q
+
+  # The README carries a support matrix claiming Linux runs most of amac, and
+  # internal/health/systemd.go exists to serve it. Nothing tested that, which
+  # for a project whose whole argument is that asserting is not proving was a
+  # contradiction. This is the cheapest possible way to keep the matrix honest.
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+      - name: install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: build
+        run: go build ./...
+      - name: test
+        # No -race here: this job exists to keep the portability claim honest,
+        # and the race detector's findings would be the same ones macOS already
+        # reports on the same code.
+        run: go test -timeout 15m ./...

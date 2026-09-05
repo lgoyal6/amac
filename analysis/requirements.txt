@@ -1,0 +1,8 @@
+# Pinned to majors, because an analysis that silently changes answer when a
+# dependency moves is not reproducible. pandas 3 in particular changed what
+# astype("int64") means on a tz-aware column, which is how the window in
+# notifications.py came to be a thousand times too wide.
+pandas>=3.0,<4
+numpy>=2.0,<3
+scikit-learn>=1.7,<2
+pytest>=8.0,<9
