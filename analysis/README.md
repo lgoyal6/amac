@@ -60,3 +60,45 @@ One of those tests earned its place immediately: it caught that
 `astype("int64")` on a tz-aware column yields microseconds in pandas 3 while
 `Timedelta.value` is nanoseconds, which had made the window a thousand times too
 wide and every notification look engaged.
+
+## The recommender
+
+`recommender.py` trains the notification ranker, and refuses to ship one it
+cannot show beats the rules that already ship.
+
+```
+.venv/bin/python recommender.py            # report only
+.venv/bin/python recommender.py --write    # export if the gate passes
+```
+
+The baseline is not "send everything". It is amac's shipped rule set: always
+send a session blocked on a person, suppress a finished turn that took under
+ten minutes. That already removes about nine tenths of the volume, so a model
+has to beat a genuinely good rule rather than a strawman.
+
+Three things it will not do:
+
+- **Train on the old engagement label.** "The session changed state soon after"
+  correlates 0.64 with how chatty an adapter is, so a model fitted to it learns
+  which CLI reports telemetry. `notifications.py` proves this.
+- **Train on a description of behaviour.** Being told which notifications matter
+  sets the window and decides which acts count as answers. It is not a label.
+- **Export a model it cannot show beats the baseline** on data it never saw,
+  split by time rather than at random, at the same volume. A model that keeps
+  more by sending more has not improved on the rules, it has turned the same
+  dial the other way.
+
+Serving is in Go (`internal/attention/model.go`), so the daemon stays one
+binary that launchd starts and nothing about deciding whether to send a
+notification depends on a virtualenv being intact. The artifact between them is
+a few logistic-regression weights, small enough to read: you can open the file
+and see what the model believes. The model can only ever suppress, because it
+runs after the rules have said send.
+
+`internal/attention/testdata/recommender.json` is a real exported artifact and
+is the contract between the two sides. Both check it. Regenerate it if
+`FEATURES` changes, or the Go side will score notifications against
+coefficients that no longer line up with the names.
+
+On the log as it stands, the gate refuses: 3 labelled notifications out of
+1,249.
