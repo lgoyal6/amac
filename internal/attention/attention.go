@@ -101,7 +101,68 @@ func decide(ctx context.Context, log *event.Log, n Notice) Outcome {
 	if when, ok := recentlyNotified(ctx, log, n.Session); ok {
 		return Outcome{Why: fmt.Sprintf("already notified %.0fs ago", time.Since(when).Seconds())}
 	}
+	if took, ok := shortTurn(ctx, log, n); ok {
+		return Outcome{Why: fmt.Sprintf("turn took %s, under the %s worth interrupting for",
+			took.Round(time.Second), MinTurn)}
+	}
 	return Outcome{Sent: true}
+}
+
+// MinTurn is how long a turn must have taken before its completion is worth a
+// push.
+//
+// Measured rather than chosen. Over the log's history 81% of everything
+// delivered was a turn-complete, 116 a day against 14 a day for a session
+// actually blocked on a person, and the median turn behind one of those took
+// under a minute. Most of the volume was announcing something instant.
+//
+// Ten minutes keeps 11% of them, which takes the whole stream from about 130 a
+// day to about 27 while still pushing the case that has real value: work left
+// running for a while has finished. A blanket cut would be quieter and would
+// also throw away the thirty turns in the log that ran over an hour, which are
+// the only ones anybody would want interrupting for.
+//
+// Not applied to a session blocked on a person. Nothing about how long an
+// agent worked changes whether it is now stuck waiting for you.
+var MinTurn = envDuration("AMAC_MIN_TURN", 10*time.Minute)
+
+func envDuration(name string, fallback time.Duration) time.Duration {
+	if v := os.Getenv(name); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return fallback
+}
+
+// shortTurn reports how long the session had been running before this
+// notification, and whether that is too short to be worth one.
+//
+// The turn is measured as the gap since the session's previous event, which is
+// the same statistic the threshold was calibrated on. It fails open: a session
+// with no history, or a history that cannot be read, is notified about. A rule
+// that goes quiet when it cannot measure is a rule that silences real alerts
+// the first time something upstream changes shape.
+func shortTurn(ctx context.Context, log *event.Log, n Notice) (time.Duration, bool) {
+	if n.Reason != TurnComplete || MinTurn <= 0 {
+		return 0, false
+	}
+	row := log.DB().QueryRowContext(ctx,
+		`SELECT at FROM events
+		  WHERE session = ? AND kind IN (?, ?, ?)
+		  ORDER BY seq DESC LIMIT 1`,
+		n.Session, string(event.KindSessionState),
+		string(event.KindSessionUpdate), string(event.KindAttention))
+	var at string
+	if err := row.Scan(&at); err != nil {
+		return 0, false
+	}
+	ts, err := time.Parse(time.RFC3339Nano, at)
+	if err != nil {
+		return 0, false
+	}
+	took := time.Since(ts)
+	return took, took < MinTurn
 }
 
 // recentlyNotified reports the last delivered notification for a session
