@@ -28,7 +28,11 @@ import (
 	"github.com/lgoyal6/amac/internal/handoff"
 )
 
-const api = "https://discord.com/api/v10"
+// api is a variable rather than a constant so the send path can be pointed at a
+// test server. Everything interesting here is in the request that gets built,
+// the 2000-character cap Discord enforces on the whole message, and the link
+// button, and none of it was reachable by a test while the host was fixed.
+var api = "https://discord.com/api/v10"
 
 var client = &http.Client{Timeout: 20 * time.Second}
 
