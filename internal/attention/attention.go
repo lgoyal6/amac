@@ -101,11 +101,71 @@ func decide(ctx context.Context, log *event.Log, n Notice) Outcome {
 	if when, ok := recentlyNotified(ctx, log, n.Session); ok {
 		return Outcome{Why: fmt.Sprintf("already notified %.0fs ago", time.Since(when).Seconds())}
 	}
-	if took, ok := shortTurn(ctx, log, n); ok {
+	took, short := shortTurn(ctx, log, n)
+	if short {
 		return Outcome{Why: fmt.Sprintf("turn took %s, under the %s worth interrupting for",
 			took.Round(time.Second), MinTurn)}
 	}
+	// Last, and only ever to narrow. The rules have already said send; the
+	// model can withdraw that and cannot grant it. A bad model should cost
+	// notifications you wanted, not deliver ones the rules had ruled out.
+	//
+	// No model is the normal case and means the rules stand, which is what
+	// happens today: the trainer refuses to export one until it can show it
+	// beats these rules on data it never saw.
+	if score, ok := modelSaysNo(ctx, log, n, took); ok {
+		return Outcome{Why: fmt.Sprintf("the recommender scored this %.2f, under its %.2f",
+			score, loadModel().Threshold)}
+	}
 	return Outcome{Sent: true}
+}
+
+// modelSaysNo consults the recommender, if one has been exported.
+//
+// Any failure is a no-opinion rather than a suppression. A model that cannot be
+// scored must not be able to silence a notification by being broken, which is
+// the one way a serving path can turn a training mistake into missed alerts.
+func modelSaysNo(ctx context.Context, log *event.Log, n Notice, turn time.Duration) (float64, bool) {
+	m := loadModel()
+	if m == nil {
+		return 0, false
+	}
+	since, prior, global := recentRates(ctx, log, n.Session)
+	score, err := m.Score(featuresFor(n, turn, since, prior, global, time.Now()))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "amac: recommender not consulted: %v\n", err)
+		return 0, false
+	}
+	return score, score < m.Threshold
+}
+
+// recentRates reports how long since this session last raised a notification,
+// and how many have arrived in the last hour for this session and in total.
+// The same three counts the trainer computes over the log, so the model is
+// scored on what it was fitted on.
+func recentRates(ctx context.Context, log *event.Log, session string) (time.Duration, int, int) {
+	const hour = "-1 hour"
+	since := 24 * time.Hour
+	var last string
+	if err := log.DB().QueryRowContext(ctx,
+		`SELECT at FROM events WHERE kind = ? AND session = ? ORDER BY seq DESC LIMIT 1`,
+		string(event.KindAttention), session).Scan(&last); err == nil {
+		if ts, err := time.Parse(time.RFC3339Nano, last); err == nil {
+			since = time.Since(ts)
+		}
+	}
+	count := func(q string, args ...any) int {
+		var n int
+		if err := log.DB().QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
+			return 0
+		}
+		return n
+	}
+	prior := count(`SELECT COUNT(*) FROM events WHERE kind = ? AND session = ? AND at >= datetime('now', ?)`,
+		string(event.KindAttention), session, hour)
+	global := count(`SELECT COUNT(*) FROM events WHERE kind = ? AND at >= datetime('now', ?)`,
+		string(event.KindAttention), hour)
+	return since, prior, global
 }
 
 // MinTurn is how long a turn must have taken before its completion is worth a

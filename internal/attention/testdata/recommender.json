@@ -1,0 +1,26 @@
+{
+  "features": [
+    "wants_attention",
+    "log_turn_s",
+    "log_since_s",
+    "prior_hour",
+    "global_hour",
+    "hour_sin",
+    "hour_cos",
+    "is_weekend",
+    "log_msg_len"
+  ],
+  "coef": [
+    5.889522463187414,
+    0.06244138382342624,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    1.8946624719278053
+  ],
+  "intercept": -9.944097715974012,
+  "threshold": 0.87766006298773
+}
