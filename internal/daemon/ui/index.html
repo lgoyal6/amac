@@ -1369,40 +1369,45 @@ let homeLoading = false;
 async function loadHome(force = false) {
   if (homeLoading || (!force && Date.now() - homeLoadedAt < 30000)) return;
   homeLoading = true;
-  // Sessions and spend are deliberately not fetched here. refresh() polls
-  // /api/sessions and fills the map before this runs, and loadTodaySpend()
-  // reads /api/spend for the header once a minute. Fetching both again made
-  // the home tab issue eleven requests for one screen, three of them the same
-  // session list, which was measured rather than assumed.
+  // Sessions are deliberately not fetched here: refresh() polls /api/sessions
+  // and fills the map before this runs. The home tab once issued eleven
+  // requests for one screen, three of them the same session list, which was
+  // measured rather than assumed; it is one request now.
   //
   // Applications are asked for at the smallest limit that still gives an
   // honest total. The handler counts separately from the page, so limit=1 is
   // enough for "258 tracked", and follow-ups due comes from a filtered query
   // rather than from downloading every row to filter here. That took the home
   // payload from 150KB to under 2KB on a phone.
-  const [hr, tr, sr, jr, dr, rr, mr] = await Promise.all([
-    api('/api/health'), api('/api/tasks'),
-    api('/api/spend'),
-    api('/api/applications?limit=1'),
-    api('/api/applications?limit=1000&due=1'),
-    api('/api/health/runs'), api('/api/machine'),
-  ]);
+  // One request for the whole screen. The seven feeds behind it are the same
+  // URLs the other tabs use, run concurrently by the daemon and returned
+  // together, because on a phone over the tailnet the page waits on round
+  // trips rather than on bytes.
+  const summaryRes = await api('/api/summary');
+  const parts = summaryRes && summaryRes.ok
+    ? await summaryRes.json().catch(() => ({}))
+    : {};
   homeLoading = false;
   homeLoadedAt = Date.now();
   // Every feed that did not answer is named, not silently treated as empty.
   // Previously a non-200 /api/health produced {}, which produced zero actions,
   // which rendered "nothing needs you": a blind monitor and a healthy machine
   // were pixel identical, on the surface that is checked most and trusted most.
+  // Each part carries its own status for exactly this reason, so one dead feed
+  // still names itself instead of hiding behind the envelope's 200.
   const unread = [];
-  const feed = async (res, label, fallback) => {
-    if (!res || !res.ok) { unread.push(`${label} (${res ? res.status : "no response"})`); return fallback; }
-    try { return await res.json(); } catch (e) { unread.push(`${label} (unreadable)`); return fallback; }
+  const feed = (key, label, fallback) => {
+    const p = parts[key];
+    if (!summaryRes || !summaryRes.ok) { unread.push(`${label} (${summaryRes ? summaryRes.status : "no response"})`); return fallback; }
+    if (!p || p.status !== 200) { unread.push(`${label} (${p ? p.status : "missing"})`); return fallback; }
+    return p.body === undefined ? fallback : p.body;
   };
-  const health = await feed(hr, "health", {});
-  const tasks = await feed(tr, "tasks", []);
-  const spend = await feed(sr, "money", {});
-  const jobData = await feed(jr, "jobs", {});
-  const dueData = dr && dr.ok ? await dr.json().catch(() => ({})) : {};
+  const health = feed("health", "health", {});
+  const tasks = feed("tasks", "tasks", []);
+  const spend = feed("spend", "money", {});
+  const jobData = feed("jobs", "jobs", {});
+  const duePart = parts.due;
+  const dueData = duePart && duePart.status === 200 && duePart.body !== undefined ? duePart.body : {};
   // Two shapes from the same endpoint: the meta carries the true total, and
   // the due query carries only the rows with a follow-up pending.
   const appsTotal = jobData.total ?? 0;
@@ -1411,8 +1416,9 @@ async function loadHome(force = false) {
   // The tiles are a glance, not the alarm. A feed they cannot read costs that
   // one tile its numbers and nothing else, so they are read without the unread
   // bookkeeping above, which exists to stop a blind monitor looking healthy.
-  const runs = rr && rr.ok ? await rr.json().catch(() => ({})) : {};
-  const mach = mr && mr.ok ? await mr.json().catch(() => ({})) : {};
+  const runsPart = parts.runs, machPart = parts.machine;
+  const runs = runsPart && runsPart.status === 200 && runsPart.body !== undefined ? runsPart.body : {};
+  const mach = machPart && machPart.status === 200 && machPart.body !== undefined ? machPart.body : {};
   if (unauthorized || !$('homeOut')) return;
   const actions = [];
   const blocked = [...sessions.values()].filter(s => s.state === 'blocked');
