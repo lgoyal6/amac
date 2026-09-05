@@ -177,9 +177,12 @@ func TestLiveProvider(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	res, err := p.Complete(ctx, Request{
-		System:    "Reply with exactly one word and no punctuation.",
-		Prompt:    "What is the capital of France?",
-		MaxTokens: 16,
+		System: "Reply with exactly one word and no punctuation.",
+		Prompt: "What is the capital of France?",
+		// Enough for a reasoning model to think and then answer. Sixteen buys
+		// the thinking and nothing else, which is how this test found that
+		// amac's triage budget was too small to ever get a reply.
+		MaxTokens: 256,
 	})
 	if err != nil {
 		t.Fatalf("live call to %s failed: %v", p.Name(), err)
@@ -198,5 +201,57 @@ func TestLiveProvider(t *testing.T) {
 	}
 	if !strings.Contains(strings.ToLower(res.Text), "paris") {
 		t.Errorf("answer %q does not contain paris; the request may be malformed", res.Text)
+	}
+}
+
+// A reasoning model that spends its whole budget thinking must produce a
+// diagnosable error rather than an empty string.
+//
+// This is the bug the live test found the first time it ran. GMI's cheap tier
+// is DeepSeek-V4-Flash: at max_tokens 16 all sixteen went to reasoning tokens,
+// finish_reason came back "length", and content was empty. amac returned that
+// as a successful call with no text, so every caller with a tight budget would
+// fall back forever while being billed for each attempt. Triage asked for 8.
+func TestReasoningWithoutAnAnswerIsAnError(t *testing.T) {
+	base := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"choices":[{"finish_reason":"length","message":{
+				"role":"assistant","content":"",
+				"reasoning_content":"We are asked: the capital of France. The answer is"}}],
+			"usage":{"prompt_tokens":17,"completion_tokens":16,
+			         "completion_tokens_details":{"reasoning_tokens":16}}}`))
+	})
+	p := &openAICompatible{base: base, key: "k", model: "reasoner", tier: TierCheap}
+	res, err := p.Complete(context.Background(), Request{Prompt: "x", MaxTokens: 16})
+	if err == nil {
+		t.Fatalf("an empty answer after a full reasoning budget was reported as success: %+v", res)
+	}
+	// The error has to say what to change, or the next person sees an empty
+	// reply and concludes the model is broken.
+	for _, want := range []string{"reason", "MaxTokens"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+// A model that answers alongside its reasoning is fine, and the reasoning must
+// not be mistaken for the answer.
+func TestReasoningBesideAnAnswerIsNotAnError(t *testing.T) {
+	base := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{
+			"choices":[{"finish_reason":"stop","message":{
+				"role":"assistant","content":"Paris",
+				"reasoning_content":"The capital of France is Paris."}}],
+			"usage":{"prompt_tokens":17,"completion_tokens":23,
+			         "completion_tokens_details":{"reasoning_tokens":21}}}`))
+	})
+	p := &openAICompatible{base: base, key: "k", model: "reasoner", tier: TierCheap}
+	res, err := p.Complete(context.Background(), Request{Prompt: "x", MaxTokens: 256})
+	if err != nil {
+		t.Fatalf("a model that answered was refused: %v", err)
+	}
+	if res.Text != "Paris" {
+		t.Errorf("text = %q, want the answer rather than the reasoning", res.Text)
 	}
 }

@@ -330,9 +330,9 @@ amac log -n 20                 recent events
 ships it. What is left is what Remote Control does not reach.
 
 1. ~~**Daemon**: supervise sessions, API, board on the tailnet~~, shipped
-2. **Gateway and router**: the cascade is in and the harness now measures it
-   without showing it the answer key; what is left is the curve against real
-   models rather than stubs
+2. **Gateway and router**: the cascade is in, the harness measures it without
+   showing it the answer key, and it now runs against a live provider rather
+   than stubs. What is left is the curve across a real task set
 3. **Orchestrator**: grade the prompt, convene as many agents as it warrants,
    with a per-task token budget
 4. ~~**Sensors**: browser extension and email parsing for an application
