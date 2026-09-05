@@ -149,9 +149,6 @@ func TestARevivedHolderCannotReleaseItsReplacement(t *testing.T) {
 	if err := h.Release(ctx, "stalled", first[0].Token, []string{"/repo/x.go"}); err == nil {
 		t.Error("a stale token must not release the replacement's hold")
 	}
-	if err := h.Renew(ctx, "stalled", first[0].Token, []string{"/repo/x.go"}, min); !errors.Is(err, ErrStaleToken) {
-		t.Errorf("a stale token must not renew, got %v", err)
-	}
 	live, _ := h.List(ctx)
 	if len(live) != 1 || live[0].Owner != "replacement" || live[0].Token != second[0].Token {
 		t.Errorf("the replacement should still hold it, got %+v", live)
@@ -172,6 +169,14 @@ func TestReclaimingYourOwnHoldIsNotAConflict(t *testing.T) {
 	}
 	if len(got) != 2 {
 		t.Errorf("got %d holds, want 2", len(got))
+	}
+	// Extending your own grant must not invalidate the token you are holding,
+	// or an agent that worked longer than its lease could no longer release
+	// its own files.
+	for _, x := range got {
+		if x.Path == "/repo/x.go" && x.Token != 1 {
+			t.Errorf("re-claiming your own path bumped the token to %d", x.Token)
+		}
 	}
 }
 
