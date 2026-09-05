@@ -141,9 +141,15 @@ type Result struct {
 }
 
 type ArmSummary struct {
-	Arm       string
-	Passed    int
-	Total     int
+	Arm    string
+	Passed int
+	Total  int
+	// Errored counts calls that never produced an answer at all, which is a
+	// different fact from an answer that was wrong and must not be folded into
+	// the same percentage. An arm whose model id is misspelled scores zero on
+	// quality and zero on cost, and reads exactly like a free, useless model.
+	Errored   int
+	ErrDetail string // one example, because a 404 is actionable and a timeout is not
 	CostUSD   float64
 	Latency   time.Duration
 	Escalated int
@@ -155,6 +161,11 @@ func (a ArmSummary) Quality() float64 {
 	}
 	return float64(a.Passed) / float64(a.Total)
 }
+
+// Measured reports whether the arm produced enough answers to have a quality
+// worth reading. An arm that never answered has no score, as opposed to a
+// score of zero.
+func (a ArmSummary) Measured() bool { return a.Total > 0 && a.Errored < a.Total }
 
 type Report struct {
 	Arms    []ArmSummary
@@ -172,7 +183,8 @@ type Report struct {
 // "is cheap cheaper" but "what did choosing cheap cost me".
 func (r Report) Table() string {
 	var sb strings.Builder
-	fmt.Fprintf(&sb, "%-14s %8s %10s %12s %10s\n", "ARM", "QUALITY", "COST", "COST/TASK", "P50 LAT")
+	fmt.Fprintf(&sb, "%-14s %8s %10s %12s %10s %7s\n",
+		"ARM", "QUALITY", "COST", "COST/TASK", "P50 LAT", "ERRORS")
 	var baseline *ArmSummary
 	for i := range r.Arms {
 		if r.Arms[i].Arm == "strong" {
@@ -184,13 +196,43 @@ func (r Report) Table() string {
 		if a.Total > 0 {
 			per = a.CostUSD / float64(a.Total)
 		}
-		fmt.Fprintf(&sb, "%-14s %7.1f%% %10s %12s %10s\n",
-			a.Arm, a.Quality()*100, money(a.CostUSD), money(per), a.Latency.Round(time.Millisecond))
+		quality := fmt.Sprintf("%6.1f%%", a.Quality()*100)
+		if !a.Measured() {
+			quality = "      -"
+		}
+		errs := ""
+		if a.Errored > 0 {
+			errs = fmt.Sprintf("%d", a.Errored)
+		}
+		fmt.Fprintf(&sb, "%-14s %8s %10s %12s %10s %7s\n",
+			a.Arm, quality, money(a.CostUSD), money(per), a.Latency.Round(time.Millisecond), errs)
 	}
-	if baseline != nil && baseline.CostUSD > 0 {
+	// An arm that failed to answer is a configuration report, not a result.
+	// Saying so here is the difference between "the strong model is terrible"
+	// and "the strong model's id is misspelled", which is how this arrived.
+	for _, a := range r.Arms {
+		if a.Errored == 0 {
+			continue
+		}
+		fmt.Fprintf(&sb, "\n%s: %d of %d calls returned no answer", a.Arm, a.Errored, a.Total)
+		if !a.Measured() {
+			sb.WriteString(", so it has no quality score")
+		}
+		if a.ErrDetail != "" {
+			fmt.Fprintf(&sb, "\n  %s", a.ErrDetail)
+		}
+		sb.WriteString("\n")
+	}
+	// Savings are quoted against the strong arm, so a strong arm that never
+	// ran makes every one of them meaningless: an arm that spent nothing
+	// because it errored would show as a 100% saving.
+	if baseline != nil && !baseline.Measured() {
+		sb.WriteString("\nno comparison: the strong baseline never answered, " +
+			"so any saving against it would be a saving against a broken arm.\n")
+	} else if baseline != nil && baseline.CostUSD > 0 {
 		sb.WriteString("\nversus the strong-model baseline:\n")
 		for _, a := range r.Arms {
-			if a.Arm == "strong" {
+			if a.Arm == "strong" || !a.Measured() {
 				continue
 			}
 			saving := (1 - a.CostUSD/baseline.CostUSD) * 100
@@ -293,6 +335,10 @@ func (r *Runner) Run(ctx context.Context, tasks []Task) (Report, error) {
 			switch {
 			case err != nil:
 				res.Detail = "error: " + err.Error()
+				sum.Errored++
+				if sum.ErrDetail == "" {
+					sum.ErrDetail = err.Error()
+				}
 			default:
 				if vErr := task.Verify(answer); vErr != nil {
 					res.Detail = vErr.Error()
