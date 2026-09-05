@@ -264,13 +264,37 @@ func TestReasoningBesideAnAnswerIsNotAnError(t *testing.T) {
 // terminal. keyFor reads the environment first and the login keychain second,
 // which is where `amac setup` already tells you to put it.
 func TestKeyForPrefersTheEnvironmentThenFallsBack(t *testing.T) {
+	var asked []string
+	prev := keychain
+	keychain = func(name string) string {
+		asked = append(asked, name)
+		return "from-keychain"
+	}
+	t.Cleanup(func() { keychain = prev })
+
 	t.Setenv("AMAC_TEST_CREDENTIAL", "from-env")
 	if got := keyFor("AMAC_TEST_CREDENTIAL"); got != "from-env" {
 		t.Errorf("keyFor = %q, want the environment value", got)
 	}
+	if len(asked) != 0 {
+		t.Errorf("the keychain was consulted for a name the environment answered: %v", asked)
+	}
+
+	// The launchd path, and the reason this fallback exists at all. Asserting
+	// it needs the seam: a real lookup would depend on what happens to be in
+	// the developer's keychain, which is the opposite of a test.
+	t.Setenv("AMAC_TEST_CREDENTIAL", "")
+	if got := keyFor("AMAC_TEST_CREDENTIAL"); got != "from-keychain" {
+		t.Errorf("keyFor = %q, want the keychain value once the environment is empty", got)
+	}
+	if len(asked) != 1 || asked[0] != "AMAC_TEST_CREDENTIAL" {
+		t.Errorf("the keychain was asked for %v, want the name that was requested", asked)
+	}
+
 	// A name in neither place is empty rather than an error, because a missing
 	// provider is a configuration state and not a failure: amac runs without
 	// one and says so.
+	keychain = func(string) string { return "" }
 	if got := keyFor("AMAC_NO_SUCH_CREDENTIAL_ANYWHERE"); got != "" {
 		t.Errorf("keyFor on an unset name = %q, want empty", got)
 	}
@@ -280,6 +304,7 @@ func TestKeyForPrefersTheEnvironmentThenFallsBack(t *testing.T) {
 // who stored the key in the keychain is told to set an environment variable
 // they have deliberately not set.
 func TestMissingProvidersNameBothPlaces(t *testing.T) {
+	noKeychain(t)
 	t.Setenv("GMI_API_KEY", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")
 	_, missing := FromEnv()
@@ -292,7 +317,7 @@ func TestMissingProvidersNameBothPlaces(t *testing.T) {
 		}
 	}
 	if gmi == "" {
-		t.Skip("a GMI key is configured on this machine, so nothing is missing")
+		t.Fatalf("nothing was reported missing with neither place configured: %v", missing)
 	}
 	if !strings.Contains(gmi, "keychain") {
 		t.Errorf("%q does not mention the keychain", gmi)
