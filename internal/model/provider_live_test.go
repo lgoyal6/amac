@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -161,9 +160,12 @@ func TestProviderRespectsContextCancellation(t *testing.T) {
 //
 //	GMI_API_KEY=... go test ./internal/model/ -run TestLiveProvider -v
 func TestLiveProvider(t *testing.T) {
-	key := os.Getenv("GMI_API_KEY")
-	if key == "" {
-		t.Skip("no GMI_API_KEY; this is the only test that can prove a vendor accepts our request")
+	// Resolved the way the code resolves it, not from the environment alone.
+	// The skip guard used to read os.Getenv while FromEnv reads the keychain
+	// too, so on a machine configured exactly as `amac setup` instructs, the
+	// one test that can prove a vendor accepts our request skipped forever.
+	if keyFor("GMI_API_KEY") == "" {
+		t.Skip("no GMI_API_KEY in the environment or the login keychain")
 	}
 	reg, missing := FromEnv()
 	if len(missing) > 0 {
