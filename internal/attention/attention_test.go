@@ -70,7 +70,7 @@ func TestDedupeCollapsesTheSameEvent(t *testing.T) {
 	stub(t, "", false)
 
 	n := Notice{Session: "am-mint", Agent: "codex", Reason: WantsYou}
-	if err := record(ctx, log, n, Outcome{Sent: true}); err != nil {
+	if err := record(ctx, log, n, noticeID(), Outcome{Sent: true}); err != nil {
 		t.Fatal(err)
 	}
 	if got := decide(ctx, log, Notice{Session: "am-mint", Reason: TurnComplete}); got.Sent {
@@ -91,7 +91,7 @@ func TestSuppressedEventDoesNotDedupe(t *testing.T) {
 	stub(t, "", false)
 
 	n := Notice{Session: "am-mint", Agent: "codex", Reason: WantsYou}
-	if err := record(ctx, log, n, Outcome{Sent: false, Why: "you are looking at am-mint"}); err != nil {
+	if err := record(ctx, log, n, noticeID(), Outcome{Sent: false, Why: "you are looking at am-mint"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := decide(ctx, log, n); !got.Sent {

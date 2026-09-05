@@ -114,7 +114,15 @@ func BoardURL(session string) string {
 // ask the Mac daemon to put the selected tmux session in a Terminal window.
 // The token remains in the board's local storage; Discord only gets this
 // notification-safe URL.
-func HandoffURL(session string) string {
+// HandoffURL builds the link a notification carries. notice tags it with the
+// notification's id so that following the link says which alert was answered,
+// rather than only that somebody arrived.
+//
+// The tag is outside the signature deliberately. It grants nothing and opens
+// nothing: session and expiry are what the signature protects, and a forged or
+// edited tag can at worst mislabel one row in an analysis. Signing it would
+// imply it were a capability.
+func HandoffURL(session, notice string) string {
 	u := BoardURL(session)
 	if u == "" {
 		return ""
@@ -134,6 +142,9 @@ func HandoffURL(session string) string {
 	q.Set("session", session)
 	q.Set("expires", fmt.Sprint(expires.Unix()))
 	q.Set("sig", handoff.Sign(secret, session, expires))
+	if notice != "" {
+		q.Set("n", notice)
+	}
 	parsed.RawQuery = q.Encode()
 	return parsed.String()
 }

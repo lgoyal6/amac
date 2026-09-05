@@ -93,7 +93,10 @@ def notifications(db: str | Path | None = None) -> pd.DataFrame:
     The suppressed rows are why this is worth analysing at all. A log of only
     what was sent cannot answer whether the suppression rule is any good.
     """
-    df = field(events("attention", db), "outcome", "reason")
+    # id is lifted because it is the join key for anything that happened
+    # afterwards. Without it the exact label silently answers False for every
+    # row rather than failing, which is the worst way for a join to be wrong.
+    df = field(events("attention", db), "outcome", "reason", "id")
     df["sent"] = df["outcome"].map(lambda o: bool(o.get("sent")) if isinstance(o, dict) else False)
     df["why"] = df["outcome"].map(lambda o: o.get("why", "") if isinstance(o, dict) else "")
     return df.drop(columns=["outcome"])
@@ -109,4 +112,26 @@ def opens(db: str | Path | None = None) -> pd.DataFrame:
     notification is decided here, where the window can be argued with.
     """
     df = field(events("board.opened", db), "session", "source")
+    return df
+
+
+def acts(db: str | Path | None = None) -> pd.DataFrame:
+    """Deliberate acts by a person: writes through the API, and followed links.
+
+    Board opens alone were far too rare to be a label. Counted over the four
+    weeks before this was added, amac delivered a median of 111 notifications a
+    day and could see roughly two human actions a day, so two hundred labelled
+    examples were about a hundred days out. Not because a person did little,
+    but because only a page load was recorded.
+
+    The rule the daemon applies is whether an agent could have caused it. Reads
+    are excluded because the board polls, and treating a poll as engagement is
+    exactly how the previous label came to measure adapter chattiness.
+
+    The `notice` column is the strong case. It is set only when the act arrived
+    by a signed link out of one specific notification, which is the only signal
+    here that says which alert was answered rather than that somebody showed up
+    afterwards.
+    """
+    df = field(events("human.acted", db), "session", "action", "notice", "via")
     return df

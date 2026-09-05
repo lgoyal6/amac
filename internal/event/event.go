@@ -68,6 +68,27 @@ const (
 	// join belongs in the analysis, where it can be argued with.
 	KindBoardOpened Kind = "board.opened"
 
+	// A deliberate act by a person, as opposed to a page load or an agent.
+	//
+	// board.opened alone turned out to be a label that barely accumulates.
+	// Over the four weeks before this was written amac delivered a median of
+	// 111 notifications a day and could observe roughly two human actions a
+	// day in total, so two hundred labelled examples were about a hundred days
+	// away. Not because a person does little, but because amac recorded almost
+	// none of what they do.
+	//
+	// The test for what belongs here is whether an agent could have caused it.
+	// Reads are excluded, because the board polls: a GET is the page doing its
+	// job, not a decision. Every write through the authenticated API is a
+	// decision, and so is following a signed link out of a notification, which
+	// is the strongest one available because it names the notification it
+	// answers.
+	//
+	// As with board.opened this is the raw fact. Whether an action counts as a
+	// response to a particular notification has a window in it, and a window
+	// baked into the log is a decision nobody can revisit.
+	KindHumanActed Kind = "human.acted"
+
 	// What a session amac does not own is doing, as reported by the agent's
 	// own hooks. Separate from session.update, which carries ACP traffic for
 	// sessions amac started: this is the only state available for the twenty

@@ -58,6 +58,32 @@ def label(notifs: pd.DataFrame, states: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def answered(notifs: pd.DataFrame, acts: pd.DataFrame) -> pd.DataFrame:
+    """The label with no window in it at all.
+
+    Every other outcome here is "something happened soon afterwards", and soon
+    is an argument. This one is an identity: the person followed a signed link
+    out of one specific notification, and the act carries that notification's
+    id. There is nothing to tune and nothing to confound.
+
+    It is the narrowest signal and the scarcest, which is the trade. A
+    notification answered by walking to the laptop instead of tapping the link
+    reads as unanswered here, so this is a floor on engagement rather than a
+    measure of it, and `responded` remains the wider, weaker view.
+    """
+    out = notifs.copy()
+    if "id" not in notifs.columns:
+        # Loudly, because the alternative is every row silently labelled False
+        # and a model trained on an empty label that looked merely pessimistic.
+        raise KeyError("notifications have no id column; the join key is missing")
+    if acts.empty or "notice" not in acts.columns:
+        out["answered"] = False
+        return out
+    ids = set(acts["notice"].dropna().astype(str)) - {""}
+    out["answered"] = notifs["id"].astype(str).isin(ids)
+    return out
+
+
 def responded(notifs: pd.DataFrame, opens: pd.DataFrame, window: pd.Timedelta = WINDOW) -> pd.DataFrame:
     """The label amac can now actually observe: did a person open the board.
 
@@ -98,7 +124,8 @@ def responded(notifs: pd.DataFrame, opens: pd.DataFrame, window: pd.Timedelta = 
     return out
 
 
-def readiness(notifs: pd.DataFrame, opens: pd.DataFrame, want: int = 200) -> dict:
+def readiness(notifs: pd.DataFrame, opens: pd.DataFrame, acts: pd.DataFrame | None = None,
+              want: int = 200) -> dict:
     """When the recommender becomes trainable, as arithmetic rather than a guess.
 
     The plan said "three to four weeks". That was an estimate of the wrong
@@ -117,21 +144,34 @@ def readiness(notifs: pd.DataFrame, opens: pd.DataFrame, want: int = 200) -> dic
     all then no amount of waiting produces positives and the label needs
     rethinking instead of more patience.
     """
-    if opens.empty:
-        return {"positives": 0, "days": 0.0, "per_day": 0.0, "want": want,
+    # Acts are the wider signal: every write through the API and every followed
+    # link, not only a page load. Opens are kept in because an open is still an
+    # open, and the two together are what the window is measured over.
+    observed = [df for df in (opens, acts) if df is not None and not df.empty]
+    if not observed:
+        return {"positives": 0, "answered": 0, "days": 0.0, "per_day": 0.0, "want": want,
                 "ready": False, "days_left": None,
-                "note": "no board opens recorded yet; the collection window has not started"}
+                "note": "nothing observed yet; the collection window has not started"}
 
-    span = (opens["at"].max() - opens["at"].min()).total_seconds() / 86400
+    at = pd.concat([df["at"] for df in observed])
+    span = (at.max() - at.min()).total_seconds() / 86400
     # One open is a data point, not a rate. Half a day of floor keeps a single
     # event from implying an arbitrarily large opens-per-day.
     days = max(span, 0.5)
-    labelled = responded(notifs, opens)
+    # Anything a person did counts towards the wide label, so opens and acts
+    # are pooled on time. The narrow label is counted separately because it is
+    # the one with no window in it, and it is the one worth waiting for.
+    pooled = pd.concat([df[["at", "session"]] for df in observed], ignore_index=True)
+    labelled = responded(notifs, pooled)
     positives = int(labelled["responded"].sum())
+    exact = 0
+    if acts is not None and not acts.empty:
+        exact = int(answered(notifs, acts)["answered"].sum())
     per_day = positives / days
     left = None if per_day <= 0 else max(0.0, (want - positives) / per_day)
     return {
         "positives": positives,
+        "answered": exact,
         "days": round(days, 2),
         "per_day": round(per_day, 1),
         "want": want,

@@ -72,17 +72,23 @@ func Handle(ctx context.Context, log *event.Log, n Notice, coalesce time.Duratio
 		}
 	}
 
+	// Minted here rather than inside record, because the link has to carry it.
+	// A notification whose id is assigned after its link is built is a
+	// notification nothing that happens next can be attributed to, which is
+	// what made the whole engagement question unanswerable.
+	id := noticeID()
+
 	out := decide(ctx, log, n)
 	if out.Sent {
-		if err := discord.SendHandoff(ctx, render(n), discord.HandoffURL(n.Session)); err != nil {
+		if err := discord.SendHandoff(ctx, render(n), discord.HandoffURL(n.Session, id)); err != nil {
 			// Record the attempt and its failure. Swallowing this would let
 			// the phone go quiet with the log still claiming delivery.
 			out = Outcome{Sent: false, Why: "discord failed: " + err.Error()}
-			record(ctx, log, n, out)
+			record(ctx, log, n, id, out)
 			return out, err
 		}
 	}
-	return out, record(ctx, log, n, out)
+	return out, record(ctx, log, n, id, out)
 }
 
 func decide(ctx context.Context, log *event.Log, n Notice) Outcome {
@@ -145,9 +151,9 @@ func noticeID() string {
 	return hex.EncodeToString(b[:])
 }
 
-func record(ctx context.Context, log *event.Log, n Notice, out Outcome) error {
+func record(ctx context.Context, log *event.Log, n Notice, id string, out Outcome) error {
 	ev, err := event.New(event.KindAttention, n.Agent, n.Session, map[string]any{
-		"id":      noticeID(),
+		"id":      id,
 		"reason":  n.Reason,
 		"account": n.Account,
 		"message": n.Message,
