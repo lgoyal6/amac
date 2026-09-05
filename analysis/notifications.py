@@ -98,6 +98,50 @@ def responded(notifs: pd.DataFrame, opens: pd.DataFrame, window: pd.Timedelta = 
     return out
 
 
+def readiness(notifs: pd.DataFrame, opens: pd.DataFrame, want: int = 200) -> dict:
+    """When the recommender becomes trainable, as arithmetic rather than a guess.
+
+    The plan said "three to four weeks". That was an estimate of the wrong
+    quantity. Notifications are not scarce: the log runs at a median of over a
+    hundred a day, so a week of them is already more candidates than a first
+    model needs. What is scarce is the other side of the join. A positive
+    requires a person to open the board, and board opens are only recorded from
+    the day the instrumentation landed.
+
+    So the answer is a rate nobody has measured yet, and this is what measures
+    it. Waiting a fixed number of weeks and then looking is how you discover
+    after a month that the label never accumulates.
+
+    That is a live risk rather than a theoretical one: most session babysitting
+    moved to Claude Code Remote Control, and if the board is rarely opened at
+    all then no amount of waiting produces positives and the label needs
+    rethinking instead of more patience.
+    """
+    if opens.empty:
+        return {"positives": 0, "days": 0.0, "per_day": 0.0, "want": want,
+                "ready": False, "days_left": None,
+                "note": "no board opens recorded yet; the collection window has not started"}
+
+    span = (opens["at"].max() - opens["at"].min()).total_seconds() / 86400
+    # One open is a data point, not a rate. Half a day of floor keeps a single
+    # event from implying an arbitrarily large opens-per-day.
+    days = max(span, 0.5)
+    labelled = responded(notifs, opens)
+    positives = int(labelled["responded"].sum())
+    per_day = positives / days
+    left = None if per_day <= 0 else max(0.0, (want - positives) / per_day)
+    return {
+        "positives": positives,
+        "days": round(days, 2),
+        "per_day": round(per_day, 1),
+        "want": want,
+        "ready": positives >= want,
+        "days_left": None if left is None else round(left, 1),
+        "note": ("enough positives to train and hold out" if positives >= want
+                 else "too few positives to split by time and still have a holdout"),
+    }
+
+
 def instrumentation_check(notifs: pd.DataFrame, states: pd.DataFrame) -> pd.DataFrame:
     """The check that decides whether any of this means anything.
 

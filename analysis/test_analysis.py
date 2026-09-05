@@ -15,7 +15,8 @@ import pandas as pd
 import pytest
 
 import amaclog
-from notifications import density_check, instrumentation_check, label, timewise_split
+from notifications import (density_check, instrumentation_check, label, readiness,
+                           timewise_split)
 
 T0 = pd.Timestamp("2026-09-01 12:00:00", tz="UTC")
 
@@ -246,3 +247,41 @@ def test_no_opens_recorded_yet_is_false_rather_than_an_error():
     got = responded(notifs, pd.DataFrame(columns=["at", "session"]))
     assert got["responded"].tolist() == [False]
     assert got["responded_directly"].tolist() == [False]
+
+
+def test_readiness_reports_no_window_before_any_open():
+    notifs = pd.DataFrame({"at": pd.to_datetime(["2026-09-05T10:00:00Z"]), "session": ["s1"]})
+    got = readiness(notifs, pd.DataFrame(columns=["at", "session"]))
+    assert got["positives"] == 0
+    assert got["ready"] is False
+    assert got["days_left"] is None
+    assert "has not started" in got["note"]
+
+
+def test_readiness_does_not_extrapolate_a_rate_from_one_event():
+    """One open is a data point, not a rate.
+
+    Without a floor on the observation window, a single open makes days ~= 0
+    and the implied opens-per-day runs off to infinity, which would report the
+    label as days away from ready on the strength of one click.
+    """
+    at = pd.to_datetime(["2026-09-05T10:00:00Z"])
+    notifs = pd.DataFrame({"at": at, "session": ["s1"]})
+    opens = pd.DataFrame({"at": at + pd.Timedelta(minutes=1), "session": ["s1"]})
+    got = readiness(notifs, opens, want=200)
+    assert got["positives"] == 1
+    assert got["days"] >= 0.5
+    assert got["per_day"] <= 2.0, "a single open implied an impossible rate"
+    assert got["ready"] is False
+
+
+def test_readiness_says_ready_only_with_enough_positives():
+    """The threshold exists so a model is not trained on a holdout of twelve."""
+    base = pd.Timestamp("2026-09-01T00:00:00Z")
+    at = pd.to_datetime([base + pd.Timedelta(hours=i) for i in range(300)])
+    notifs = pd.DataFrame({"at": at, "session": ["s1"] * 300})
+    opens = pd.DataFrame({"at": at + pd.Timedelta(minutes=1), "session": ["s1"] * 300})
+    got = readiness(notifs, opens, want=200)
+    assert got["positives"] == 300
+    assert got["ready"] is True
+    assert got["days_left"] == 0.0
