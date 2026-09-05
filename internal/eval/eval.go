@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -39,6 +40,10 @@ type Task struct {
 	System string    `json:"system,omitempty"`
 	Check  CheckKind `json:"check"`
 	Values []string  `json:"values"`
+	// Labels is the option set production knows before the call, for one_of
+	// tasks. It exists because Values is the answer key, and a gate built from
+	// the answer key is not a gate: see Gate.
+	Labels []string `json:"labels,omitempty"`
 	// Note records why the task is in the set. A suite nobody can read is a
 	// suite nobody maintains.
 	Note string `json:"note,omitempty"`
@@ -61,6 +66,8 @@ func (t Task) Verify(answer string) error {
 		}
 		return nil
 	case CheckOneOf:
+		// Values, not Labels: this is the grader, and the correct answer is
+		// the whole point of it.
 		return router.OneOfVerifier(t.Values...)("", a)
 	case CheckRegex:
 		if len(t.Values) == 0 {
@@ -96,8 +103,18 @@ func (t Task) Verify(answer string) error {
 func (t Task) Gate() router.Verifier {
 	switch t.Check {
 	case CheckOneOf:
-		return router.OneOfVerifier(t.Values...)
+		// Only when the task says what production would have known. Without
+		// Labels the only set available is Values, which is the correct answer,
+		// and gating on it makes the cascade retry until a model says the right
+		// word. The routed arm would then be measured with the answer key in
+		// its hand, which is the one thing this package exists not to do.
+		if len(t.Labels) > len(t.Values) {
+			return router.OneOfVerifier(t.Labels...)
+		}
+		return router.NonEmptyVerifier(1)
 	case CheckJSONKeys:
+		// No leak here: the required keys are the shape of the reply, not its
+		// content, and production really does know them before it calls.
 		return router.JSONVerifier(t.Values...)
 	default:
 		return router.NonEmptyVerifier(1)
@@ -109,7 +126,16 @@ func (t Task) Gate() router.Verifier {
 // suite of tasks nothing can mechanically gate measures a cascade that is
 // mostly running on hope.
 func (t Task) RealGate() bool {
-	return t.Check == CheckOneOf || t.Check == CheckJSONKeys
+	switch t.Check {
+	case CheckOneOf:
+		// A label set that is exactly the answer is not a label set. It was
+		// counted as a real gate before, so the tasks that leaked the answer
+		// were the ones the report held up as trustworthy.
+		return len(t.Labels) > len(t.Values)
+	case CheckJSONKeys:
+		return true
+	}
+	return false
 }
 
 func LoadTasks(path string) ([]Task, error) {
@@ -124,6 +150,19 @@ func LoadTasks(path string) ([]Task, error) {
 	for i, t := range tasks {
 		if t.ID == "" || t.Prompt == "" || t.Check == "" {
 			return nil, fmt.Errorf("task %d: id, prompt and check are required", i)
+		}
+		// A label set that does not contain the answer would make the gate
+		// reject every correct reply, so the cascade would escalate to the top
+		// on a task the cheap model got right.
+		for _, v := range t.Values {
+			if len(t.Labels) == 0 {
+				break
+			}
+			if !slices.ContainsFunc(t.Labels, func(l string) bool {
+				return strings.EqualFold(l, v)
+			}) {
+				return nil, fmt.Errorf("task %s: answer %q is not among its labels %v", t.ID, v, t.Labels)
+			}
 		}
 	}
 	return tasks, nil

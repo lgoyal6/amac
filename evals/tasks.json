@@ -3,56 +3,84 @@
     "id": "classify-intent-01",
     "prompt": "Classify this request as exactly one of: bug, feature, question. Answer with one word only.\n\n\"The retry loop keeps firing after the context is cancelled.\"",
     "check": "one_of",
-    "values": ["bug"],
-    "note": "Short structured classification. The cheap tier should own this."
+    "values": [
+      "bug"
+    ],
+    "note": "Short structured classification. The cheap tier should own this.",
+    "labels": [
+      "bug",
+      "feature",
+      "question"
+    ]
   },
   {
     "id": "classify-intent-02",
     "prompt": "Classify this request as exactly one of: bug, feature, question. Answer with one word only.\n\n\"Can we add a --json flag to the status command?\"",
     "check": "one_of",
-    "values": ["feature"],
-    "note": "Same shape, different label, to catch a model that always says bug."
+    "values": [
+      "feature"
+    ],
+    "note": "Same shape, different label, to catch a model that always says bug.",
+    "labels": [
+      "bug",
+      "feature",
+      "question"
+    ]
   },
   {
     "id": "extract-json-01",
     "prompt": "Extract the company and role from this email confirmation and return JSON with keys company and role, nothing else.\n\n\"Thank you for applying to the Backend Engineer position at Vercel. We have received your application.\"",
     "check": "json_keys",
-    "values": ["company", "role"],
+    "values": [
+      "company",
+      "role"
+    ],
     "note": "Structured extraction. This is the workload the cheap tier exists for."
   },
   {
     "id": "extract-json-02",
     "prompt": "Return JSON with keys host and port for this address, nothing else: 100.127.168.102:7788",
     "check": "json_keys",
-    "values": ["host", "port"],
+    "values": [
+      "host",
+      "port"
+    ],
     "note": "Trivial extraction, catches models that wrap JSON in prose."
   },
   {
     "id": "regex-recall-01",
     "prompt": "In one word, what does the acronym WAL stand for in databases? Answer with the expanded phrase only.",
     "check": "regex",
-    "values": ["(?i)write[- ]ahead log"],
+    "values": [
+      "(?i)write[- ]ahead log"
+    ],
     "note": "Factual recall, no reasoning. Cheap models should get this."
   },
   {
     "id": "summarise-01",
     "prompt": "Summarise in one sentence: An event log stores every state change as an append-only record, so current state can always be rebuilt by replaying history, and any past state can be reconstructed.",
     "check": "contains",
-    "values": ["replay"],
+    "values": [
+      "replay"
+    ],
     "note": "Mid-tier work: compression without judgement."
   },
   {
     "id": "reason-tradeoff-01",
     "prompt": "A daemon writes an append-only log. Explain the trade-off between fsyncing on every commit versus letting the OS schedule it, and say which you would pick for a log whose entire value is being trustworthy after a crash. Justify the choice.",
     "check": "contains",
-    "values": ["fsync"],
+    "values": [
+      "fsync"
+    ],
     "note": "Judgement verb plus a real trade-off. Should classify to strong."
   },
   {
     "id": "reason-debug-01",
     "prompt": "A JSON-RPC client hangs whenever the server sends a request rather than a notification. The client dispatches every inbound message with a method field to a notification queue. Explain why it hangs and what the fix is.",
     "check": "contains",
-    "values": ["id"],
+    "values": [
+      "id"
+    ],
     "note": "Real bug from this codebase. Requires understanding, not pattern match."
   }
 ]
