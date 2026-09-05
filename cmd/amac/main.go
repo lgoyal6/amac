@@ -76,6 +76,8 @@ func main() {
 		err = cmdDaemon(args)
 	case "demo":
 		err = cmdDemo(args)
+	case "prune":
+		err = cmdPrune(args)
 	case "mcp":
 		err = cmdMCP(args)
 	case "url":
