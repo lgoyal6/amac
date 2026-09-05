@@ -65,9 +65,6 @@ type Hold struct {
 	Note    string    `json:"note,omitempty"`
 }
 
-// Expired reports whether this hold's lease has passed.
-func (h Hold) Expired(now time.Time) bool { return !h.Lease.After(now) }
-
 type Holds struct {
 	db  *sql.DB
 	log *event.Log
@@ -173,7 +170,12 @@ func (h *Holds) Claim(ctx context.Context, owner string, paths []string, lease t
 			INSERT INTO holds (path, owner, token, lease, claimed, note)
 			VALUES (?, ?, 1, ?, ?, ?)
 			ON CONFLICT(path) DO UPDATE SET
-			    owner = excluded.owner, token = holds.token + 1,
+			    owner = excluded.owner,
+			    -- Only a change of hands bumps the token. An owner extending
+			    -- its own grant keeps it, or renewing would invalidate the
+			    -- token the agent is holding and its own release would fail.
+			    token = CASE WHEN holds.owner = excluded.owner
+			                 THEN holds.token ELSE holds.token + 1 END,
 			    lease = excluded.lease, claimed = excluded.claimed, note = excluded.note
 			RETURNING token`,
 			p, owner, deadline.UnixMilli(), now.UnixMilli(), note).Scan(&token)
@@ -226,26 +228,6 @@ func (h *Holds) Release(ctx context.Context, owner string, token int64, paths []
 
 // ErrStaleToken means the caller's fencing token is not the one the table holds.
 var ErrStaleToken = errors.New("stale fencing token")
-
-// Renew extends a live claim the caller still owns.
-func (h *Holds) Renew(ctx context.Context, owner string, token int64, paths []string, lease time.Duration) error {
-	want := normalise(paths)
-	if len(want) == 0 {
-		return errors.New("a renewal needs at least one path")
-	}
-	deadline := h.now().Add(lease)
-	for _, p := range want {
-		res, err := h.db.ExecContext(ctx, `UPDATE holds SET lease = ? WHERE path = ? AND owner = ? AND token = ?`,
-			deadline.UnixMilli(), p, owner, token)
-		if err != nil {
-			return err
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return fmt.Errorf("renew %s: %w", p, ErrStaleToken)
-		}
-	}
-	return nil
-}
 
 // Who returns the live holds contending with one path, whoever owns them.
 func (h *Holds) Who(ctx context.Context, path string) ([]Hold, error) {
