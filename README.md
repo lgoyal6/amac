@@ -385,6 +385,12 @@ elsewhere the notification is simply sent.
   subsystem is guarding against, and the bug that put it there
 - [Contributing](CONTRIBUTING.md)
 
+## Writing
+
+[Your green dashboard is lying to you](docs/green-dashboard.md), on why a status
+check cannot see a failure that recovered before you looked, and the three rules
+that came out of finding thirteen of them behind a green board.
+
 ## Licence
 
 [AGPL-3.0](LICENSE). Use it, change it, run it. If you distribute it **or run a modified
