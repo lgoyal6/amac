@@ -148,7 +148,7 @@ var gmiDefaults = map[Tier]struct {
 }{
 	TierCheap:  {"deepseek-ai/DeepSeek-V4-Flash", 0.14, 0.28},
 	TierMid:    {"Qwen/Qwen3-235B-A22B-Instruct-2507-FP8", 0.30, 0.60},
-	TierStrong: {"MoonshotAI/Kimi-K3", 0.60, 2.50},
+	TierStrong: {"moonshotai/kimi-k3", 0.60, 2.50},
 }
 
 // FromEnv wires providers from the environment. Missing credentials are not an

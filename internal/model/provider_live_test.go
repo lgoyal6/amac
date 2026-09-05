@@ -323,3 +323,77 @@ func TestMissingProvidersNameBothPlaces(t *testing.T) {
 		t.Errorf("%q does not mention the keychain", gmi)
 	}
 }
+
+// Every default model has to be one the vendor actually serves.
+//
+// The strong tier shipped as "MoonshotAI/Kimi-K3" for as long as it existed.
+// GMI serves "moonshotai/kimi-k3", and its ids are case-sensitive, so every
+// escalation to the top of the cascade got a 404. Nothing caught it: the unit
+// tests answer from a server we wrote, which accepts any id, and TestLiveProvider
+// only ever exercised the cheap tier. The eval harness eventually reported the
+// strong arm at 0% quality, which reads as a bad model rather than a missing one.
+//
+// A model id is a string agreed with somebody else, so it is checked against
+// them rather than against our own opinion of it.
+func TestEveryDefaultModelIsServed(t *testing.T) {
+	key := keyFor("GMI_API_KEY")
+	if key == "" {
+		t.Skip("no GMI_API_KEY in the environment or the login keychain")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", GMIBaseURL+"/models", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Skipf("could not reach %s: %v", GMIBaseURL, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Skipf("model listing returned %d", resp.StatusCode)
+	}
+	var listing struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&listing); err != nil {
+		t.Fatalf("model listing is not the documented shape: %v", err)
+	}
+	if len(listing.Data) == 0 {
+		t.Skip("model listing was empty")
+	}
+
+	served := map[string]bool{}
+	for _, m := range listing.Data {
+		served[m.ID] = true
+	}
+	missing := 0
+	for tier, d := range gmiDefaults {
+		if served[d.model] {
+			continue
+		}
+		missing++
+		// Case is the whole bug, so name it rather than leaving somebody to
+		// diff two strings that look identical in a terminal.
+		cased := ""
+		for id := range served {
+			if strings.EqualFold(id, d.model) {
+				cased = id
+			}
+		}
+		if cased != "" {
+			t.Errorf("%s tier defaults to %q, but the id is served as %q; ids are case-sensitive",
+				tier, d.model, cased)
+			continue
+		}
+		t.Errorf("%s tier defaults to %q, which %s does not serve", tier, d.model, GMIBaseURL)
+	}
+	if missing == 0 {
+		t.Logf("%d models served; all %d defaults present", len(served), len(gmiDefaults))
+	}
+}
