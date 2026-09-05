@@ -1,86 +1,891 @@
 [
   {
-    "id": "classify-intent-01",
-    "prompt": "Classify this request as exactly one of: bug, feature, question. Answer with one word only.\n\n\"The retry loop keeps firing after the context is cancelled.\"",
+    "id": "triage-01",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Fix a typo in the README heading.\n\nAnswer with one word.",
     "check": "one_of",
     "values": [
-      "bug"
+      "solo"
     ],
-    "note": "Short structured classification. The cheap tier should own this.",
     "labels": [
-      "bug",
-      "feature",
-      "question"
-    ]
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "single mechanical edit"
   },
   {
-    "id": "classify-intent-02",
-    "prompt": "Classify this request as exactly one of: bug, feature, question. Answer with one word only.\n\n\"Can we add a --json flag to the status command?\"",
+    "id": "triage-02",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Rename the local variable n to count inside one function.\n\nAnswer with one word.",
     "check": "one_of",
     "values": [
-      "feature"
+      "solo"
     ],
-    "note": "Same shape, different label, to catch a model that always says bug.",
     "labels": [
-      "bug",
-      "feature",
-      "question"
-    ]
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "rename in one scope"
   },
   {
-    "id": "extract-json-01",
-    "prompt": "Extract the company and role from this email confirmation and return JSON with keys company and role, nothing else.\n\n\"Thank you for applying to the Backend Engineer position at Vercel. We have received your application.\"",
+    "id": "triage-03",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Change the default HTTP client timeout from 10s to 30s.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "solo"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "one constant"
+  },
+  {
+    "id": "triage-04",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Delete a commented-out helper that nothing references.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "solo"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "dead code removal"
+  },
+  {
+    "id": "triage-05",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Correct the spelling of a log message.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "solo"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "string literal"
+  },
+  {
+    "id": "triage-06",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Add a --json flag to the status command that marshals the struct it already builds.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "solo"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "flag over existing data"
+  },
+  {
+    "id": "triage-07",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Add a unit test for an existing pure function that formats durations.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "solo",
+      "pair"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "contained, but new test design is defensible as pair"
+  },
+  {
+    "id": "triage-08",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Add retry with exponential backoff to one HTTP client call.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "pair"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "contained but has failure semantics"
+  },
+  {
+    "id": "triage-09",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Replace a linear scan with a map lookup in the session registry, keeping behaviour identical.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "solo",
+      "pair"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "mechanical, but touches a hot path"
+  },
+  {
+    "id": "triage-10",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Add pagination to one API endpoint that currently returns every row.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "pair"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "API shape change in one handler"
+  },
+  {
+    "id": "triage-11",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Fix an off-by-one in a ring buffer's wraparound.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "pair"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "small edit, subtle correctness"
+  },
+  {
+    "id": "triage-12",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Add a context deadline to a database query that can currently hang forever.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "pair"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "one call site, real semantics"
+  },
+  {
+    "id": "triage-13",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Rewrite one handler's error responses to return structured JSON instead of plain text.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "pair"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "contained contract change"
+  },
+  {
+    "id": "triage-14",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Change the on-disk event log schema and migrate the existing rows.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "team"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "schema plus migration plus rollback"
+  },
+  {
+    "id": "triage-15",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Move session state out of memory into SQLite so it survives a daemon restart.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "team"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "crosses storage and lifecycle"
+  },
+  {
+    "id": "triage-16",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Add authentication across the HTTP API, the CLI and the daemon's MCP server.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "team"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "three surfaces"
+  },
+  {
+    "id": "triage-17",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Change the fencing-token scheme shared by the task queue and the file holds.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "team"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "two subsystems, correctness critical"
+  },
+  {
+    "id": "triage-18",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Add a command that deletes the user's data directory during uninstall.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "team"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "a mistake is unrecoverable"
+  },
+  {
+    "id": "triage-19",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Replace the polling loop with an event-driven watcher across the daemon, the supervisor and the UI.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "team"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "three packages"
+  },
+  {
+    "id": "triage-20",
+    "system": "You size software tasks. Answer with exactly one word: solo, pair, or team.",
+    "prompt": "Size this task.\n\nsolo = a single mechanical change: rename, typo, add a flag, small edit\npair = a real change worth a second pair of eyes\nteam = touches several files or systems, or a mistake is expensive\n\nTask: Switch the process supervisor from tmux to a custom PTY implementation.\n\nAnswer with one word.",
+    "check": "one_of",
+    "values": [
+      "team"
+    ],
+    "labels": [
+      "solo",
+      "pair",
+      "team"
+    ],
+    "note": "replaces a dependency the whole system rests on"
+  },
+  {
+    "id": "extract-01",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys package, test and line for this Go test failure:\n--- FAIL: TestReconnectReplaysExactlyWhatWasMissed (0.42s)\n    stream_test.go:145: replayed 2 events, want the 3 that were missed",
+    "check": "json_keys",
+    "values": [
+      "package",
+      "test",
+      "line"
+    ],
+    "note": "go test output"
+  },
+  {
+    "id": "extract-02",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys branch, staged and untracked for this git status:\n## main...origin/main\nM  internal/eval/eval.go\nA  evals/tasks.json\n?? .agent-work/",
+    "check": "json_keys",
+    "values": [
+      "branch",
+      "staged",
+      "untracked"
+    ],
+    "note": "git porcelain"
+  },
+  {
+    "id": "extract-03",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys session, windows and attached for this tmux line:\nam-claude-1152: 3 windows (created Thu Sep  4 22:11:03 2026) (attached)",
+    "check": "json_keys",
+    "values": [
+      "session",
+      "windows",
+      "attached"
+    ],
+    "note": "tmux list-sessions"
+  },
+  {
+    "id": "extract-04",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys label and interval for this launchd plist fragment:\n<key>Label</key><string>com.laksh.morning-brief</string>\n<key>StartInterval</key><integer>86400</integer>",
+    "check": "json_keys",
+    "values": [
+      "label",
+      "interval"
+    ],
+    "note": "launchd plist"
+  },
+  {
+    "id": "extract-05",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys status and message for this API error:\nHTTP/1.1 404 Not Found\n{\"error\":{\"message\":\"No matching target server found for model MoonshotAI/Kimi-K3\"}}",
+    "check": "json_keys",
+    "values": [
+      "status",
+      "message"
+    ],
+    "note": "the 404 that started this"
+  },
+  {
+    "id": "extract-06",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys company and role for this email:\nSubject: Your application to Ramp\nThanks for applying to the Software Engineer, Infrastructure role. We have received your application.",
     "check": "json_keys",
     "values": [
       "company",
       "role"
     ],
-    "note": "Structured extraction. This is the workload the cheap tier exists for."
+    "note": "the miner's actual job"
   },
   {
-    "id": "extract-json-02",
-    "prompt": "Return JSON with keys host and port for this address, nothing else: 100.127.168.102:7788",
+    "id": "extract-07",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys filesystem, used and available for this df line:\n/dev/disk3s5   926Gi   712Gi   198Gi    79%    /System/Volumes/Data",
     "check": "json_keys",
     "values": [
-      "host",
-      "port"
+      "filesystem",
+      "used",
+      "available"
     ],
-    "note": "Trivial extraction, catches models that wrap JSON in prose."
+    "note": "df -h"
   },
   {
-    "id": "regex-recall-01",
-    "prompt": "In one word, what does the acronym WAL stand for in databases? Answer with the expanded phrase only.",
-    "check": "regex",
+    "id": "extract-08",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys id and event for this SSE frame:\nid: 6839\nevent: automation.run\ndata: {\"seq\":6839,\"name\":\"morning-brief\"}",
+    "check": "json_keys",
     "values": [
-      "(?i)write[- ]ahead log"
+      "id",
+      "event"
     ],
-    "note": "Factual recall, no reasoning. Cheap models should get this."
+    "note": "amac's own stream format"
   },
   {
-    "id": "summarise-01",
-    "prompt": "Summarise in one sentence: An event log stores every state change as an append-only record, so current state can always be rebuilt by replaying history, and any past state can be reconstructed.",
-    "check": "contains",
+    "id": "extract-09",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys pid and command for this ps line:\n  4471   ??  Ss     0:03.11 /usr/local/bin/amac daemon --port 8765",
+    "check": "json_keys",
     "values": [
-      "replay"
+      "pid",
+      "command"
     ],
-    "note": "Mid-tier work: compression without judgement."
+    "note": "ps output"
   },
   {
-    "id": "reason-tradeoff-01",
-    "prompt": "A daemon writes an append-only log. Explain the trade-off between fsyncing on every commit versus letting the OS schedule it, and say which you would pick for a log whose entire value is being trustworthy after a crash. Justify the choice.",
-    "check": "contains",
+    "id": "extract-10",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys formula, current and latest for this brew line:\nsqlite (3.45.1) < 3.46.0",
+    "check": "json_keys",
     "values": [
-      "fsync"
+      "formula",
+      "current",
+      "latest"
     ],
-    "note": "Judgement verb plus a real trade-off. Should classify to strong."
+    "note": "brew outdated"
   },
   {
-    "id": "reason-debug-01",
-    "prompt": "A JSON-RPC client hangs whenever the server sends a request rather than a notification. The client dispatches every inbound message with a method field to a notification queue. Explain why it hangs and what the fix is.",
-    "check": "contains",
+    "id": "extract-11",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys method and id for this JSON-RPC frame:\n{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"session/request_permission\",\"params\":{\"toolCall\":{\"title\":\"Delete branch\"}}}",
+    "check": "json_keys",
     "values": [
+      "method",
       "id"
     ],
-    "note": "Real bug from this codebase. Requires understanding, not pattern match."
+    "note": "ACP frame"
+  },
+  {
+    "id": "extract-12",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys tool and path for this permission prompt:\nClaude wants to run: rm -rf /Users/laksh/amac/.agent-work",
+    "check": "json_keys",
+    "values": [
+      "tool",
+      "path"
+    ],
+    "note": "permission request"
+  },
+  {
+    "id": "extract-13",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys code and table for this SQLite error:\nSQLITE_CONSTRAINT_UNIQUE: UNIQUE constraint failed: holds.path",
+    "check": "json_keys",
+    "values": [
+      "code",
+      "table"
+    ],
+    "note": "sqlite error"
+  },
+  {
+    "id": "extract-14",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys dns, connect and total for this curl timing:\ntime_namelookup: 0.004\ntime_connect: 0.031\ntime_total: 0.284",
+    "check": "json_keys",
+    "values": [
+      "dns",
+      "connect",
+      "total"
+    ],
+    "note": "curl -w"
+  },
+  {
+    "id": "extract-15",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys version and released for this release line:\nv0.79.0 was released on 2026-08-14.",
+    "check": "json_keys",
+    "values": [
+      "version",
+      "released"
+    ],
+    "note": "version string"
+  },
+  {
+    "id": "extract-16",
+    "system": "Reply with JSON only. No prose, no code fences.",
+    "prompt": "Return JSON with keys owner, repo and number for this pull request URL:\nhttps://github.com/lgoyal6/amac/pull/60",
+    "check": "json_keys",
+    "values": [
+      "owner",
+      "repo",
+      "number"
+    ],
+    "note": "github url"
+  },
+  {
+    "id": "state-01",
+    "system": "You read the tail of an agent's terminal output and say what it is doing. Answer with exactly one word: working, blocked, done, or failed.",
+    "prompt": "Answer with one word: working, blocked, done, or failed.\n\nDo you want to allow this command?\n  1. Yes\n  2. Yes, and don't ask again\n  3. No",
+    "check": "one_of",
+    "values": [
+      "blocked"
+    ],
+    "labels": [
+      "working",
+      "blocked",
+      "done",
+      "failed"
+    ],
+    "note": "permission prompt"
+  },
+  {
+    "id": "state-02",
+    "system": "You read the tail of an agent's terminal output and say what it is doing. Answer with exactly one word: working, blocked, done, or failed.",
+    "prompt": "Answer with one word: working, blocked, done, or failed.\n\nRunning tests...\nok  \tgithub.com/lgoyal6/amac/internal/eval\t0.33s\nAll 26 packages passed. Nothing left to do.",
+    "check": "one_of",
+    "values": [
+      "done"
+    ],
+    "labels": [
+      "working",
+      "blocked",
+      "done",
+      "failed"
+    ],
+    "note": "completed cleanly"
+  },
+  {
+    "id": "state-03",
+    "system": "You read the tail of an agent's terminal output and say what it is doing. Answer with exactly one word: working, blocked, done, or failed.",
+    "prompt": "Answer with one word: working, blocked, done, or failed.\n\n--- FAIL: TestClaimIsAllOrNothing (0.01s)\nFAIL\nexit status 1",
+    "check": "one_of",
+    "values": [
+      "failed"
+    ],
+    "labels": [
+      "working",
+      "blocked",
+      "done",
+      "failed"
+    ],
+    "note": "test failure"
+  },
+  {
+    "id": "state-04",
+    "system": "You read the tail of an agent's terminal output and say what it is doing. Answer with exactly one word: working, blocked, done, or failed.",
+    "prompt": "Answer with one word: working, blocked, done, or failed.\n\nReading internal/daemon/server.go...\nSearching for handler registrations...",
+    "check": "one_of",
+    "values": [
+      "working"
+    ],
+    "labels": [
+      "working",
+      "blocked",
+      "done",
+      "failed"
+    ],
+    "note": "mid-task"
+  },
+  {
+    "id": "state-05",
+    "system": "You read the tail of an agent's terminal output and say what it is doing. Answer with exactly one word: working, blocked, done, or failed.",
+    "prompt": "Answer with one word: working, blocked, done, or failed.\n\nI need your input before continuing: should the migration run automatically on startup, or behind a flag?",
+    "check": "one_of",
+    "values": [
+      "blocked"
+    ],
+    "labels": [
+      "working",
+      "blocked",
+      "done",
+      "failed"
+    ],
+    "note": "asked a question"
+  },
+  {
+    "id": "state-06",
+    "system": "You read the tail of an agent's terminal output and say what it is doing. Answer with exactly one word: working, blocked, done, or failed.",
+    "prompt": "Answer with one word: working, blocked, done, or failed.\n\npanic: runtime error: invalid memory address or nil pointer dereference\n[signal SIGSEGV]",
+    "check": "one_of",
+    "values": [
+      "failed"
+    ],
+    "labels": [
+      "working",
+      "blocked",
+      "done",
+      "failed"
+    ],
+    "note": "crash"
+  },
+  {
+    "id": "state-07",
+    "system": "You read the tail of an agent's terminal output and say what it is doing. Answer with exactly one word: working, blocked, done, or failed.",
+    "prompt": "Answer with one word: working, blocked, done, or failed.\n\nApplied 3 edits to internal/holds/holds.go. Rebuilding...",
+    "check": "one_of",
+    "values": [
+      "working"
+    ],
+    "labels": [
+      "working",
+      "blocked",
+      "done",
+      "failed"
+    ],
+    "note": "still going"
+  },
+  {
+    "id": "state-08",
+    "system": "You read the tail of an agent's terminal output and say what it is doing. Answer with exactly one word: working, blocked, done, or failed.",
+    "prompt": "Answer with one word: working, blocked, done, or failed.\n\nI've pushed the branch and opened PR #61. Nothing further is needed from me.",
+    "check": "one_of",
+    "values": [
+      "done"
+    ],
+    "labels": [
+      "working",
+      "blocked",
+      "done",
+      "failed"
+    ],
+    "note": "handed off"
+  },
+  {
+    "id": "state-09",
+    "system": "You read the tail of an agent's terminal output and say what it is doing. Answer with exactly one word: working, blocked, done, or failed.",
+    "prompt": "Answer with one word: working, blocked, done, or failed.\n\nWaiting for your approval to push to origin/main.",
+    "check": "one_of",
+    "values": [
+      "blocked"
+    ],
+    "labels": [
+      "working",
+      "blocked",
+      "done",
+      "failed"
+    ],
+    "note": "waiting on the human"
+  },
+  {
+    "id": "state-10",
+    "system": "You read the tail of an agent's terminal output and say what it is doing. Answer with exactly one word: working, blocked, done, or failed.",
+    "prompt": "Answer with one word: working, blocked, done, or failed.\n\ngo: downloading github.com/mattn/go-sqlite3 v1.14.22",
+    "check": "one_of",
+    "values": [
+      "working"
+    ],
+    "labels": [
+      "working",
+      "blocked",
+      "done",
+      "failed"
+    ],
+    "note": "dependency fetch"
+  },
+  {
+    "id": "recall-01",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "In databases, what does the acronym WAL stand for? Answer with the phrase only.",
+    "check": "regex",
+    "values": [
+      "(?i)write[-\\s]?ahead\\s+log"
+    ],
+    "note": "WAL"
+  },
+  {
+    "id": "recall-02",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "What is the signal number of SIGKILL on Linux and macOS? Answer with the number only.",
+    "check": "regex",
+    "values": [
+      "\\b9\\b"
+    ],
+    "note": "SIGKILL"
+  },
+  {
+    "id": "recall-03",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "What is the signal number of SIGTERM? Answer with the number only.",
+    "check": "regex",
+    "values": [
+      "\\b15\\b"
+    ],
+    "note": "SIGTERM"
+  },
+  {
+    "id": "recall-04",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "Which HTTP request header does a browser send to resume a Server-Sent Events stream after a drop? Answer with the header name only.",
+    "check": "regex",
+    "values": [
+      "(?i)last[-\\s]?event[-\\s]?id"
+    ],
+    "note": "SSE resume"
+  },
+  {
+    "id": "recall-05",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "Which SQLite PRAGMA is set to enable write-ahead logging? Answer with the pragma name only.",
+    "check": "regex",
+    "values": [
+      "(?i)journal_?\\s?mode"
+    ],
+    "note": "pragma"
+  },
+  {
+    "id": "recall-06",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "What HTTP status code means the client has sent too many requests? Answer with the number only.",
+    "check": "regex",
+    "values": [
+      "\\b429\\b"
+    ],
+    "note": "rate limit"
+  },
+  {
+    "id": "recall-07",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "What value does the jsonrpc field carry in a JSON-RPC 2.0 message? Answer with the value only.",
+    "check": "regex",
+    "values": [
+      "2\\.0"
+    ],
+    "note": "jsonrpc"
+  },
+  {
+    "id": "recall-08",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "Which SQL clause does SQLite use for an atomic insert-or-update? Answer with the clause only.",
+    "check": "regex",
+    "values": [
+      "(?i)on\\s+conflict"
+    ],
+    "note": "upsert"
+  },
+  {
+    "id": "recall-09",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "Which launchd plist key makes a job run every N seconds? Answer with the key only.",
+    "check": "regex",
+    "values": [
+      "(?i)start\\s?interval"
+    ],
+    "note": "launchd"
+  },
+  {
+    "id": "recall-10",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "Which tmux subcommand lists the running sessions? Answer with the subcommand only.",
+    "check": "regex",
+    "values": [
+      "(?i)list[-\\s]?sessions"
+    ],
+    "note": "tmux"
+  },
+  {
+    "id": "recall-11",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "What HTTP status code does a server return when a resource does not exist? Answer with the number only.",
+    "check": "regex",
+    "values": [
+      "\\b404\\b"
+    ],
+    "note": "not found"
+  },
+  {
+    "id": "recall-12",
+    "system": "Answer in as few words as possible. No explanation.",
+    "prompt": "In Go, which keyword starts a function on a new goroutine? Answer with the keyword only.",
+    "check": "regex",
+    "values": [
+      "(?i)^\\W*go\\W*$"
+    ],
+    "note": "goroutine; anchored because a bare \"go\" matches almost any sentence"
+  },
+  {
+    "id": "reason-01",
+    "system": "Answer in two or three sentences.",
+    "prompt": "A daemon writes an append-only log. Explain the trade-off between calling fsync on every append and batching appends.",
+    "check": "contains",
+    "values": [
+      "durability",
+      "throughput"
+    ],
+    "note": "the classic"
+  },
+  {
+    "id": "reason-02",
+    "system": "Answer in two or three sentences.",
+    "prompt": "Why is a lease alone not enough for mutual exclusion, and what does a monotonically increasing fencing token add?",
+    "check": "contains",
+    "values": [
+      "token",
+      "stale"
+    ],
+    "note": "fencing"
+  },
+  {
+    "id": "reason-03",
+    "system": "Answer in two or three sentences.",
+    "prompt": "Why choose Server-Sent Events over WebSockets for a dashboard that phones reconnect to constantly?",
+    "check": "contains",
+    "values": [
+      "reconnect"
+    ],
+    "note": "protocol choice; one term, because \"id\" matches provide, identify and most prose"
+  },
+  {
+    "id": "reason-04",
+    "system": "Answer in two or three sentences.",
+    "prompt": "A JSON-RPC client hangs whenever the server sends a request rather than a response. What is the likely cause?",
+    "check": "contains",
+    "values": [
+      "block"
+    ],
+    "note": "the ACP bug; \"read\" was dropped, it is a substring of thread and already"
+  },
+  {
+    "id": "reason-05",
+    "system": "Answer in two or three sentences.",
+    "prompt": "Why does SQLite's WAL mode improve concurrency compared with the rollback journal?",
+    "check": "contains",
+    "values": [
+      "reader",
+      "writer"
+    ],
+    "note": "WAL"
+  },
+  {
+    "id": "reason-06",
+    "system": "Answer in two or three sentences.",
+    "prompt": "For data retention, what does redacting the large fields of old rows preserve that deleting the rows does not?",
+    "check": "contains",
+    "values": [
+      "audit"
+    ],
+    "note": "retention by redaction; \"row\" matches grow, throw and arrow"
+  },
+  {
+    "id": "reason-07",
+    "system": "Answer in two or three sentences.",
+    "prompt": "A recommender is trained on a label defined as 'the user engaged with the notification', measured as how many events followed it. Why might that label be invalid?",
+    "check": "contains",
+    "values": [
+      "confound"
+    ],
+    "note": "the negative result"
+  },
+  {
+    "id": "reason-08",
+    "system": "Answer in two or three sentences.",
+    "prompt": "Why does adding automatic retries to a failing service sometimes make an outage worse rather than better?",
+    "check": "contains",
+    "values": [
+      "load"
+    ],
+    "note": "retry amplification"
+  },
+  {
+    "id": "reason-09",
+    "system": "Answer in two or three sentences.",
+    "prompt": "Explain why an eval harness must not give the model-routing cascade the same verifier used to grade the answer.",
+    "check": "contains",
+    "values": [
+      "production"
+    ],
+    "note": "the leak just fixed"
+  },
+  {
+    "id": "reason-10",
+    "system": "Answer in two or three sentences.",
+    "prompt": "A process is SIGKILLed while holding a file lock. What must happen for another process to safely take that file, and what must not happen when the first process revives?",
+    "check": "contains",
+    "values": [
+      "expir",
+      "reject"
+    ],
+    "note": "the crash test"
+  },
+  {
+    "id": "reason-11",
+    "system": "Answer in two or three sentences.",
+    "prompt": "Why is measuring p50 latency alone misleading for a system whose failures show up under contention?",
+    "check": "contains",
+    "values": [
+      "tail"
+    ],
+    "note": "percentiles"
+  },
+  {
+    "id": "reason-12",
+    "system": "Answer in two or three sentences.",
+    "prompt": "What is the risk of using a model's own judgement to grade another model's answer in an evaluation harness?",
+    "check": "contains",
+    "values": [
+      "bias"
+    ],
+    "note": "judge-grading-judge"
   }
 ]

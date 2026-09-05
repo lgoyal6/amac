@@ -310,7 +310,18 @@ func money(f float64) string {
 type Runner struct {
 	Reg    *model.Registry
 	Router *router.Router
+	// MaxTokens is the budget every arm gets. It is one number on purpose:
+	// a reasoning model spends most of a small budget thinking, so a budget
+	// that fits one tier's answer and not another's measures the budget rather
+	// than the models. At 512 the cheap tier ran out mid-thought on two of
+	// eight tasks and scored them as failures.
+	MaxTokens int
 }
+
+// DefaultMaxTokens is generous enough that no tier here has been observed to
+// run out, which is the only property that matters: an arm that dies on length
+// is not a worse model, it is an unmeasured one.
+const DefaultMaxTokens = 2048
 
 // Run executes every task on every arm. Arms are the tiers that are actually
 // configured, plus "routed" for the cascade, so the comparison is between real
@@ -337,7 +348,11 @@ func (r *Runner) Run(ctx context.Context, tasks []Task) (Report, error) {
 		var lats []time.Duration
 
 		for _, task := range tasks {
-			req := model.Request{System: task.System, Prompt: task.Prompt, MaxTokens: 512}
+			budget := r.MaxTokens
+			if budget <= 0 {
+				budget = DefaultMaxTokens
+			}
+			req := model.Request{System: task.System, Prompt: task.Prompt, MaxTokens: budget}
 			res := Result{TaskID: task.ID, Arm: arm}
 			start := time.Now()
 
