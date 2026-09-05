@@ -135,6 +135,11 @@ func (r *Repository) UpsertFromNotion(ctx context.Context, a Application) (Appli
 type ListOptions struct {
 	Query, Status string
 	Limit         int
+	// Due restricts to applications with a follow-up on or before now that are
+	// still open. The home tab needs that count and nothing else about them,
+	// and downloading every row to filter in the browser cost 150KB on a phone
+	// for two numbers.
+	Due bool
 }
 
 // filter builds the WHERE shared by List and Count. Shared rather than written
@@ -150,6 +155,13 @@ func (o ListOptions) filter() (string, []any) {
 	if o.Status != "" {
 		where = append(where, "status=?")
 		args = append(args, o.Status)
+	}
+	if o.Due {
+		// End of today, so a follow-up dated today is due today rather than
+		// tomorrow morning. Offers and rejections are closed whatever the date.
+		eod := time.Now().Truncate(24 * time.Hour).Add(24*time.Hour - time.Nanosecond)
+		where = append(where, "follow_up_at != '' AND follow_up_at <= ? AND status NOT IN ('Offer','Rejected')")
+		args = append(args, eod.UTC().Format(time.RFC3339Nano))
 	}
 	return strings.Join(where, " AND "), args
 }

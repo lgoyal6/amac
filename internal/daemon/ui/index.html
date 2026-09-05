@@ -325,7 +325,18 @@
                         margin:calc(-1 * var(--s3)); margin-bottom:var(--s3);
                         padding:var(--s3); background:var(--surface);
                         border-bottom:1px solid var(--line); }
-    .pane { max-height:none; height:clamp(240px, calc(100dvh - var(--header-h) - 330px), 380px); }
+    /* A terminal is eighty columns and a phone is forty-five. Mirrored bytes
+       that run off the right edge are bytes you cannot read, and the fade that
+       softened the cut was hiding exactly the text the card exists to show.
+       Wrap them: the mirror is still every byte, just on more lines. */
+    .pane { max-height:none; height:clamp(240px, calc(100dvh - var(--header-h) - 330px), 380px);
+            white-space:pre-wrap; overflow-wrap:anywhere;
+            -webkit-mask-image:none; mask-image:none; }
+    /* On a phone you are here because you are not at the Mac. The keypad that
+       answers the question is the primary control; opening a Terminal on a
+       machine you cannot see is the secondary one. */
+    #agents button.open-mac { background:transparent; border:1px solid var(--line); color:var(--dim);
+                font-size:11px; padding:6px 10px; font-weight:400; }
     .keys button, button.sm, .opts button { min-height:44px; min-width:44px; }
     .typebar input { min-height:44px; }
     .bar { display:none; flex-wrap:wrap; bottom:calc(var(--mobile-nav-h) + env(safe-area-inset-bottom));
@@ -1046,6 +1057,7 @@ function sessionActions(s) {
 	const open = document.createElement('button');
 	open.className = 'sm go';
 	open.textContent = 'open on Mac';
+	open.classList.add('open-mac');
 	open.onclick = async ev => {
 	  ev.stopPropagation();
 	  const r = await api(`/api/sessions/${encodeURIComponent(s.id)}/open-on-mac`, { method: 'POST' });
@@ -1357,9 +1369,23 @@ let homeLoading = false;
 async function loadHome(force = false) {
   if (homeLoading || (!force && Date.now() - homeLoadedAt < 30000)) return;
   homeLoading = true;
-  const [hr, tr, sr, jr, rr, mr, ssr] = await Promise.all([
-    api('/api/health'), api('/api/tasks'), api('/api/spend'), api('/api/applications?limit=1000'),
-    api('/api/health/runs'), api('/api/machine'), api('/api/sessions'),
+  // Sessions and spend are deliberately not fetched here. refresh() polls
+  // /api/sessions and fills the map before this runs, and loadTodaySpend()
+  // reads /api/spend for the header once a minute. Fetching both again made
+  // the home tab issue eleven requests for one screen, three of them the same
+  // session list, which was measured rather than assumed.
+  //
+  // Applications are asked for at the smallest limit that still gives an
+  // honest total. The handler counts separately from the page, so limit=1 is
+  // enough for "258 tracked", and follow-ups due comes from a filtered query
+  // rather than from downloading every row to filter here. That took the home
+  // payload from 150KB to under 2KB on a phone.
+  const [hr, tr, sr, jr, dr, rr, mr] = await Promise.all([
+    api('/api/health'), api('/api/tasks'),
+    api('/api/spend'),
+    api('/api/applications?limit=1'),
+    api('/api/applications?limit=1000&due=1'),
+    api('/api/health/runs'), api('/api/machine'),
   ]);
   homeLoading = false;
   homeLoadedAt = Date.now();
@@ -1376,17 +1402,17 @@ async function loadHome(force = false) {
   const tasks = await feed(tr, "tasks", []);
   const spend = await feed(sr, "money", {});
   const jobData = await feed(jr, "jobs", {});
-  const apps = Array.isArray(jobData) ? jobData : (jobData.applications || []);
+  const dueData = dr && dr.ok ? await dr.json().catch(() => ({})) : {};
+  // Two shapes from the same endpoint: the meta carries the true total, and
+  // the due query carries only the rows with a follow-up pending.
+  const appsTotal = jobData.total ?? 0;
+  const dueApps = Array.isArray(dueData) ? dueData : (dueData.applications || []);
+  const apps = dueApps;
   // The tiles are a glance, not the alarm. A feed they cannot read costs that
   // one tile its numbers and nothing else, so they are read without the unread
   // bookkeeping above, which exists to stop a blind monitor looking healthy.
   const runs = rr && rr.ok ? await rr.json().catch(() => ({})) : {};
   const mach = mr && mr.ok ? await mr.json().catch(() => ({})) : {};
-  // Read from the endpoint, not from the `sessions` map. That map is filled by
-  // the agents tab and the live stream, so on a cold load of the home tab it is
-  // empty and the tile confidently reported zero sessions while five were running.
-  const sessRaw = ssr && ssr.ok ? await ssr.json().catch(() => []) : [];
-  const sessList = Array.isArray(sessRaw) ? sessRaw : (sessRaw.sessions || []);
   if (unauthorized || !$('homeOut')) return;
   const actions = [];
   const blocked = [...sessions.values()].filter(s => s.state === 'blocked');
@@ -1424,7 +1450,7 @@ async function loadHome(force = false) {
       + `Check the daemon and reload.</span></div>`
     : "";
 
-  renderTiles({ health, spend, apps, runs, mach, sessList, tasks: Array.isArray(tasks) ? tasks : [] });
+  renderTiles({ health, spend, apps, appsTotal, runs, mach, tasks: Array.isArray(tasks) ? tasks : [] });
 
   if (!unread.length && !count) {
     out.innerHTML = '<div class="all-clear"><b>nothing needs you</b>'
@@ -1522,12 +1548,12 @@ async function loadHealth() {
 //
 // Every number here is read from the same endpoint the tab itself uses, so the
 // tile and the tab cannot disagree. Nothing is recomputed.
-function renderTiles({ health, spend, apps, runs, mach, sessList, tasks }) {
+function renderTiles({ health, spend, apps, appsTotal, runs, mach, tasks }) {
   const el = $('homeTiles');
   if (!el) return;
   const reports = (health.reports || []).filter(r => r.category !== 'machine');
   const healthy = reports.filter(r => r.state === 'ok').length;
-  const sess = sessList && sessList.length ? sessList : [...sessions.values()];
+  const sess = [...sessions.values()];
   const blocked = sess.filter(s => s.state === 'blocked').length;
   const ready = tasks.filter(t => t.state === 'ready').length;
 
@@ -1542,10 +1568,9 @@ function renderTiles({ health, spend, apps, runs, mach, sessList, tasks }) {
     .sort((x, y) => new Date(x.at) - new Date(y.at)).slice(-28);
 
   const today = new Date(); today.setHours(23, 59, 59, 999);
-  const due = apps.filter(a => a.followUpAt && new Date(a.followUpAt) <= today
-    && !['Offer', 'Rejected'].includes(a.status)).length;
-  const sent30 = apps.filter(a => a.appliedAt
-    && (Date.now() - new Date(a.appliedAt)) < 30 * 864e5).length;
+  // apps here is already the due set, filtered on the server, and the total
+  // rides in separately. Both are counts; neither needed the rows.
+  const due = apps.length;
 
   const m = mach.memory || {}, sw = mach.swap || {}, dk = mach.disk || {};
   const top = (mach.top || [])[0];
@@ -1567,9 +1592,9 @@ function renderTiles({ health, spend, apps, runs, mach, sessList, tasks }) {
              ['30d', (spend.agentUsd || '$0') + ' eq'],
              ['alerts', (spend.alerts || []).length]] },
     { tab: 'jobs', name: 'jobs',
-      big: sent30, bigClass: due ? 'warn' : '',
-      sub: 'applications sent in 30 days',
-      rows: [['follow-ups due', due], ['tracked', apps.length]] },
+      big: appsTotal, bigClass: due ? 'warn' : '',
+      sub: due ? `${due} follow-up${due === 1 ? '' : 's'} due` : 'applications tracked, nothing due',
+      rows: [['follow-ups due', due]] },
     { tab: 'automations', name: 'machine',
       big: m.percent != null ? m.percent + '%' : '--',
       bigClass: m.percent >= 90 ? 'bad' : m.percent >= 80 ? 'warn' : '',

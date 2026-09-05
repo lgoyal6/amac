@@ -31,7 +31,9 @@ func (s *Server) listApplications(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	apps, err := repo.List(r.Context(), apply.ListOptions{Query: r.URL.Query().Get("q"), Status: r.URL.Query().Get("status"), Limit: limit})
+	opts := apply.ListOptions{Query: r.URL.Query().Get("q"), Status: r.URL.Query().Get("status"),
+		Limit: limit, Due: r.URL.Query().Get("due") == "1"}
+	apps, err := repo.List(r.Context(), opts)
 	if err != nil {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
@@ -39,7 +41,7 @@ func (s *Server) listApplications(w http.ResponseWriter, r *http.Request) {
 	// Counted, not measured off the page. Total used to be len(apps), which
 	// cannot exceed the limit, so the jobs tab read "200 of 200 applications"
 	// against 257 rows and would have read 200 forever.
-	total, err := repo.Count(r.Context(), apply.ListOptions{Query: r.URL.Query().Get("q"), Status: r.URL.Query().Get("status")})
+	total, err := repo.Count(r.Context(), apply.ListOptions{Query: opts.Query, Status: opts.Status, Due: opts.Due})
 	if err != nil {
 		total = len(apps)
 	}
