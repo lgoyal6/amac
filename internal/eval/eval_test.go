@@ -95,9 +95,21 @@ func TestGateNeverCarriesTheAnswerKey(t *testing.T) {
 			gateAccept: true, realGate: false,
 		},
 		{
-			name:       "one_of is a gate production can also run",
-			task:       Task{Check: CheckOneOf, Values: []string{"bug", "feature"}},
+			// The label set is what production knows: which words are legal,
+			// not which one is right.
+			name: "one_of with a label set is a gate production can also run",
+			task: Task{Check: CheckOneOf, Values: []string{"bug"},
+				Labels: []string{"bug", "feature", "question"}},
 			gateAccept: false, realGate: true,
+		},
+		{
+			// The leak. Without labels the only set available is the answer,
+			// so gating on it tells the cascade to keep escalating until a
+			// model says the right word. It has to degrade to non-empty, and
+			// it must stop claiming to be the gate production would run.
+			name:       "one_of without a label set cannot be gated",
+			task:       Task{Check: CheckOneOf, Values: []string{"bug"}},
+			gateAccept: true, realGate: false,
 		},
 		{
 			name:       "json_keys is a gate production can also run",
@@ -164,7 +176,8 @@ func TestRoutedArmIsNotFlatteredByTheAnswerKey(t *testing.T) {
 
 func TestRoutedArmEscalatesOnAGateProductionCanRun(t *testing.T) {
 	const prompt = "Classify as bug or feature: the retry loop fires after cancel."
-	task := Task{ID: "c1", Prompt: prompt, Check: CheckOneOf, Values: []string{"bug"}}
+	task := Task{ID: "c1", Prompt: prompt, Check: CheckOneOf, Values: []string{"bug"},
+		Labels: []string{"bug", "feature"}}
 
 	runner, calls := rig(t,
 		map[string]string{prompt: "banana"}, // not in the label set: detectable without the key
@@ -203,8 +216,10 @@ func TestQualityAndCostAreCountedPerArm(t *testing.T) {
 	const p1 = "Classify as bug or feature: the retry loop fires after cancel."
 	const p2 = "Classify as bug or feature: add a --json flag to status."
 	tasks := []Task{
-		{ID: "t1", Prompt: p1, Check: CheckOneOf, Values: []string{"bug"}},
-		{ID: "t2", Prompt: p2, Check: CheckOneOf, Values: []string{"feature"}},
+		{ID: "t1", Prompt: p1, Check: CheckOneOf, Values: []string{"bug"},
+			Labels: []string{"bug", "feature"}},
+		{ID: "t2", Prompt: p2, Check: CheckOneOf, Values: []string{"feature"},
+			Labels: []string{"bug", "feature"}},
 	}
 
 	runner, _ := rig(t,
@@ -356,6 +371,56 @@ func TestPartialErrorsAreDisclosedButStillScored(t *testing.T) {
 	// It is still comparable, because it answered.
 	if !strings.Contains(out, "-90% cost") {
 		t.Errorf("a partially failing arm was dropped from the comparison:\n%s", out)
+	}
+}
+
+// The leak, stated as the thing that would actually have happened. A gate built
+// from a single-value answer key rejects every wrong answer, so the router
+// escalates until some tier produces the right word and the routed arm records
+// a quality it could never reach in production, where nothing knows the answer.
+func TestASingleLabelGateWouldMakeTheCascadeOmniscient(t *testing.T) {
+	leaky := Task{Check: CheckOneOf, Values: []string{"bug"}}
+	honest := Task{Check: CheckOneOf, Values: []string{"bug"},
+		Labels: []string{"bug", "feature", "question"}}
+
+	// "feature" is wrong, and it is exactly the mistake a cheap model makes.
+	// Production cannot tell: it is a legal label, so the gate must accept it
+	// and let the grader be the one to mark it wrong.
+	if err := honest.Gate()("", "feature"); err != nil {
+		t.Errorf("an honest gate rejected a legal label: %v", err)
+	}
+	if err := honest.Verify("feature"); err == nil {
+		t.Error("the grader accepted a wrong label")
+	}
+	// Whereas the leaky one rejects it, which is the router being told it
+	// guessed wrong by something production does not have.
+	if err := leaky.Gate()("", "feature"); err != nil {
+		t.Errorf("the fallback gate rejected a legal label, so the leak survives: %v", err)
+	}
+
+	// And it must not be advertised as the trustworthy kind, which is how the
+	// report came to count precisely the leaking tasks as production-gated.
+	if leaky.RealGate() {
+		t.Error("a task whose gate is its answer key was reported as production-gated")
+	}
+}
+
+// A label set that does not contain the answer would reject every correct
+// reply, sending the cascade to the strong tier on tasks the cheap tier got
+// right. That is a broken suite, not a hard one, so it is refused at load.
+func TestLoadTasksRejectsALabelSetMissingItsAnswer(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "tasks.json")
+	if err := writeFile(path, `[{"id":"x","prompt":"p","check":"one_of",
+		"values":["bug"],"labels":["feature","question"]}]`); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadTasks(path)
+	if err == nil {
+		t.Fatal("a label set that cannot contain the answer was accepted")
+	}
+	if !strings.Contains(err.Error(), "not among its labels") {
+		t.Errorf("error %q does not say what is wrong", err)
 	}
 }
 
