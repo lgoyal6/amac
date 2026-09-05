@@ -2,10 +2,13 @@ package attention
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -128,8 +131,23 @@ func recentlyNotified(ctx context.Context, log *event.Log, session string) (time
 	return ts, true
 }
 
+// noticeID mints the join key a notification is later matched on.
+//
+// The sequence number would do and arrives too late: it is assigned when the
+// event is appended, and the payload has to be built before that. A short
+// random id is enough to correlate one notification with what followed it, and
+// it survives the retention pass that redacts the message body.
+func noticeID() string {
+	var b [6]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
+	return hex.EncodeToString(b[:])
+}
+
 func record(ctx context.Context, log *event.Log, n Notice, out Outcome) error {
 	ev, err := event.New(event.KindAttention, n.Agent, n.Session, map[string]any{
+		"id":      noticeID(),
 		"reason":  n.Reason,
 		"account": n.Account,
 		"message": n.Message,

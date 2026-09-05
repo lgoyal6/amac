@@ -203,6 +203,7 @@ func (s *Server) Handler() http.Handler {
 			return
 		}
 		if c, err := r.Cookie(tokenCookie); err == nil && s.tokenOK(c.Value) {
+			s.recordOpen(r)
 			s.page(w, true)
 			return
 		}
@@ -210,6 +211,33 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	return mux
+}
+
+// recordOpen notes that somebody with a token opened the board.
+//
+// amac has always known what it sent and never what happened next. This is the
+// missing half, and it is deliberately only the raw fact: an open, its time,
+// and the session it was deep-linked to if there was one. Whether that open
+// counts as a response to a particular notification is a question with a
+// window in it, and the join belongs in the analysis where the window can be
+// argued with rather than in the log where it cannot.
+//
+// Only tokened opens are recorded, because an untokened one is a stranger on
+// the tailnet and not a response to anything.
+func (s *Server) recordOpen(r *http.Request) {
+	payload := map[string]any{"source": "board"}
+	// The deep link a notification's button produces names a session, which is
+	// the strongest evidence available that this open answered that alert.
+	if id := r.URL.Query().Get("session"); id != "" {
+		payload["session"] = id
+	}
+	ev, err := event.New(event.KindBoardOpened, "board", r.URL.Query().Get("session"), payload)
+	if err != nil {
+		return
+	}
+	// Fire and forget on purpose: losing an observability event must never
+	// fail the page it was observing.
+	_, _ = s.log.Append(r.Context(), ev)
 }
 
 func (s *Server) tokenOK(got string) bool {
