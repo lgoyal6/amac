@@ -7,3 +7,9 @@ node_modules/
 
 # graphify knowledge graph (local index, not source)
 graphify-out/
+
+# Analysis venv and caches. The requirements file is the contract; a committed
+# virtualenv is one person's machine.
+analysis/.venv/
+analysis/__pycache__/
+analysis/.pytest_cache/
