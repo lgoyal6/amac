@@ -9,6 +9,8 @@ to run on yours.
 [![licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
 [![go](https://img.shields.io/badge/go-1.26%2B-00ADD8.svg)](go.mod)
 
+![The board: what needs you, then one tile per tab](docs/img/home.png)
+
 ```bash
 git clone https://github.com/lgoyal6/amac && cd amac
 go build -o bin/amac ./cmd/amac
@@ -22,6 +24,35 @@ bin/amac url                # the link, token included, to open on your phone
 Go 1.26+, tmux, and Tailscale for the board. Discord only if you want a phone
 notification; everything works without it. Notion and LooseAPI are optional
 data sources for Jobs and Money. Nothing runs in a cloud you pay for.
+
+## Why a status page was not enough
+
+For a week this board told me all fourteen automations were healthy. In that
+same week they failed thirteen times.
+
+Nothing was lying. A status check reads the newest piece of evidence, and every
+one of those failures was followed by a success before anyone looked. The job
+that feeds my job search crashed eight times in seven days and the dashboard was
+green each time I opened it, because by then it had already recovered.
+
+That is the failure mode this project is really about. Three rules came out of
+it, and they are the reason the health code looks the way it does:
+
+- **Count deliveries, not runs.** These pipelines over-schedule on purpose, so
+  most runs deliberately no-op and "last run green" is almost always true and
+  almost meaningless. The ground truth is the artifact written only after work
+  landed.
+- **Detect silence.** Nothing pushes an event when a cron fails to fire, so
+  every automation declares a cadence and a grace period, and the lateness test
+  is applied centrally so no probe can forget it.
+- **A failed probe reports `unknown`, never `ok`.** A false all-clear is worse
+  than no monitor.
+
+The run log is the other half: every run reported once, whatever happened after
+it. A failure the next run rescued still shows up, and a pipeline that has been
+fixed says so rather than leading with last week's failures.
+
+![The run log: a tick per run, red then green where a pipeline recovered](docs/img/run-log.png)
 
 ## What it does that the terminal cannot
 
@@ -46,7 +77,7 @@ journal for a class of thing the host does not manage.
 **The core design decision: every transition is an event.** Agent and
 automation activity is appended to one journal, so "why did it do that" is
 answered by replay rather than by guessing. Small transactional tables hold
-state that must be current or atomic—queue ownership and the local Jobs cache—
+state that must be current or atomic, queue ownership and the local Jobs cache,
 while external systems enter through explicit adapters rather than screen
 scraping.
 
@@ -61,16 +92,18 @@ amac daemon      tailnet only, or it does not start
 amac url         the link with the token in it
 ```
 
-- **Home** — only things that need action. Machine capacity is shown separately
+<img src="docs/img/phone.png" alt="The same board on a phone, installed to the home screen" width="340">
+
+- **Home**: only things that need action. Machine capacity is shown separately
   from automation failure, so a busy Mac does not make a healthy job look red.
-- **Agents** — board, wall, queue and crew. Every session's live state, panes,
+- **Agents**: board, wall, queue and crew. Every session's live state, panes,
   work and handoffs are together without crowding the top-level navigation.
-- **Automations** — delivery health, schedule and host for every declared job,
+- **Automations**: delivery health, schedule and host for every declared job,
   over a live reading of what the Mac has left: memory split the way Activity
   Monitor splits it, plus disk and swap.
-- **Money** — agent cost split by login, plus LooseAPI services, trials,
+- **Money**: agent cost split by login, plus LooseAPI services, trials,
   credits, provider health, alerts and recent billing events.
-- **Jobs** — a fast local view of submitted applications, with search, status,
+- **Jobs**: a fast local view of submitted applications, with search, status,
   follow-up dates and Notion sync, over charts of what went out in the last
   thirty days, where those applications are, and how they are tiered.
 
@@ -140,14 +173,14 @@ curl -X POST -H "X-Amac-Token: $TOKEN" https://your-mac:7788/api/beat/vps-backup
 ```
 
 A red line can be handed straight to an agent from the health tab, opened in the
-directory the automation actually lives in — which comes from the registry, never
+directory the automation actually lives in, which comes from the registry, never
 inferred from the name.
 
 ## Attention
 
 Every signal that means "this session wants you" lands on `amac attention`,
 which decides whether to interrupt, delivers it if so, and records the decision
-either way — including the suppressed ones and the reason.
+either way, including the suppressed ones and the reason.
 
 Discord is deliberately the notification edge, not a second control plane.
 It tells you that a session needs attention and links back to the board; session
@@ -200,7 +233,7 @@ was quiet" from "this account was never read".
 
 ## A queue, and the org
 
-The org is a chain — planner, executor, verifier — which is right when a task
+The org is a chain, planner, executor, verifier, which is right when a task
 has stages and wrong when there are simply several unrelated things to do.
 
 ```
@@ -216,7 +249,7 @@ A claim is a conditional `UPDATE`, not a read of the log: the log answers "what
 happened", the table answers "who holds this right now", and only the second has
 to be atomic. Every claim carries a fencing token, so a worker whose lease
 lapsed has its result rejected on arrival rather than trusted because it
-arrived. Proved by causing it — 120 tasks, 6 workers SIGKILLed holding 5 each,
+arrived. Proved by causing it, 120 tasks, 6 workers SIGKILLed holding 5 each,
 120 finished exactly once, 0 duplicated.
 
 The crew's handoff is a file, not a pipe, which means you can read the plan on
@@ -245,7 +278,7 @@ call is the entire reason permission prompts reach a human at all.
 ## Status
 
 Phase 1, running unattended on this machine. A full session runs end to end
-against both agents over [ACP](https://agentclientprotocol.com) — an open,
+against both agents over [ACP](https://agentclientprotocol.com), an open,
 versioned JSON-RPC protocol with adapters for Claude Code, Codex and Gemini CLI.
 Tool calls, permission requests and output arrive as structured data, so
 `blocked` is a fact rather than a regex over rendered text.
@@ -264,17 +297,34 @@ amac log -n 20                 recent events
 **Roadmap.** Session babysitting is out of scope; Claude Code Remote Control
 ships it. What is left is what Remote Control does not reach.
 
-1. ~~**Daemon**: supervise sessions, API, board on the tailnet~~ — shipped
+1. ~~**Daemon**: supervise sessions, API, board on the tailnet~~, shipped
 2. **Gateway and router**: the cascade is in and the harness now measures it
    without showing it the answer key; what is left is the curve against real
    models rather than stubs
 3. **Orchestrator**: grade the prompt, convene as many agents as it warrants,
    with a per-task token budget
 4. ~~**Sensors**: browser extension and email parsing for an application
-   tracker, with a local cache and Notion backup~~ — shipped
+   tracker, with a local cache and Notion backup~~, shipped
 5. **Observer**: what I am working on, metadata first, pixels only for
    allowlisted apps
 6. **Miner**: patterns in the log become suggested automations
+
+## What is guaranteed, and what proves it
+
+Every row is a property the system claims and a test that fails if it stops
+holding. They run in CI on every push.
+
+| property | why it matters | proved by |
+| --- | --- | --- |
+| No work lost or duplicated across a crash | A worker is a process someone can kill, and an agent that dies mid-task must not take the task with it | 120 tasks, 6 workers SIGKILLed holding 5 each, all 120 finish exactly once (`TestNoWorkLostOrDuplicatedAcrossCrashes`) |
+| A lapsed lease cannot finish its work | The result of a worker that was already reclaimed is stale, and trusting it because it arrived is how two workers both "succeed" | `TestAFencedWorkerCannotFinishOrRenew` |
+| Concurrent claims never overlap | The claim is a conditional `UPDATE`, not a read followed by a write | `TestConcurrentClaimsNeverOverlap` |
+| The log is a total order, and replayable | "Why did it do that" is answered by replay rather than by guessing | `TestSequenceIsTotalOrder`, `TestReplayFromSequence` |
+| A slow reader cannot stall a writer | The durable record must never depend on a phone holding a connection open | `TestSlowSubscriberDoesNotBlockWriter` |
+| Alerting fires on bad-to-bad transitions | Late (went quiet) and failing (ran and broke) are different news; alerting only on ok-to-bad silently swallows the second | `TestAlertOnBadToBadTransition` |
+| A probe that fails reports `unknown` | A false all-clear is worse than no monitor | `TestProbeErrorIsUnknown` |
+| A start banner is not a run | Several jobs write a start line in the same shape as a completion; counting both doubled one job's history | `TestOnlyCompletionMarkersAreRuns` |
+| The digest fits a phone screen | Discord's mobile column is about 40 characters, and a roster that wraps is a roster nobody reads | `TestDigestFitsAPhoneScreen` |
 
 ## Does this run on my machine
 
@@ -299,7 +349,7 @@ elsewhere the notification is simply sent.
 
 ## More
 
-- [How it works, and why](docs/design.md) — the long version: what each
+- [How it works, and why](docs/design.md), the long version: what each
   subsystem is guarding against, and the bug that put it there
 - [Contributing](CONTRIBUTING.md)
 
