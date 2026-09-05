@@ -225,6 +225,11 @@
                  border-radius:6px; color:var(--dim); font:11px/1 var(--mono);
                  padding:7px 9px; min-width:30px; }
   .keys button:active { background:var(--line); color:var(--fg); }
+  /* The keys are self-evident once you know which way they point, and not at
+     all before. A title attribute cannot say so on a phone, so the label is
+     visible. */
+  .keys-label { align-self:center; color:var(--faint); font:10px/1 var(--mono);
+                letter-spacing:.04em; padding-right:2px; }
 
   .typebar { display:flex; gap:var(--s2); margin-top:var(--s2); }
   .typebar input { flex:1; min-width:0; background:var(--raise); color:var(--fg);
@@ -987,10 +992,14 @@ function cardFor(s) {
   // default account's label is already the agent's name, and repeating it
   // would put a chip on every card that distinguishes nothing.
   const account = s.accountLabel && s.accountLabel !== s.agent ? s.accountLabel : '';
-  tags.innerHTML = `<span class="agent">${esc(s.agent || 'shell')}</span>
-    ${account ? `<span class="agent">${esc(account)}</span>` : ''}
-    <span class="kind">${s.kind === 'acp' ? 'managed' : 'terminal'}</span>
-    ${s.attached ? '<span class="kind on">attached</span>' : ''}`;
+  // Four bare words in a row do not say which dimension each one is. The chips
+  // stay short because the row is glanced at, and each carries what it means.
+  tags.innerHTML = `<span class="agent" title="agent">${esc(s.agent || 'shell')}</span>
+    ${account ? `<span class="agent" title="login this is spending">${esc(account)}</span>` : ''}
+    <span class="kind" title="${s.kind === 'acp'
+      ? 'started by amac, driven over ACP'
+      : 'a tmux session amac only watches'}">${s.kind === 'acp' ? 'managed' : 'terminal'}</span>
+    ${s.attached ? '<span class="kind on" title="a terminal is attached to this session right now">attached</span>' : ''}`;
   card.appendChild(tags);
 
   const d = document.createElement('div');
@@ -1186,6 +1195,17 @@ function remote(s) {
     b.onclick = ev => { ev.stopPropagation(); send(body); };
     keys.appendChild(b);
   };
+  // The row is two groups pointing opposite ways: the first sends keystrokes
+  // into the agent's terminal, the second reads state back out of it. Nothing
+  // on screen said so, and "1 2 3 enter esc ^C" in a dense monospace row is
+  // not a thing anyone works out from looking at it.
+  const groupLabel = text => {
+    const l = document.createElement('span');
+    l.className = 'keys-label';
+    l.textContent = text;
+    keys.appendChild(l);
+  };
+  groupLabel('send');
   // Numbers first: every agent CLI on this machine numbers its options, and
   // pressing the number you can see on the screen above is the whole gesture.
   for (const n of ['1', '2', '3']) key(n, { text: n });
@@ -1200,6 +1220,7 @@ function remote(s) {
   // and splitting them across three rows only reflected the order they were
   // written in.
   keys.appendChild(divider());
+  groupLabel('look');
   inspectKeys(s, keys);
   wrap.appendChild(keys);
 
