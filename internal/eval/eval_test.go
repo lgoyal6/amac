@@ -271,8 +271,12 @@ func TestTableStatesSavingsAgainstTheStrongBaseline(t *testing.T) {
 	out := rep.Table()
 
 	for _, want := range []string{
-		"-90% cost, -30.0 pts quality",       // cheap: much cheaper, much worse
-		"-60% cost, +0.0 pts quality (3 esc", // routed: cheaper at the same quality
+		// Ten tasks cannot separate 60% from 90%, so both deltas are marked as
+		// what they are. The annotation is the point: the cost figures are
+		// arithmetic and the quality figures are a sample, and a table that
+		// prints them alike is one that gets quoted as having ranked models.
+		"-90% cost, -30.0 pts quality (within noise)",
+		"-60% cost, +0.0 pts quality (within noise) (3 esc",
 		"routed gating: 6 of 10 tasks gated as production would",
 	} {
 		if !strings.Contains(out, want) {
@@ -421,6 +425,55 @@ func TestLoadTasksRejectsALabelSetMissingItsAnswer(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not among its labels") {
 		t.Errorf("error %q does not say what is wrong", err)
+	}
+}
+
+// The measured curve, kept as a test so the reporting cannot quietly start
+// claiming more than the sample supports.
+//
+// Seventy tasks against GMI on 2026-09-05: cheap 88.6%, mid 87.1%, strong
+// 90.0%, routed 90.0%. Every arm's interval is about seven points wide, every
+// pairwise z is under 0.6, and the spread between best and worst is 2.9
+// points. The quality column ranks nothing. The cost column spans 12.5x and is
+// not a sample at all, which is the whole finding.
+func TestTheMeasuredCurveIsReportedAsIndistinguishable(t *testing.T) {
+	rep := Report{
+		Arms: []ArmSummary{
+			{Arm: "cheap", Passed: 62, Total: 70, Errored: 1, CostUSD: 0.00331,
+				ErrDetail: "spent its whole budget reasoning"},
+			{Arm: "mid", Passed: 61, Total: 70, CostUSD: 0.00237},
+			{Arm: "strong", Passed: 63, Total: 70, CostUSD: 0.02964},
+			{Arm: "routed", Passed: 63, Total: 70, CostUSD: 0.00864},
+		},
+		RealGates: 46, WeakGates: 24,
+	}
+	out := rep.Table()
+
+	// Not one of the differences survives the test, so all three must say so.
+	if n := strings.Count(out, "within noise"); n != 3 {
+		t.Errorf("%d of 3 quality deltas marked as noise:\n%s", n, out)
+	}
+	// The cost saving is arithmetic and must be stated flatly.
+	if !strings.Contains(out, "-71% cost") {
+		t.Errorf("the routed cost saving is missing:\n%s", out)
+	}
+	// And the interval has to be on the face of the table, not only in a note.
+	if !strings.Contains(out, "+/-") {
+		t.Errorf("quality is printed without its interval:\n%s", out)
+	}
+}
+
+// A gap that is real must not be dismissed, or the annotation becomes noise
+// itself. Ninety-five percent against fifty over two hundred tasks is a
+// difference, and the table has to be able to say so.
+func TestARealQualityGapIsNotDismissedAsNoise(t *testing.T) {
+	rep := Report{Arms: []ArmSummary{
+		{Arm: "strong", Passed: 190, Total: 200, CostUSD: 0.10},
+		{Arm: "cheap", Passed: 100, Total: 200, CostUSD: 0.01},
+	}}
+	out := rep.Table()
+	if strings.Contains(out, "within noise") {
+		t.Errorf("a 45-point gap over 200 tasks was called noise:\n%s", out)
 	}
 }
 
