@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -33,11 +34,13 @@ func useModel(t *testing.T, path string) {
 	t.Helper()
 	oldPath, oldModel := ModelPath, model
 	ModelPath = func() string { return path }
-	model = nil
-	modelOnce = onceReset()
+	// Reset in the test rather than behind a helper in the package: a
+	// production function that exists only for a test is dead code, and the
+	// dead-code gate says so.
+	model, modelOnce = nil, sync.Once{}
 	t.Cleanup(func() {
 		ModelPath, model = oldPath, oldModel
-		modelOnce = onceReset()
+		modelOnce = sync.Once{}
 	})
 }
 
