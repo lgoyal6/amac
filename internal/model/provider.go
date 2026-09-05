@@ -176,6 +176,14 @@ func keyFor(name string) string {
 	if k := os.Getenv(name); k != "" {
 		return k
 	}
+	return keychain(name)
+}
+
+// keychain is a variable so a test can say "nothing is configured". Once the
+// key is genuinely stored, the environment alone can no longer describe that
+// state, and every test that asserted it either fails or skips forever on the
+// one machine where the configuration is real.
+var keychain = func(name string) string {
 	out, err := exec.Command("security", "find-generic-password",
 		"-w", "-s", name, "-a", os.Getenv("USER")).Output()
 	if err != nil {

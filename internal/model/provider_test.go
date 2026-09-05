@@ -185,6 +185,7 @@ func TestAnthropicTakesTheStrongTier(t *testing.T) {
 // With nothing configured, the caller is told exactly what to set rather than
 // getting an empty registry and a confusing failure three calls later.
 func TestNothingConfiguredSaysWhatIsMissing(t *testing.T) {
+	noKeychain(t)
 	for _, k := range []string{"GMI_API_KEY", "ANTHROPIC_API_KEY",
 		"AMAC_CHEAP_API_KEY", "AMAC_MID_API_KEY", "AMAC_STRONG_API_KEY"} {
 		t.Setenv(k, "")
@@ -219,3 +220,18 @@ func contains(s, sub string) bool {
 }
 
 func close(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
+
+// noKeychain makes the login keychain answer nothing for one test.
+//
+// Clearing the environment used to be the whole of "nothing is configured".
+// Once keyFor started reading the keychain, it stopped being: on the machine
+// where the key is actually stored, these assertions describe a state that
+// machine is not in. Without a seam the choice is a test that fails there or
+// one that skips there, and skipping is worse, because the machine that skips
+// is the only one where the configuration is real.
+func noKeychain(t *testing.T) {
+	t.Helper()
+	prev := keychain
+	keychain = func(string) string { return "" }
+	t.Cleanup(func() { keychain = prev })
+}
