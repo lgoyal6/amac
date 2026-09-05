@@ -358,6 +358,7 @@ holding. They run in CI on every push.
 | A start banner is not a run | Several jobs write a start line in the same shape as a completion; counting both doubled one job's history | `TestOnlyCompletionMarkersAreRuns` |
 | The digest fits a phone screen | Discord's mobile column is about 40 characters, and a roster that wraps is a roster nobody reads | `TestDigestFitsAPhoneScreen` |
 | Two agents cannot hold one file | A claim is all or nothing, conflicts on directory containment both ways, and a revived holder is refused | `TestTwoSessionsCannotHoldTheSameFile`, `TestARevivedHolderCannotReleaseItsReplacement` |
+| A dead agent does not lock a tree | 1,024 paths, 16 children SIGKILLed holding 64 each: 1,024 grants over 1,024 distinct paths, all reclaimed once the leases lapsed, 0 stale tokens accepted | `TestNoPathHeldTwiceAcrossCrashes` |
 | A permission request blocks until answered | It is the path where an agent asks to do something dangerous and a human approves it | `TestPermissionRequestBlocksUntilAnswered` |
 | Auto mode takes the narrowest allow | Standing permission changes what every future turn may do without anyone deciding that | `TestAutoPolicyTakesTheNarrowestAllow` |
 | Nothing is observed without an allowlist | A missing policy denies everything, and the kill switch stops it without the daemon cooperating | `TestNoPolicyFileObservesNothing`, `TestTheKillSwitchStopsObservationImmediately` |
