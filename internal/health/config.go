@@ -185,10 +185,24 @@ func Load(path string, log *event.Log) ([]Automation, error) {
 		}
 		a := Automation{Name: d.Name, What: d.What, Home: expand(d.Home), Category: category}
 
-		// Cadence may be empty, which means the lateness test does not apply.
+		// Cadence may be empty for a service and for nothing else.
+		//
 		// A service is either up or it is not, and declaring a fake cadence for
-		// one would be declaring a fake delivery.
-		if d.Every != "" {
+		// one would be declaring a fake delivery. Everything else must say how
+		// often it is expected to deliver, because that declaration is the only
+		// thing that makes silence detectable: nothing pushes an event when a
+		// cron fails to fire, so an automation with no cadence can go dark
+		// forever and every sweep will keep reporting it fine.
+		//
+		// This was documented as required and never enforced, so a roster could
+		// quietly contain an automation nothing would ever call late.
+		if d.Every == "" {
+			if d.Probe != "service" && category != "machine" {
+				problems = append(problems, where+
+					": every is required, or its silence can never be detected"+
+					" (only a continuous service may omit it)")
+			}
+		} else {
 			if a.Every, err = time.ParseDuration(d.Every); err != nil {
 				problems = append(problems, where+": every "+err.Error())
 			}

@@ -313,6 +313,14 @@ func readSwap(ctx context.Context) (Swap, error) {
 	if s.Total == 0 {
 		s = parseSwapSpaced(string(out))
 	}
+	// Free is derived rather than trusted. sysctl reports all three in
+	// megabytes with two decimals, so converting each independently leaves the
+	// three disagreeing by a byte or so, and a card that draws used and free as
+	// bands of a total they do not sum to is drawing a lie, however small.
+	// Disk does the same thing in the other direction.
+	if s.Total > 0 {
+		s.Free = s.Total - s.Used
+	}
 	s.Percent = percent(s.Used, s.Total)
 	return s, nil
 }
