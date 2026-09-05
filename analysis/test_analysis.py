@@ -149,3 +149,59 @@ def test_split_is_by_time_not_at_random():
     train, test = timewise_split(df, holdout=0.3)
     assert len(train) == 70 and len(test) == 30
     assert train["at"].max() < test["at"].min(), "no training row may postdate a test row"
+
+
+# --------------------------------------------------------------- policies ---
+
+from policies import Decision, always, backoff, dedup, dedup_urgent, replay  # noqa: E402
+
+
+def stream(*specs):
+    """(minutes_offset, session, reason) tuples into decisions."""
+    return [Decision(at=T0 + pd.Timedelta(minutes=m), session=s, reason=r) for m, s, r in specs]
+
+
+def test_dedup_suppresses_only_inside_its_window():
+    d = stream((0, "a", "turn-complete"), (2, "a", "turn-complete"), (20, "a", "turn-complete"))
+    assert replay(d, "x", dedup(300)).sent == 2, "the 2-minute repeat is inside 5 minutes"
+
+
+def test_dedup_is_per_session():
+    """Two agents finishing at once are two things you need to know, not one."""
+    d = stream((0, "a", "turn-complete"), (0, "b", "turn-complete"))
+    assert replay(d, "x", dedup(300)).sent == 2
+
+
+def test_urgent_is_never_suppressed():
+    """turn-complete is an agent reporting it finished; wants-attention is one
+    that is stuck. Treating them the same is what the live rule does."""
+    d = stream((0, "a", "turn-complete"), (1, "a", "wants-attention"), (2, "a", "turn-complete"))
+    assert replay(d, "x", dedup(300)).sent == 1
+    assert replay(d, "x", dedup_urgent(300)).sent == 2
+
+
+def test_backoff_widens_then_resets_when_quiet():
+    """A fixed window treats the fifth message in ten minutes like the first."""
+    burst = stream(*[(i, "a", "turn-complete") for i in (0, 1, 2, 4, 8, 16)])
+    assert replay(burst, "x", backoff(60)).sent < replay(burst, "x", dedup(60)).sent
+    # After a long silence the streak resets, so a later message is not
+    # penalised for a burst an hour ago.
+    later = burst + stream((200, "a", "turn-complete"))
+    assert replay(later, "x", backoff(60)).sent == replay(burst, "x", backoff(60)).sent + 1
+
+
+def test_every_policy_mentions_a_session_at_least_once():
+    """A policy that silences a session entirely is not quieter, it is broken.
+    Coverage is the constraint that makes a volume reduction meaningful."""
+    d = stream(*[(i, f"s{i%7}", "turn-complete") for i in range(60)])
+    ceiling = replay(d, "all", always)
+    for name, pol in [("dedup", dedup(300)), ("backoff", backoff(60))]:
+        got = replay(d, name, pol)
+        assert got.sessions == ceiling.sessions, f"{name} lost a session entirely"
+        assert got.sent <= ceiling.sent
+
+
+def test_replay_is_deterministic():
+    """A counterfactual that changes between runs cannot be compared against."""
+    d = stream(*[(i, f"s{i%5}", "turn-complete") for i in range(80)])
+    assert replay(d, "a", backoff(60)).sent == replay(d, "b", backoff(60)).sent
