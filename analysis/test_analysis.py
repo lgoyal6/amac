@@ -205,3 +205,44 @@ def test_replay_is_deterministic():
     """A counterfactual that changes between runs cannot be compared against."""
     d = stream(*[(i, f"s{i%5}", "turn-complete") for i in range(80)])
     assert replay(d, "a", backoff(60)).sent == replay(d, "b", backoff(60)).sent
+
+
+# ------------------------------------------------------- observable label ---
+
+from notifications import responded  # noqa: E402
+
+
+def test_a_board_open_soon_after_counts_as_a_response():
+    """The label amac can now observe. Unlike a session state change it cannot
+    be produced by an agent: it takes a person with a token, which is exactly
+    what the previous label was missing."""
+    notifs = pd.DataFrame({"at": [T0, T0], "session": ["a", "b"]})
+    opens = pd.DataFrame({
+        "at": [T0 + pd.Timedelta(minutes=2)],
+        "session": ["a"],
+    })
+    got = responded(notifs, opens)
+    assert got["responded"].tolist() == [True, True], "any open is weak evidence for both"
+    assert got["responded_directly"].tolist() == [True, False], \
+        "only the deep-linked session is answered specifically"
+
+
+def test_an_open_before_the_notification_is_not_a_response():
+    notifs = pd.DataFrame({"at": [T0], "session": ["a"]})
+    opens = pd.DataFrame({"at": [T0 - pd.Timedelta(minutes=5)], "session": ["a"]})
+    assert responded(notifs, opens)["responded"].tolist() == [False]
+
+
+def test_an_open_long_after_is_not_a_response():
+    notifs = pd.DataFrame({"at": [T0], "session": ["a"]})
+    opens = pd.DataFrame({"at": [T0 + pd.Timedelta(hours=3)], "session": ["a"]})
+    assert responded(notifs, opens)["responded"].tolist() == [False]
+
+
+def test_no_opens_recorded_yet_is_false_rather_than_an_error():
+    """The label starts empty by construction, on the day recording shipped. An
+    empty frame must read as 'nothing responded yet', not crash the report."""
+    notifs = pd.DataFrame({"at": [T0], "session": ["a"]})
+    got = responded(notifs, pd.DataFrame(columns=["at", "session"]))
+    assert got["responded"].tolist() == [False]
+    assert got["responded_directly"].tolist() == [False]

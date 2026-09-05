@@ -97,3 +97,16 @@ def notifications(db: str | Path | None = None) -> pd.DataFrame:
     df["sent"] = df["outcome"].map(lambda o: bool(o.get("sent")) if isinstance(o, dict) else False)
     df["why"] = df["outcome"].map(lambda o: o.get("why", "") if isinstance(o, dict) else "")
     return df.drop(columns=["outcome"])
+
+
+def opens(db: str | Path | None = None) -> pd.DataFrame:
+    """Board opens by somebody holding a token.
+
+    This is the half amac was missing. It knew what it sent and never what
+    happened next, which is why the obvious outcome label turned out to measure
+    which adapter reports telemetry rather than anything a person did. An open
+    is a raw fact with no window attached; whether one answers a particular
+    notification is decided here, where the window can be argued with.
+    """
+    df = field(events("board.opened", db), "session", "source")
+    return df

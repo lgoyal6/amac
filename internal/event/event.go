@@ -53,6 +53,21 @@ const (
 	// told apart from a stretch where nothing happened.
 	KindAttention Kind = "attention"
 
+	// The board was opened by somebody with a token.
+	//
+	// Recorded because amac knows what it sent and has never known what
+	// happened next, and that gap is not academic: the obvious way to score a
+	// notification, "did the session it named change state soon after", turned
+	// out to measure how much telemetry an adapter emits rather than anything
+	// the human did. It correlated 0.64 with session chattiness, so a model
+	// trained on it learns which CLI reports state. See analysis/README.md.
+	//
+	// This is the raw fact and nothing more. Whether an open counts as a
+	// response to a particular notification is a question with a window in it,
+	// and a window baked into the log is a decision nobody can revisit; the
+	// join belongs in the analysis, where it can be argued with.
+	KindBoardOpened Kind = "board.opened"
+
 	// What a session amac does not own is doing, as reported by the agent's
 	// own hooks. Separate from session.update, which carries ACP traffic for
 	// sessions amac started: this is the only state available for the twenty

@@ -58,6 +58,46 @@ def label(notifs: pd.DataFrame, states: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def responded(notifs: pd.DataFrame, opens: pd.DataFrame, window: pd.Timedelta = WINDOW) -> pd.DataFrame:
+    """The label amac can now actually observe: did a person open the board.
+
+    Unlike "the session changed state", this cannot be produced by an agent. It
+    takes a human with a token, so it is not a property of which CLI is running,
+    which is what sank the previous attempt at a correlation of 0.64 with
+    session chattiness.
+
+    Two strengths, and the stronger one is narrower. A deep-linked open names
+    the session it came from, so it answers that notification specifically. A
+    bare open only says somebody looked at the board soon after, which is
+    weaker evidence and still evidence.
+    """
+    out = notifs.copy()
+    if opens.empty:
+        out["responded"] = False
+        out["responded_directly"] = False
+        return out
+
+    all_ns = np.sort(opens["at"].to_numpy(dtype="datetime64[ns]").astype("int64"))
+    by_session = {
+        s: np.sort(g["at"].to_numpy(dtype="datetime64[ns]").astype("int64"))
+        for s, g in opens[opens["session"].astype(bool)].groupby("session")
+    }
+    w = int(window.value)
+
+    def hit(times, at_ns):
+        if times is None or len(times) == 0:
+            return False
+        i = np.searchsorted(times, at_ns, side="right")
+        return bool(i < len(times) and times[i] < at_ns + w)
+
+    at = notifs["at"].to_numpy(dtype="datetime64[ns]").astype("int64")
+    out["responded"] = [hit(all_ns, t) for t in at]
+    out["responded_directly"] = [
+        hit(by_session.get(sess), t) for t, sess in zip(at, notifs["session"])
+    ]
+    return out
+
+
 def instrumentation_check(notifs: pd.DataFrame, states: pd.DataFrame) -> pd.DataFrame:
     """The check that decides whether any of this means anything.
 
@@ -145,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
 
     notifs = amaclog.notifications(args.db)
     states = amaclog.sessions(args.db)
+    opens = amaclog.opens(args.db)
     sent = notifs[notifs["sent"]].copy()
 
     print(f"attention decisions   : {len(notifs)}")
@@ -154,8 +195,34 @@ def main(argv: list[str] | None = None) -> int:
         print("\nnothing was ever sent; nothing to analyse")
         return 0
 
+    # The observable label first, because it is the one worth having. It only
+    # exists from the day board opens started being recorded, so this reports
+    # how much of the history it covers rather than quietly scoring a week.
+    print("\n--- the label amac can observe ---")
+    if opens.empty:
+        print("no board opens recorded yet.")
+        print("This is the label the recommender needs and it starts empty by")
+        print("construction: the daemon began recording opens on the day that")
+        print("shipped. Come back after a few weeks of ordinary use.")
+    else:
+        first = opens["at"].min()
+        covered = sent[sent["at"] >= first]
+        if covered.empty:
+            print(f"opens recorded from {first:%b %d}, which is after every notification here.")
+        else:
+            r = responded(covered, opens)
+            print(f"opens recorded  : {len(opens)}, from {first:%b %d}")
+            print(f"notifications since : {len(covered)}")
+            print(f"  followed by any open within {WINDOW}: {r['responded'].mean():.1%}")
+            print(f"  followed by an open naming that session: {r['responded_directly'].mean():.1%}")
+            if len(covered) < 200:
+                print(f"\n{len(covered)} notifications is not enough to model on.")
+                print("Reported anyway, because a small honest number beats a")
+                print("large invalid one, which is what the rest of this file is about.")
+
     labelled = label(sent, states)
-    print(f"\nnaive engagement rate : {labelled['engaged'].mean():.1%}")
+    print(f"\n--- the label that does not work, kept as a warning ---")
+    print(f"naive engagement rate : {labelled['engaged'].mean():.1%}")
 
     check = instrumentation_check(sent, states)
     bad = check[~check["labelable"]]
