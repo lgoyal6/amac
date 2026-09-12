@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -82,7 +83,7 @@ func TestActionsOnAProcessSessionAreRefusedAsSuch(t *testing.T) {
 	if code, body := post(t, s, "GET", "/api/sessions/pid-4242/pane", ""); code == 400 {
 		t.Errorf("a read was refused as an action: %v", body)
 	}
-	if _, body := post(t, s, "DELETE", "/api/tasks/pid-4242", ""); strings.Contains(body["error"].(string), "process table") {
+	if _, body := post(t, s, "DELETE", "/api/tasks/pid-4242", ""); strings.Contains(fmt.Sprint(body["error"]), "process table") {
 		t.Errorf("a task was mistaken for a process session: %v", body)
 	}
 }
