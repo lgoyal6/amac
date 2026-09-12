@@ -130,6 +130,8 @@ func (s *Server) Handler() http.Handler {
 	act("POST /api/applications", s.recordApplication)
 	act("PATCH /api/applications/{key}", s.updateApplication)
 	act("POST /api/applications/sync", s.syncApplications)
+	act("GET /api/hackqueue", s.hackqueueGet)
+	act("POST /api/hackqueue/{action}", s.hackqueueAct)
 	mux.HandleFunc("OPTIONS /api/", s.preflight)
 
 	// The manifest and its icons are the only things served without a token,
