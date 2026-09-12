@@ -131,6 +131,7 @@ func (s *Server) Handler() http.Handler {
 	act("PATCH /api/applications/{key}", s.updateApplication)
 	act("POST /api/applications/sync", s.syncApplications)
 	act("GET /api/hackqueue/count", s.hackqueueCount)
+	act("GET /api/recent", s.recent)
 	act("GET /board", s.hackboard)
 	act("POST /board/{action}", s.hackboard)
 	mux.HandleFunc("OPTIONS /api/", s.preflight)
