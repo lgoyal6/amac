@@ -75,6 +75,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 		{"due", "limit=1000&due=1", s.listApplications},
 		{"runs", "", s.healthRuns},
 		{"machine", "", s.machine},
+		{"recent", "hours=24", s.recent},
 	}
 
 	out := make(map[string]summaryPart, len(feeds))
