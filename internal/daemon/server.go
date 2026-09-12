@@ -85,6 +85,7 @@ func (s *Server) Handler() http.Handler {
 	// about what counts as a human action is applied in one place. Written per
 	// handler it would be missing from whichever handler is added next.
 	act := func(pattern string, h http.HandlerFunc) {
+		h = s.refuseObserved(h)
 		mux.HandleFunc(pattern, s.auth(s.witness(pattern, h)))
 	}
 
@@ -406,6 +407,10 @@ type sessionView struct {
 	Since           *time.Time `json:"since,omitempty"`
 	PermissionMode  string     `json:"permissionMode,omitempty"`
 	ContinueCommand string     `json:"continueCommand,omitempty"`
+	// PID and Model are set only for a session found in the process table
+	// ("desktop" or "terminal"): the two facts ps has that nothing else does.
+	PID   int    `json:"pid,omitempty"`
+	Model string `json:"model,omitempty"`
 }
 
 type pendingView struct {
@@ -462,6 +467,7 @@ func (s *Server) listSessions(w http.ResponseWriter, r *http.Request) {
 		out = append(out, view(sess))
 	}
 	out = append(out, s.tmuxSessions(r.Context())...)
+	out = append(out, s.procSessions(r.Context())...)
 	// Labelled once for the whole page. The board relists on every event and
 	// routinely carries twenty cards; resolving each card separately would
 	// stat the roster and reparse two config files twenty times a refresh.
