@@ -91,7 +91,7 @@ func TestOneFailingFeedDoesNotFailTheWholeSummary(t *testing.T) {
 
 // homeFeedKeys is the same list summary builds, restated so a feed added to one
 // and not the other is caught rather than silently missing from the screen.
-var homeFeedKeys = []string{"health", "tasks", "spend", "jobs", "due", "runs", "machine", "hack"}
+var homeFeedKeys = []string{"health", "tasks", "spend", "jobs", "due", "runs", "machine", "hack", "recent"}
 
 // The envelope must survive a handler that writes something unparseable: a
 // broken part is reported by its status, not by breaking the JSON around it.

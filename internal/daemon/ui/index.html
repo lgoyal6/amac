@@ -43,63 +43,69 @@
      terminal already calls them. State is said once, as a light down the edge
      of the card, rather than three times in three devices. Space is a scale,
      not nineteen values chosen one at a time. */
-  :root {
-    --bg:#0b0d10; --surface:#14171c; --raise:#1b1f26; --line:#242a33;
-    --fg:#e7eaf0; --dim:#9aa4b5; --faint:#8993a5;
+  /* Shared with the hackqueue board; the same values live in its board.ts. Direction
+     D: zero-chroma neutrals so nothing competes with a status colour, four ground
+     levels, one accent reserved for selection, six status colours. Every status
+     and text colour below clears 4.5:1 on --bg, --surface and --raise in both
+     themes; the file that generated them refuses to emit a set that does not.
 
-    --blocked:#ff9147; --working:#4c9aff; --idle:#6b7688;
-    --ok:#3fb950; --fail:#f85149; --late:#d29922; --unknown:#63b3ff;
+     Vocabulary, settled once for both surfaces:
+       blocked  orange  needs a decision from you
+       working  violet  a machine is on it
+       unknown  blue    a probe could not tell; never green, never red
+       late     amber   overdue
+       ok       green   delivered
+       fail     red     ran and failed
+       idle     grey    paused or nothing happening */
+  :root {
+    color-scheme: dark light;
+    --bg:#08080a; --surface:#111114; --raise:#17171b; --line:#212127; --line-2:#2c2c33;
+    --fg:#f4f4f6; --dim:#a3a3ad; --faint:#86868f;
+    --ok:#3dd68c; --fail:#ff6a6a; --late:#ffc53d; --unknown:#63b3ff; --working:#a78bfa; --idle:#86868f; --blocked:#ff9d57;
+    --accent:#a78bfa;
 
     /* An ordinal ramp for charts: one hue, three monotone lightness steps.
        Ordinal rather than categorical because every series drawn with it has a
-       real order - memory by how reclaimable it is, applications by tier - and
-       a reader who sees the order in the colour does not have to read a legend
-       to get the point. The status colours above are deliberately not reused
-       for series: they mean a state, and a chart band is not a state.
-       Checked against these surfaces rather than chosen by eye: worst adjacent
-       pair is dE 15.6 for normal vision and all three clear 3:1 on --raise. */
-    --c1:#a5d6ff; --c2:#58a6ff; --c3:#1f6feb; --track:#242a33;
+       real order, and a reader who sees the order in the colour does not have
+       to read a legend. The status colours are deliberately not reused for
+       series: they mean a state, and a chart band is not a state. */
+    --c1:#c4b5fd; --c2:#a78bfa; --c3:#7c5ce6; --track:var(--line);
 
-    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px;
-    --r:10px;
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:36px;
+    --r-sm:4px; --r:6px; --r-md:8px; --r-lg:12px;
+    /* Six sizes. There were twelve in this file and twenty-five in the board's,
+       six of them within one pixel of each other. Nobody could see the
+       difference; it only meant nothing lined up. */
+    --t-10:10px; --t-12:12px; --t-13:13px; --t-14:14px; --t-15:15px; --t-20:20px;
     --header-h:90px; --keyboard-offset:0px;
     --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
     --sans: -apple-system, "SF Pro Text", system-ui, sans-serif;
   }
   @media (prefers-color-scheme: light) {
-    :root:not([data-theme="dark"]) { --bg:#f7f8fa; --surface:#fff; --raise:#f1f3f6; --line:#e3e7ee;
-            --fg:#11141a; --dim:#5f6878; --faint:#646b76;
-            /* Status colours were only ever defined for the dark surface, so on
-               white every one of them failed 4.5:1: blocked 2.24, late 2.52, ok
-               2.54, working 2.85, fail 3.35, all at 10px and all carrying the
-               only meaning on the automations tab. These are the same hues
-               darkened until they clear 4.5 on both --surface #fff and --raise
-               #f1f3f6: measured 5.08, 5.88, 5.54, 6.21, 5.99 and 4.57 upward. */
-            --blocked:#a34400; --working:#0b5cd5; --idle:#5f6878;
-            --ok:#1a7f37; --fail:#c0272d; --late:#8a6100; --unknown:#0a57ad;
-            /* Stepped again for the light surface rather than flipped: the
-               dark ramp's lightest step is 1.75:1 on #f1f3f6 and invisible.
-               The lightest step here is 2.27:1, which the checks allow only
-               because every band carries a visible label. */
-            --c1:#58a6ff; --c2:#1f6feb; --c3:#0d419d; --track:#e3e7ee; }
+    :root:not([data-theme="dark"]) {
+      --bg:#f7f7f8; --surface:#ffffff; --raise:#f1f1f3; --line:#e3e3e7; --line-2:#cfcfd5;
+      --fg:#111114; --dim:#5c5c66; --faint:#646b76;
+      --ok:#0f7a45; --fail:#c4302f; --late:#8a5a00; --unknown:#0a57ad; --working:#6d4fd8; --idle:#646b76; --blocked:#a34400;
+      --accent:#6d4fd8;
+      --c1:#8b74e8; --c2:#6d4fd8; --c3:#4c32b0;
+    }
   }
-
   :root[data-theme="light"] {
-    --bg:#f7f8fa; --surface:#fff; --raise:#f1f3f6; --line:#e3e7ee;
-    --fg:#11141a; --dim:#5f6878; --faint:#646b76;
-    --c1:#58a6ff; --c2:#1f6feb; --c3:#0d419d; --track:#e3e7ee;
-    --blocked:#a34400; --working:#0b5cd5; --idle:#5f6878;
-    --ok:#1a7f37; --fail:#c0272d; --late:#8a6100; --unknown:#0a57ad;
+    --bg:#f7f7f8; --surface:#ffffff; --raise:#f1f1f3; --line:#e3e3e7; --line-2:#cfcfd5;
+    --fg:#111114; --dim:#5c5c66; --faint:#646b76;
+    --ok:#0f7a45; --fail:#c4302f; --late:#8a5a00; --unknown:#0a57ad; --working:#6d4fd8; --idle:#646b76; --blocked:#a34400;
+    --accent:#6d4fd8;
+    --c1:#8b74e8; --c2:#6d4fd8; --c3:#4c32b0;
   }
   .themebtn { background:none; border:1px solid var(--line); color:var(--dim);
-    border-radius:6px; padding:3px 9px; font:inherit; font-size:11px; font-weight:600;
+    border-radius:var(--r); padding:3px 9px; font:inherit; font-size:var(--t-12); font-weight:600;
     cursor:pointer; letter-spacing:.04em; }
   .themebtn:hover { color:var(--fg); border-color:var(--dim); }
 
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   [hidden] { display:none !important; }
   a { color:inherit; text-decoration-color:var(--faint); text-underline-offset:2px; }
-  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 var(--sans);
+  body { margin:0; background:var(--bg); color:var(--fg); font:var(--t-14)/1.5 var(--sans);
          padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
          -webkit-font-smoothing:antialiased; }
   button { font:inherit; cursor:pointer; }
@@ -108,11 +114,11 @@
   header { position:sticky; top:0; z-index:5; background:var(--bg);
            border-bottom:1px solid var(--line); padding:var(--s4) var(--s4) 0; }
   .brand { display:flex; align-items:baseline; gap:var(--s3); }
-  h1 { font:600 15px/1 var(--mono); margin:0; letter-spacing:-.01em; }
-  .summary { font:12px/1 var(--mono); color:var(--dim); }
+  h1 { font:600 var(--t-15)/1 var(--mono); margin:0; letter-spacing:-.01em; }
+  .summary { font:var(--t-12)/1 var(--mono); color:var(--dim); }
   .summary b { font-weight:600; }
   .s-blocked { color:var(--blocked); } .s-working { color:var(--working); }
-  .conn { margin-left:auto; font:11px/1 var(--mono); color:var(--faint);
+  .conn { margin-left:auto; font:var(--t-12)/1 var(--mono); color:var(--faint);
           display:flex; align-items:center; gap:var(--s2); }
   .dot { width:6px; height:6px; border-radius:50%; background:var(--faint); }
   .dot.on { background:var(--ok); }
@@ -121,40 +127,28 @@
   nav { display:flex; gap:var(--s4); margin-top:var(--s4); overflow-x:auto; }
   nav button { background:none; border:0; padding:0 0 var(--s3);
                border-bottom:2px solid transparent; color:var(--dim);
-               font:500 13px/1 var(--sans); white-space:nowrap; }
+               font:500 var(--t-13)/1 var(--sans); white-space:nowrap; }
   nav button.on { color:var(--fg); border-bottom-color:var(--fg); }
   nav .badge { display:inline-block; margin-left:var(--s1); padding:1px 5px;
-               border-radius:6px; background:var(--blocked); color:#231000;
-               font:700 10px/1.4 var(--mono); }
+               border-radius:var(--r); background:var(--blocked); color:#1a0d04;
+               font:700 var(--t-10)/1.4 var(--mono); }
   nav .badge.ready { background:var(--working); color:#001427; }
 
   .section-head { display:flex; align-items:flex-end; gap:var(--s3); margin-bottom:var(--s3); }
-  .section-head h2 { margin:0; font:600 14px/1.3 var(--mono); }
-  .section-head p { margin:0; color:var(--dim); font-size:12px; }
+  .section-head h2 { margin:0; font:600 var(--t-14)/1.3 var(--mono); }
+  .section-head p { margin:0; color:var(--dim); font-size:var(--t-12); }
   .section-head .grow { flex:1; }
 
   /* One tile per tab, so the home screen answers "how is everything" before
      you touch anything. The action list above it stays the lede: these are a
      glance, not a to-do. auto-fit rather than a fixed column count, because the
      same grid has to hold five tiles on a phone and five across a laptop. */
-  .tiles { display:grid; gap:var(--s2); grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); }
   .tile { background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
           padding:var(--s3) var(--s4); text-align:left; color:inherit; cursor:pointer;
           display:flex; flex-direction:column; gap:var(--s1); min-width:0; }
   .tile:hover { border-color:var(--faint); }
-  .tile-head { display:flex; align-items:baseline; gap:var(--s2); }
-  .tile-head b { font:600 11px/1.6 var(--mono); letter-spacing:.04em; color:var(--dim); flex:1; }
-  .tile-head .go { font:10px/1.6 var(--mono); color:var(--faint); white-space:nowrap; flex:none; }
-  .tile-big { font:600 20px/1.2 var(--mono); letter-spacing:-.02em;
               font-variant-numeric:tabular-nums; color:var(--fg); }
-  .tile-big.ok { color:var(--ok); } .tile-big.bad { color:var(--fail); }
-  .tile-big.warn { color:var(--late); }
-  .tile-sub { font-size:12px; color:var(--dim); }
-  .tile-row { display:flex; gap:var(--s3); flex-wrap:wrap; margin-top:var(--s1); }
-  .tile-row span { font:10px/1.6 var(--mono); color:var(--dim); }
-  .tile-row b { color:var(--fg); font-variant-numeric:tabular-nums; }
   /* Reuses the run log's tick vocabulary rather than inventing a second one. */
-  .tile .strip { margin:var(--s1) 0 0; }
 
   /* The hack tab is one whole page from somewhere else, so it gets the height
      rather than the document: a board with its own rail and its own scrolling
@@ -172,6 +166,50 @@
        height of the nav twice and cut the board off. */
     body:has(#hack:not([hidden])) main { padding-bottom:0; }
   }
+
+  /* ---- home: a board of widgets, not a list and a row of tiles ------------
+     Everything on it is one tap into the thing it summarises, and the grid is
+     capped by main's max-width so a wide monitor gets more columns rather than
+     wider cards. dense packing lets the two wide widgets sit beside singles. */
+  .widgets { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:var(--s3); grid-auto-flow:dense; }
+  .widget { background:var(--surface); border:1px solid var(--line); border-radius:var(--r-md);
+            padding:var(--s3) var(--s4); min-width:0; display:flex; flex-direction:column; gap:var(--s2);
+            text-align:left; color:inherit; font:inherit; cursor:pointer; }
+  .widget:hover { border-color:var(--line-2); }
+  .widget:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .widget.wide { grid-column:span 2; }
+  .widget.slot { border-style:dashed; background:transparent; cursor:default; color:var(--faint); }
+  .w-head { display:flex; align-items:baseline; justify-content:space-between; gap:var(--s2);
+            font:600 var(--t-12)/1.4 var(--mono); color:var(--dim); letter-spacing:.06em; text-transform:uppercase; }
+  .w-head .go { color:var(--faint); font-weight:500; text-transform:none; letter-spacing:0; }
+  .w-big { font:600 var(--t-20)/1.1 var(--mono); font-variant-numeric:tabular-nums; }
+  .w-big.ok{color:var(--ok)} .w-big.warn{color:var(--late)} .w-big.bad{color:var(--fail)} .w-big.blocked{color:var(--blocked)}
+  .w-sub { font:400 var(--t-12)/1.45 var(--mono); color:var(--dim); }
+  .w-rows { display:flex; flex-wrap:wrap; gap:var(--s1) var(--s3); font:400 var(--t-10)/1.6 var(--mono); color:var(--dim); }
+  .w-rows b { color:var(--fg); font-weight:600; font-variant-numeric:tabular-nums; }
+  .w-list { display:flex; flex-direction:column; margin-top:var(--s1); }
+  .w-item { display:grid; grid-template-columns:5.5em minmax(0,1fr) minmax(0,42%); gap:var(--s2); align-items:baseline;
+            font:400 var(--t-12)/1.5 var(--mono); padding:4px 0; border-top:1px solid var(--line); }
+  .w-item:first-child { border-top:0; }
+  .w-item .t { color:var(--faint); font-variant-numeric:tabular-nums; }
+  .w-item .n { color:var(--fg); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .w-item .d { color:var(--dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; text-align:right; }
+  /* A needs-you row is two lines: what, with where it goes as a chip, then why. */
+  .w-act { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px var(--s3); padding:7px 0;
+           border-top:1px solid var(--line); font:400 var(--t-12)/1.5 var(--mono); cursor:pointer; }
+  .w-act:first-child { border-top:0; }
+  .w-act .n { color:var(--fg); font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .w-act.urgent .n { color:var(--blocked); }
+  .w-act.bad .n { color:var(--fail); }
+  .w-act .lbl { font:500 var(--t-10)/1.6 var(--mono); color:var(--dim); border:1px solid var(--line-2);
+                border-radius:var(--r-sm); padding:0 6px; white-space:nowrap; align-self:start; }
+  .w-act .d { grid-column:1 / -1; color:var(--dim); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .w-act:hover .n { text-decoration:underline; text-underline-offset:3px; }
+  .w-item.urgent .n { color:var(--blocked); font-weight:600; }
+  .w-item.bad .n { color:var(--fail); }
+  .w-item button { justify-self:end; }
+  .w-more { font:var(--t-10)/1.5 var(--mono); color:var(--faint); margin-top:var(--s1); }
+  @media (max-width:700px) { .widget.wide { grid-column:span 1; } }
   .action-list { display:grid; gap:var(--s2); }
   .action { display:flex; align-items:flex-start; gap:var(--s3); background:var(--surface);
             border:1px solid var(--line); border-left:2px solid var(--late);
@@ -179,14 +217,14 @@
   .action.urgent { border-left-color:var(--fail); }
   .action.info { border-left-color:var(--working); }
   .action-copy { min-width:0; flex:1; }
-  .action-copy b { display:block; font:600 12.5px/1.4 var(--mono); }
-  .action-copy span { display:block; color:var(--dim); font-size:12px; margin-top:2px; }
+  .action-copy b { display:block; font:600 var(--t-13)/1.4 var(--mono); }
+  .action-copy span { display:block; color:var(--dim); font-size:var(--t-12); margin-top:2px; }
   .action button { flex:none; }
   .all-clear { background:color-mix(in srgb, var(--ok) 7%, var(--surface));
                border:1px solid color-mix(in srgb, var(--ok) 30%, var(--line));
                border-radius:var(--r); padding:var(--s5); text-align:center; }
-  .all-clear b { display:block; color:var(--ok); font:600 14px/1.4 var(--mono); }
-  .all-clear span { color:var(--dim); font-size:12px; }
+  .all-clear b { display:block; color:var(--ok); font:600 var(--t-14)/1.4 var(--mono); }
+  .all-clear span { color:var(--dim); font-size:var(--t-12); }
 
   /* A 2000px monitor is not a reason for a card to be 2000px wide. */
   main { padding:var(--s4) var(--s4) 96px; max-width:1440px; margin:0 auto; }
@@ -216,54 +254,54 @@
   .card.open { scroll-margin-top:calc(var(--header-h) + var(--s3)); }
   .card > .top { cursor:pointer; }
   .top { display:flex; align-items:baseline; gap:var(--s2); }
-  .name { font:600 13px/1.4 var(--mono); flex:1 1 auto; min-width:0;
+  .name { font:600 var(--t-13)/1.4 var(--mono); flex:1 1 auto; min-width:0;
           overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .state { font:11px/1.4 var(--mono); color:var(--faint); flex:none; }
+  .state { font:var(--t-12)/1.4 var(--mono); color:var(--faint); flex:none; }
   .state.blocked { color:var(--blocked); } .state.working { color:var(--working); }
 
   .tags { display:flex; gap:var(--s2); margin-top:var(--s2); flex-wrap:wrap; }
-  .agent, .kind { font:10px/1.6 var(--mono); color:var(--dim);
-                  border:1px solid var(--line); border-radius:5px; padding:0 5px; }
+  .agent, .kind, .size { font:500 var(--t-10)/1.6 var(--mono); color:var(--dim);
+                  border:1px solid var(--line-2); border-radius:var(--r-sm); padding:0 6px; }
   .kind.on { color:var(--ok); border-color:color-mix(in srgb, var(--ok) 35%, transparent); }
-  .detail { color:var(--dim); font-size:12.5px; margin-top:var(--s2);
+  .detail { color:var(--dim); font-size:var(--t-13); margin-top:var(--s2);
             overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .dir { color:var(--faint); font:11px/1.5 var(--mono); margin-top:var(--s1);
+  .dir { color:var(--faint); font:var(--t-12)/1.5 var(--mono); margin-top:var(--s1);
          overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
   /* ---- the pane, which is the thing worth looking at ------------------- */
   .pane { margin-top:var(--s3); background:var(--bg); border:1px solid var(--line);
           border-radius:var(--r); padding:var(--s3);
-          font:11px/1.45 var(--mono); color:var(--dim); white-space:pre;
+          font:var(--t-12)/1.45 var(--mono); color:var(--dim); white-space:pre;
           overflow:auto; max-height:280px; }
 
   /* A keypad: one dense row, monospace, sized like keys rather than buttons. */
   .keys { display:flex; gap:var(--s1); margin-top:var(--s2); flex-wrap:wrap; }
   .keys button { background:var(--raise); border:1px solid var(--line);
-                 border-radius:6px; color:var(--dim); font:11px/1 var(--mono);
+                 border-radius:var(--r); color:var(--dim); font:var(--t-12)/1 var(--mono);
                  padding:7px 9px; min-width:30px; }
   .keys button:active { background:var(--line); color:var(--fg); }
   /* The keys are self-evident once you know which way they point, and not at
      all before. A title attribute cannot say so on a phone, so the label is
      visible. */
-  .keys-label { align-self:center; color:var(--faint); font:10px/1 var(--mono);
+  .keys-label { align-self:center; color:var(--faint); font:var(--t-10)/1 var(--mono);
                 letter-spacing:.04em; padding-right:2px; }
 
   .typebar { display:flex; gap:var(--s2); margin-top:var(--s2); }
   .typebar input { flex:1; min-width:0; background:var(--raise); color:var(--fg);
-                   border:1px solid var(--line); border-radius:8px;
-                   padding:9px var(--s3); font:12.5px/1 var(--sans); }
+                   border:1px solid var(--line); border-radius:var(--r-md);
+                   padding:9px var(--s3); font:var(--t-13)/1 var(--sans); }
   .typebar input::placeholder { color:var(--faint); }
 
   .ask { margin-top:var(--s3); padding-top:var(--s3); border-top:1px solid var(--line); }
-  .ask-title { font-size:12.5px; margin-bottom:var(--s2); }
+  .ask-title { font-size:var(--t-13); margin-bottom:var(--s2); }
   .opts { display:flex; gap:var(--s2); flex-wrap:wrap; }
   .opts button { background:var(--raise); border:1px solid var(--line); color:var(--fg);
-                 border-radius:8px; padding:9px var(--s3); font-size:12.5px; }
+                 border-radius:var(--r-md); padding:9px var(--s3); font-size:var(--t-13); }
   .opts button.allow { background:var(--ok); border-color:var(--ok); color:#04140a; font-weight:600; }
   .opts button.reject { background:transparent; color:var(--blocked); border-color:var(--blocked); }
 
   button.sm { background:var(--raise); border:1px solid var(--line); color:var(--dim);
-              border-radius:7px; padding:7px 10px; font:11.5px/1 var(--sans); }
+              border-radius:var(--r); padding:7px 10px; font:var(--t-12)/1 var(--sans); }
   button.sm:active { color:var(--fg); }
   button.go { background:var(--fg); border-color:var(--fg); color:var(--bg); font-weight:600; }
   /* Quiet. The state light is what should be loudest on this screen, and a
@@ -276,11 +314,11 @@
   button:disabled { opacity:.45; }
 
   .log { margin-top:var(--s3); padding-top:var(--s3); border-top:1px solid var(--line);
-         font:11px/1.5 var(--mono); color:var(--faint);
+         font:var(--t-12)/1.5 var(--mono); color:var(--faint);
          max-height:180px; overflow-y:auto; }
   .log div { padding:1px 0; word-break:break-word; }
   .empty { color:var(--faint); text-align:center; padding:var(--s5) var(--s4);
-           font-size:13px; grid-column:1/-1; }
+           font-size:var(--t-13); grid-column:1/-1; }
 
   .bar { position:fixed; left:0; right:0; bottom:0; background:var(--surface);
          border-top:1px solid var(--line);
@@ -292,10 +330,10 @@
   .session-actions { display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap;
                      margin-top:var(--s2); }
   .session-actions select { background:var(--raise); color:var(--fg);
-          border:1px solid var(--line); border-radius:7px; padding:7px 9px;
-          font:11.5px/1 var(--sans); }
-  .copied { color:var(--ok); font:11px/1 var(--mono); }
-  .session-help { flex-basis:100%; color:var(--faint); font-size:11.5px; }
+          border:1px solid var(--line); border-radius:var(--r); padding:7px 9px;
+          font:var(--t-12)/1 var(--sans); }
+  .copied { color:var(--ok); font:var(--t-12)/1 var(--mono); }
+  .session-help { flex-basis:100%; color:var(--faint); font-size:var(--t-12); }
 
   .board-overview { display:grid; gap:var(--s2); margin-bottom:var(--s3); }
   .pressure-alert { display:flex; align-items:center; gap:var(--s3);
@@ -303,31 +341,31 @@
                     border:1px solid color-mix(in srgb, var(--fail) 38%, var(--line));
                     border-radius:var(--r); padding:var(--s3) var(--s4); }
   .pressure-copy { flex:1; min-width:0; }
-  .pressure-copy b { font:600 12.5px/1.4 var(--mono); color:var(--fail); }
-  .pressure-copy span { display:block; color:var(--dim); font-size:12px; margin-top:2px; }
+  .pressure-copy b { font:600 var(--t-13)/1.4 var(--mono); color:var(--fail); }
+  .pressure-copy span { display:block; color:var(--dim); font-size:var(--t-12); margin-top:2px; }
   /* One row per application, ranked. The bar is relative to the largest, not
      to total RAM: RSS counts shared pages once per process, so these are sizes
      to compare with each other and not shares of a whole. */
   .proc { display:flex; align-items:center; gap:var(--s2); margin-top:6px; }
-  .proc-name { font:11px/1.5 var(--mono); color:var(--fg); flex:none; width:34%;
+  .proc-name { font:var(--t-12)/1.5 var(--mono); color:var(--fg); flex:none; width:34%;
                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .proc-bar { flex:1; height:6px; background:var(--track); border-radius:3px; overflow:hidden; min-width:0; }
+  .proc-bar { flex:1; height:6px; background:var(--track); border-radius:var(--r-sm); overflow:hidden; min-width:0; }
   .proc-bar i { display:block; height:100%; background:var(--c2); }
-  .proc-size { font:11px/1.5 var(--mono); color:var(--fg); flex:none; width:56px;
+  .proc-size { font:var(--t-12)/1.5 var(--mono); color:var(--fg); flex:none; width:56px;
                text-align:right; font-variant-numeric:tabular-nums; }
-  .proc-count { font:10px/1.5 var(--mono); color:var(--faint); flex:none; width:62px; }
+  .proc-count { font:var(--t-10)/1.5 var(--mono); color:var(--faint); flex:none; width:62px; }
 
   .pressure-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:var(--s2); margin-top:var(--s3); }
-  .pressure-metric { background:var(--raise); border:1px solid var(--line); border-radius:8px; padding:var(--s3); }
-  .pressure-metric b { display:block; font:600 20px/1.1 var(--mono); color:var(--fail); }
-  .pressure-metric span { color:var(--dim); font-size:11px; }
+  .pressure-metric { background:var(--raise); border:1px solid var(--line); border-radius:var(--r-md); padding:var(--s3); }
+  .pressure-metric b { display:block; font:600 var(--t-20)/1.1 var(--mono); color:var(--fail); }
+  .pressure-metric span { color:var(--dim); font-size:var(--t-12); }
 
   @media (max-width:600px) {
     :root { --header-h:74px; --mobile-nav-h:62px; }
     header { padding:var(--s3) var(--s3) var(--s2); }
     .brand { align-items:center; flex-wrap:wrap; gap:var(--s2); }
-    h1 { font-size:16px; }
-    .summary { order:3; flex-basis:100%; max-width:none; font-size:10.5px;
+    h1 { font-size:var(--t-15); }
+    .summary { order:3; flex-basis:100%; max-width:none; font-size:var(--t-10);
                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .conn { margin-left:0; }
     .mobile-new { display:block; margin-left:auto; min-height:36px; padding:0 12px !important; }
@@ -336,7 +374,7 @@
           display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:0;
           background:color-mix(in srgb, var(--surface) 96%, transparent); border-top:1px solid var(--line); }
     nav button { position:relative; min-width:0; padding:8px 1px 6px; border-bottom:0; border-top:2px solid transparent;
-                 font-size:10.5px; overflow:hidden; text-overflow:ellipsis; }
+                 font-size:var(--t-10); overflow:hidden; text-overflow:ellipsis; }
     nav button.on { border-top-color:var(--fg); border-bottom-color:transparent; }
     nav .badge { display:block; position:absolute; margin:-4px 0 0 calc(50% + 5px); }
     main { padding-left:var(--s3); padding-right:var(--s3); }
@@ -357,7 +395,7 @@
        answers the question is the primary control; opening a Terminal on a
        machine you cannot see is the secondary one. */
     #agents button.open-mac { background:transparent; border:1px solid var(--line); color:var(--dim);
-                font-size:11px; padding:6px 10px; font-weight:400; }
+                font-size:var(--t-12); padding:6px 10px; font-weight:400; }
     .keys button, button.sm, .opts button { min-height:44px; min-width:44px; }
     .typebar input { min-height:44px; }
     .bar { display:none; flex-wrap:wrap; bottom:calc(var(--mobile-nav-h) + env(safe-area-inset-bottom));
@@ -376,7 +414,7 @@
     .card:not(.open) .tags { display:none; }
     .card:not(.open) { padding:14px var(--s3); }
     .card:not(.open) > .top { min-height:24px; align-items:center; }
-    .session-actions .go { flex:1 1 100%; min-height:48px; font-size:13px; }
+    .session-actions .go { flex:1 1 100%; min-height:48px; font-size:var(--t-13); }
     .session-actions .copy-command { display:none; }
     .session-actions select { flex:1; min-height:44px; }
     .pressure-alert { align-items:flex-start; padding:var(--s3); }
@@ -389,8 +427,8 @@
     .job-row .job-date, .job-row .job-follow { grid-column:1 / -1; }
   }
   .bar select, .bar input { background:var(--raise); color:var(--fg);
-         border:1px solid var(--line); border-radius:8px;
-         padding:9px var(--s3); font:12.5px/1 var(--sans); }
+         border:1px solid var(--line); border-radius:var(--r-md);
+         padding:9px var(--s3); font:var(--t-13)/1 var(--sans); }
   .bar input { flex:1; min-width:0; }
 
   /* ---- the wall --------------------------------------------------------- */
@@ -404,9 +442,9 @@
   .tile-pane.idle    { border-left-color:var(--idle); }
   .tile-pane .tile-head { display:flex; align-items:baseline; gap:var(--s2);
                padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); }
-  .tile-name { font:600 11.5px/1.4 var(--mono); flex:1 1 auto; min-width:0;
+  .tile-name { font:600 var(--t-12)/1.4 var(--mono); flex:1 1 auto; min-width:0;
                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .tile-account { font:10px/1.4 var(--mono); color:var(--dim); flex:0 0 auto; }
+  .tile-account { font:var(--t-10)/1.4 var(--mono); color:var(--dim); flex:0 0 auto; }
 
   /* ------------------------------------------------------------- charts -- */
   /* Marks are thin and the surface shows through between them: a 2px gap is
@@ -414,23 +452,23 @@
   .chart { margin-top:var(--s4); }
   .chart:first-child { margin-top:0; }
   .chart-head { display:flex; align-items:baseline; gap:var(--s2); margin-bottom:var(--s2); }
-  .chart-title { font:600 11.5px/1.4 var(--mono); color:var(--fg); flex:1 1 auto; }
-  .chart-note { font:10.5px/1.4 var(--mono); color:var(--dim); }
+  .chart-title { font:600 var(--t-12)/1.4 var(--mono); color:var(--fg); flex:1 1 auto; }
+  .chart-note { font:var(--t-10)/1.4 var(--mono); color:var(--dim); }
 
   /* A meter, not a two-slice pie: one ratio against a limit reads off a length
      in one glance, and a circle spends half its ink drawing the part you do
      not care about. */
   .meter { display:flex; align-items:center; gap:var(--s3); padding:6px 0; }
-  .meter-label { width:64px; flex:0 0 auto; font:11.5px/1.4 var(--mono); color:var(--fg); }
+  .meter-label { width:64px; flex:0 0 auto; font:var(--t-12)/1.4 var(--mono); color:var(--fg); }
   .meter-track { flex:1 1 auto; height:10px; background:var(--track);
-                 border-radius:5px; overflow:hidden; }
-  .meter-fill { height:100%; border-radius:5px; }
+                 border-radius:var(--r-sm); overflow:hidden; }
+  .meter-fill { height:100%; border-radius:var(--r-sm); }
   .meter-fill.ok { background:var(--ok); }
   .meter-fill.late { background:var(--late); }
   .meter-fill.fail { background:var(--fail); }
   /* Sized to its content and never wrapped: "398 GB / 460 GB · 86% tight" broken
      across three lines is a paragraph, and the eye stops reading it as a value. */
-  .meter-val { flex:0 0 auto; text-align:right; font:11.5px/1.4 var(--mono);
+  .meter-val { flex:0 0 auto; text-align:right; font:var(--t-12)/1.4 var(--mono);
                color:var(--dim); font-variant-numeric:tabular-nums; white-space:nowrap; }
   @media (max-width:560px) {
     /* Narrow enough that the track and the reading cannot share a line, so the
@@ -442,12 +480,12 @@
 
   /* A stacked bar for part-to-whole. The gap between segments is a surface
      gap, so it works on either background without a colour of its own. */
-  .stack { display:flex; height:14px; border-radius:4px; overflow:hidden; background:var(--track); }
+  .stack { display:flex; height:14px; border-radius:var(--r-sm); overflow:hidden; background:var(--track); }
   .stack > span { display:block; height:100%; }
   .stack > span + span { margin-left:2px; }
   .stack-legend { display:flex; flex-wrap:wrap; gap:var(--s2) var(--s3); margin-top:var(--s2); }
-  .stack-key { display:flex; align-items:center; gap:6px; font:10.5px/1.5 var(--mono); color:var(--dim); }
-  .stack-key i { width:9px; height:9px; border-radius:2px; flex:0 0 auto; }
+  .stack-key { display:flex; align-items:center; gap:6px; font:var(--t-10)/1.5 var(--mono); color:var(--dim); }
+  .stack-key i { width:9px; height:9px; border-radius:var(--r-sm); flex:0 0 auto; }
   .stack-key b { color:var(--fg); font-weight:600; font-variant-numeric:tabular-nums; }
 
   /* Columns over time. Bars are anchored to the baseline with rounded tops,
@@ -456,19 +494,19 @@
   .cols { display:flex; align-items:flex-end; gap:2px; height:96px; }
   .col { flex:1 1 0; min-width:0; height:100%; display:flex; align-items:flex-end;
          position:relative; cursor:default; }
-  .col > i { display:block; width:100%; background:var(--c2); border-radius:3px 3px 0 0;
+  .col > i { display:block; width:100%; background:var(--c2); border-radius:var(--r-sm) 3px 0 0;
              min-height:2px; }
   .col:hover > i { background:var(--c1); }
   .col-tip { position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%);
-             background:var(--surface); border:1px solid var(--line); border-radius:6px;
-             padding:4px 7px; font:10.5px/1.4 var(--mono); color:var(--fg);
+             background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
+             padding:4px 7px; font:var(--t-10)/1.4 var(--mono); color:var(--fg);
              white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .1s;
              z-index:3; box-shadow:0 4px 14px rgba(0,0,0,.35); }
   .col:hover .col-tip, .col:focus-visible .col-tip { opacity:1; }
   .cols-axis { display:flex; justify-content:space-between; margin-top:6px;
-               font:10px/1.4 var(--mono); color:var(--faint); }
-  .chart-empty { font:11px/1.5 var(--mono); color:var(--dim); padding:var(--s3) 0; }
-  .tile-body { padding:var(--s2) var(--s3); font:10px/1.4 var(--mono);
+               font:var(--t-10)/1.4 var(--mono); color:var(--faint); }
+  .chart-empty { font:var(--t-12)/1.5 var(--mono); color:var(--dim); padding:var(--s3) 0; }
+  .tile-body { padding:var(--s2) var(--s3); font:var(--t-10)/1.4 var(--mono);
                /* Was a hardcoded #aab3c2, which is 2.11 on the light surface
                   because it never followed the theme. --dim is 5.4 dark and
                   7.58 light. */
@@ -485,13 +523,13 @@
              border-radius:var(--r); padding:var(--s4); margin-bottom:var(--s3);
              display:grid; gap:var(--s2); }
   .compose input, .compose select { width:100%; background:var(--raise); color:var(--fg);
-             border:1px solid var(--line); border-radius:8px;
-             padding:9px var(--s3); font:12.5px/1 var(--sans); }
+             border:1px solid var(--line); border-radius:var(--r-md);
+             padding:9px var(--s3); font:var(--t-13)/1 var(--sans); }
   .row { display:flex; gap:var(--s2); flex-wrap:wrap; align-items:center; }
   .chain { display:grid; grid-template-columns:minmax(0,1fr); gap:var(--s1); margin-top:var(--s3); }
   .role { display:flex; align-items:center; gap:var(--s3); min-width:0;
           background:var(--raise); border:1px solid var(--line);
-          border-radius:8px; padding:var(--s2) var(--s3); font:11.5px/1.4 var(--mono); }
+          border-radius:var(--r-md); padding:var(--s2) var(--s3); font:var(--t-12)/1.4 var(--mono); }
   .role .n { color:var(--faint); width:10px; flex:none; }
   .role .rn { color:var(--fg); width:66px; flex:none; }
   .role .ra { color:var(--dim); width:46px; flex:none; }
@@ -499,27 +537,31 @@
   .rs.running{color:var(--working)} .rs.done{color:var(--ok)}
   .rs.waiting{color:var(--faint)} .rs.ready{color:var(--blocked)}
   .art { margin-top:var(--s2); background:var(--bg); border:1px solid var(--line);
-         border-radius:8px; padding:var(--s3); font:11px/1.5 var(--mono);
+         border-radius:var(--r-md); padding:var(--s3); font:var(--t-12)/1.5 var(--mono);
          color:var(--dim); white-space:pre-wrap; max-height:320px; overflow:auto; }
-  .size { font:10px/1.6 var(--mono); color:var(--dim);
-          border:1px solid var(--line); border-radius:5px; padding:0 6px; }
 
   /* ---- health / queue rows ---------------------------------------------- */
-  .hrow { display:flex; gap:var(--s3); padding:var(--s3) 0; border-bottom:1px solid var(--line); }
+  /* The name leads, because the name is what you are looking for; the status
+     is a fixed column on the right so a list of pills forms one clean edge. */
+  .hrow { display:flex; gap:var(--s3); padding:var(--s3) 0; border-bottom:1px solid var(--line); align-items:flex-start; }
+  .hrow > .hstate { order:9; margin-left:auto; }
   .hrow:last-child { border-bottom:none; }
-  .hstate { font:10px/1.8 var(--mono); width:56px; flex:none; color:var(--faint); }
-  .hstate.ok{color:var(--ok)} .hstate.failing{color:var(--fail)}
-  .hstate.late{color:var(--late)} .hstate.down{color:var(--blocked)}
-  .hstate.warning{color:var(--late)} .hstate.unknown{color:var(--unknown)}
+  .hstate { font:600 var(--t-10)/1.8 var(--mono); min-width:64px; flex:none; text-align:center;
+            text-transform:uppercase; letter-spacing:.06em; padding:1px 8px; border-radius:var(--r-sm);
+            --tone:var(--faint); color:var(--tone); background:color-mix(in srgb, var(--tone) 12%, transparent);
+            border:1px solid color-mix(in srgb, var(--tone) 30%, transparent); }
+  .hstate.ok{--tone:var(--ok)} .hstate.failing{--tone:var(--fail)}
+  .hstate.late{--tone:var(--late)} .hstate.down{--tone:var(--blocked)}
+  .hstate.warning{--tone:var(--late)} .hstate.unknown{--tone:var(--unknown)}
   /* Kind labels on the money tab were borrowing .hstate, whose 56px width was
      sized for health words. "subscription_cancelled" is 22 characters and ran
      into the service name. A label grows; a status column does not. */
-  .klabel { font:10px/1.8 var(--mono); flex:none; min-width:56px; white-space:nowrap; color:var(--faint); }
+  .klabel { font:var(--t-10)/1.8 var(--mono); flex:none; min-width:56px; white-space:nowrap; color:var(--faint); }
   .klabel.ok{color:var(--ok)} .klabel.late{color:var(--late)} .klabel.failing{color:var(--fail)}
   .flash { outline:2px solid var(--blocked); outline-offset:2px; border-radius:var(--r); }
   .explain-count { margin-bottom:var(--s3); }
-  .hname { font:600 12.5px/1.5 var(--mono); }
-  .hdetail { color:var(--dim); font-size:12px; margin-top:2px; }
+  .hname { font:600 var(--t-13)/1.5 var(--mono); }
+  .hdetail { color:var(--dim); font-size:var(--t-12); margin-top:2px; }
   .acts { display:flex; gap:var(--s2); align-items:center; margin-top:var(--s2); flex-wrap:wrap; }
   /* ---- run log --------------------------------------------------------- */
   /* One tick per run, oldest on the left, so a week reads as a shape before it
@@ -539,60 +581,60 @@
      something stand up out of the row. */
   .tick.skipped { background:var(--track); height:7px; }
   .runcounts { display:flex; gap:var(--s2); flex-wrap:wrap; margin-top:var(--s1); }
-  .runcounts span { font:10px/1.6 var(--mono); color:var(--dim); }
+  .runcounts span { font:var(--t-10)/1.6 var(--mono); color:var(--dim); }
   .runcounts b { color:var(--fg); font-weight:600; font-variant-numeric:tabular-nums; }
   .runcounts .bad b, .runcounts .bad { color:var(--fail); }
   .runlist { margin-top:var(--s2); border-top:1px solid var(--line); }
   .runline { display:flex; gap:var(--s2); padding:6px 0; align-items:baseline;
              border-bottom:1px solid var(--line); }
   .runline:last-child { border-bottom:none; }
-  .runline .when { font:10px/1.6 var(--mono); color:var(--faint); width:84px; flex:none;
+  .runline .when { font:var(--t-10)/1.6 var(--mono); color:var(--faint); width:84px; flex:none;
                    font-variant-numeric:tabular-nums; }
-  .runline .what { font-size:12px; color:var(--dim); min-width:0; flex:1; overflow-wrap:anywhere; }
+  .runline .what { font-size:var(--t-12); color:var(--dim); min-width:0; flex:1; overflow-wrap:anywhere; }
   .runline .dot { width:6px; height:6px; border-radius:50%; background:var(--idle); flex:none;
                   align-self:center; }
   .runline .dot.ok { background:var(--ok); } .runline .dot.failed { background:var(--fail); }
   .runline .dot.skipped { background:var(--track); }
-  .runline .took { font:10px/1.6 var(--mono); color:var(--faint); flex:none; }
+  .runline .took { font:var(--t-10)/1.6 var(--mono); color:var(--faint); flex:none; }
   /* Forty runs each underlined is a wall of blue, and the detail is the thing
      to read, not the thing to click. The arrow carries the affordance instead,
      which also works on a phone, where there is no hover to reveal one. */
   .runline .what a { text-decoration:none; }
   .runline .what a:hover { text-decoration:underline; text-decoration-color:var(--faint); }
-  .ext { color:var(--faint); font-size:10px; margin-left:4px; }
+  .ext { color:var(--faint); font-size:var(--t-10); margin-left:4px; }
   .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
 
   .subnav { display:flex; gap:var(--s2); margin-bottom:var(--s3); }
   .subnav button { background:transparent; border:1px solid var(--line); color:var(--dim);
-                   border-radius:8px; padding:8px 12px; }
+                   border-radius:var(--r-md); padding:8px 12px; }
   .subnav button.on { background:var(--raise); color:var(--fg); border-color:var(--faint); }
   .subnav .badge { display:inline-block; margin-left:var(--s1); padding:1px 5px;
-                   border-radius:6px; background:var(--blocked); color:#231000;
-                   font:700 10px/1.4 var(--mono); }
+                   border-radius:var(--r); background:var(--blocked); color:#1a0d04;
+                   font:700 var(--t-10)/1.4 var(--mono); }
   .subnav .badge.ready { background:var(--working); color:#001427; }
-  .explain { background:var(--raise); border:1px solid var(--line); border-radius:8px;
-             padding:var(--s3); margin-bottom:var(--s2); color:var(--dim); font-size:12px; }
+  .explain { background:var(--raise); border:1px solid var(--line); border-radius:var(--r-md);
+             padding:var(--s3); margin-bottom:var(--s2); color:var(--dim); font-size:var(--t-12); }
   .schedule-meta { display:flex; gap:var(--s2); flex-wrap:wrap; margin:var(--s2) 0; }
 
   /* ---- spend ------------------------------------------------------------ */
   #money .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
            gap:var(--s3); margin-bottom:var(--s3); }
-  .tv { font:600 22px/1.2 var(--mono); letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
-  .tl { color:var(--dim); font-size:11.5px; margin-top:var(--s1); }
+  .tv { font:600 var(--t-20)/1.2 var(--mono); letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
+  .tl { color:var(--dim); font-size:var(--t-12); margin-top:var(--s1); }
   .bar-row { display:flex; align-items:center; gap:var(--s3); padding:5px 0; }
-  .bar-name { width:36%; font:11.5px/1.4 var(--mono); color:var(--fg);
+  .bar-name { width:36%; font:var(--t-12)/1.4 var(--mono); color:var(--fg);
               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .bar-track { flex:1; height:6px; background:var(--raise); border-radius:3px; overflow:hidden; }
-  .bar-fill { height:100%; background:var(--working); border-radius:3px; }
-  .bar-val { width:62px; text-align:right; font:11.5px/1.4 var(--mono);
+  .bar-track { flex:1; height:6px; background:var(--raise); border-radius:var(--r-sm); overflow:hidden; }
+  .bar-fill { height:100%; background:var(--working); border-radius:var(--r-sm); }
+  .bar-val { width:62px; text-align:right; font:var(--t-12)/1.4 var(--mono);
              color:var(--dim); font-variant-numeric:tabular-nums; }
   /* An account row names the login and then who it is, so it needs two lines
      where a project row needs one. */
   .bar-row.who { align-items:flex-start; }
   .bar-row.who .bar-track { margin-top:6px; }
   .bar-row.who .bar-val { margin-top:-1px; }
-  .bar-who { width:36%; min-width:0; font:11.5px/1.4 var(--mono); color:var(--fg); }
-  .bar-who span { display:block; color:var(--dim); font-size:10.5px;
+  .bar-who { width:36%; min-width:0; font:var(--t-12)/1.4 var(--mono); color:var(--fg); }
+  .bar-who span { display:block; color:var(--dim); font-size:var(--t-10);
                   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .bar-who.absent { color:var(--dim); }
 
@@ -601,40 +643,40 @@
                   gap:var(--s2); margin-bottom:var(--s3); }
   .jobs-toolbar input, .jobs-toolbar select, .job-row select, .job-row input {
         width:100%; min-width:0; background:var(--raise); color:var(--fg);
-        border:1px solid var(--line); border-radius:8px; padding:9px var(--s3);
-        font:12.5px/1 var(--sans); }
+        border:1px solid var(--line); border-radius:var(--r-md); padding:9px var(--s3);
+        font:var(--t-13)/1 var(--sans); }
   .job-list { background:var(--surface); border:1px solid var(--line); border-radius:var(--r); overflow:hidden; }
   .job-row { display:grid; grid-template-columns:minmax(180px,1.5fr) minmax(130px,.7fr) 105px minmax(145px,.8fr);
              gap:var(--s3); align-items:center; padding:var(--s3) var(--s4); border-bottom:1px solid var(--line); }
   .job-row:last-child { border-bottom:0; }
   .job-main { min-width:0; }
   .job-main b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
-                font:600 12.5px/1.4 var(--mono); }
-  .job-main span { display:block; color:var(--dim); font-size:12px; overflow:hidden;
+                font:600 var(--t-13)/1.4 var(--mono); }
+  .job-main span { display:block; color:var(--dim); font-size:var(--t-12); overflow:hidden;
                    text-overflow:ellipsis; white-space:nowrap; }
-  .job-date, .job-follow { color:var(--dim); font-size:11.5px; }
-  .job-follow label { display:block; color:var(--faint); font-size:10px; margin-bottom:4px; }
-  .job-count { color:var(--dim); font:11px/1.4 var(--mono); }
+  .job-date, .job-follow { color:var(--dim); font-size:var(--t-12); }
+  .job-follow label { display:block; color:var(--faint); font-size:var(--t-10); margin-bottom:4px; }
+  .job-count { color:var(--dim); font:var(--t-12)/1.4 var(--mono); }
   .money-section { margin-top:var(--s3); }
   .service-list { display:grid; gap:var(--s2); }
   .service-row { display:flex; align-items:center; gap:var(--s3); padding:var(--s3) 0;
                  border-bottom:1px solid var(--line); }
   .service-row:last-child { border-bottom:0; }
   .service-main { flex:1; min-width:0; }
-  .service-main b { display:block; font:600 12.5px/1.4 var(--mono); }
-  .service-main span { color:var(--dim); font-size:11.5px; }
-  .service-cost { flex:none; text-align:right; font:600 12px/1.4 var(--mono); }
+  .service-main b { display:block; font:600 var(--t-13)/1.4 var(--mono); }
+  .service-main span { color:var(--dim); font-size:var(--t-12); }
+  .service-cost { flex:none; text-align:right; font:600 var(--t-12)/1.4 var(--mono); }
   .findbar { flex:none; display:flex; gap:var(--s2); align-items:center; }
   .findbar input { width:150px; max-width:30vw; background:var(--raise); color:var(--fg);
-                   border:1px solid var(--line); border-radius:6px; padding:4px 8px;
-                   font:400 12px/1.5 var(--mono); }
+                   border:1px solid var(--line); border-radius:var(--r); padding:4px 8px;
+                   font:400 var(--t-12)/1.5 var(--mono); }
   .findbar input:focus { outline:none; border-color:var(--faint); }
   .hit { display:block; padding:var(--s3) 0; border-bottom:1px solid var(--line); }
   .hit:last-child { border-bottom:0; }
   .hit-meta { display:flex; gap:var(--s2); align-items:baseline; flex-wrap:wrap;
-              color:var(--dim); font:400 11px/1.5 var(--mono); }
+              color:var(--dim); font:400 var(--t-12)/1.5 var(--mono); }
   .hit-meta b { color:var(--fg); font-weight:600; }
-  .hit-text { margin-top:2px; font:400 12.5px/1.55 var(--mono); word-break:break-word; }
+  .hit-text { margin-top:2px; font:400 var(--t-13)/1.55 var(--mono); word-break:break-word; }
 </style>
 </head>
 <body>
@@ -662,14 +704,10 @@
 <main>
   <section id="home">
     <div class="section-head">
-      <div class="grow"><h2>needs you</h2><p>Only things that need a decision, follow-up, or fix.</p></div>
+      <div class="grow"><h2>home</h2><p>What needs you, what happened, what is running.</p></div>
       <button class="sm" id="refreshHome">refresh</button>
     </div>
-    <div id="homeOut" class="action-list"><div class="empty">checking</div></div>
-    <div class="section-head" style="margin-top:var(--s5)">
-      <div class="grow"><h2>everything else</h2><p>One tile per tab. Tap any of them to open it.</p></div>
-    </div>
-    <div id="homeTiles" class="tiles"><div class="empty">loading</div></div>
+    <div id="homeGrid" class="widgets"><div class="empty">checking</div></div>
   </section>
 
   <section id="search" hidden>
@@ -1499,7 +1537,7 @@ async function loadHome(force = false) {
   const runsPart = parts.runs, machPart = parts.machine;
   const runs = runsPart && runsPart.status === 200 && runsPart.body !== undefined ? runsPart.body : {};
   const mach = machPart && machPart.status === 200 && machPart.body !== undefined ? machPart.body : {};
-  if (unauthorized || !$('homeOut')) return;
+  if (unauthorized || !$('homeGrid')) return;
   const actions = [];
   const blocked = [...sessions.values()].filter(s => s.state === 'blocked');
   if (blocked.length) actions.push({tone:'urgent', title:`${blocked.length} agent${blocked.length === 1 ? '' : 's'} waiting`,
@@ -1524,38 +1562,15 @@ async function loadHome(force = false) {
   const due = apps.filter(a => a.followUpAt && new Date(a.followUpAt) <= today && !['Offer','Rejected'].includes(a.status));
   if (due.length) actions.push({tone:'', title:`${due.length} job follow-up${due.length === 1 ? '' : 's'} due`,
     detail:'Applications with a follow-up date today or earlier.', label:'open jobs', tab:'jobs'});
-  const out = $('homeOut');
+  if (hack.needsYou) actions.push({tone:'urgent', title:`${hack.needsYou} hackathon decision${hack.needsYou === 1 ? '' : 's'} waiting`,
+    detail:'Directions to pick, ideas to choose, or a finished build to submit.', label:'open hack', tab:'hack'});
   const count = actions.length;
   $('actionCount').hidden = count === 0;
   $('actionCount').textContent = count;
-  // A feed that did not answer is never an all-clear. Build the banner first,
-  // then the actions, so the two compose instead of one overwriting the other.
-  const banner = unread.length
-    ? `<div class="action bad"><b>cannot tell</b><span>Could not read ${esc(unread.join(", "))}. `
-      + `${count ? `${count} action${count === 1 ? "" : "s"} found in what did load.` : "Nothing below is a clear signal."} `
-      + `Check the daemon and reload.</span></div>`
-    : "";
-
-  renderTiles({ health, spend, apps, appsTotal, runs, mach, tasks: Array.isArray(tasks) ? tasks : [] });
-
-  if (!unread.length && !count) {
-    out.innerHTML = '<div class="all-clear"><b>nothing needs you</b>'
-      + `<span>Agents, automations, money, and job follow-ups have no current action. Read ${esc(new Date().toLocaleTimeString())}.</span></div>`;
-    return;
-  }
-
-  out.innerHTML = banner + actions.map((a, i) => `<div class="action ${esc(a.tone)}">
-    <div class="action-copy"><b>${esc(a.title)}</b><span>${esc(a.detail)}</span></div>
-    <button class="sm" data-action="${i}">${esc(a.label)}</button>
-  </div>`).join('');
-  out.querySelectorAll('[data-action]').forEach(b => {
-    b.onclick = () => {
-      const action = actions[Number(b.dataset.action)];
-      openTopTab(action.tab);
-      if (action.view) setAgentView(action.view);
-      if (action.anchor) focusRow(action.anchor);
-    };
-  });
+  const recentPart = parts.recent;
+  const recent = recentPart && recentPart.status === 200 && recentPart.body ? recentPart.body : { items: [], warnings: ['recent (missing)'] };
+  renderHome({ actions, unread, health, spend, apps, appsTotal, runs, mach, hack, recent,
+               tasks: Array.isArray(tasks) ? tasks : [] });
 }
 
 // The tab loads after the click, so the row may not exist yet. Poll briefly
@@ -1645,83 +1660,91 @@ async function loadHealth() {
 //
 // Every number here is read from the same endpoint the tab itself uses, so the
 // tile and the tab cannot disagree. Nothing is recomputed.
-function renderTiles({ health, spend, apps, appsTotal, runs, mach, tasks }) {
-  const el = $('homeTiles');
-  if (!el) return;
-  const reports = (health.reports || []).filter(r => r.category !== 'machine');
-  const healthy = reports.filter(r => r.state === 'ok').length;
+function renderHome({ actions, unread, health, spend, apps, appsTotal, runs, mach, hack, recent, tasks }) {
+  const el = $('homeGrid');
+  const reports = health.reports || [];
+  const automationsOnly = reports.filter(r => r.category !== 'machine');
+  const healthy = automationsOnly.filter(r => r.state === 'ok').length;
+  const unknown = automationsOnly.filter(r => r.state === 'unknown').length;
+  const broken = automationsOnly.filter(r => r.state !== 'ok' && r.state !== 'unknown');
+  const strip = (runs.automations || []).flatMap(a => a.recent || []).slice(-40);
   const sess = [...sessions.values()];
+  const byKind = sess.reduce((m, s) => (m[s.kind || 'acp'] = (m[s.kind || 'acp'] || 0) + 1, m), {});
   const blocked = sess.filter(s => s.state === 'blocked').length;
-  const ready = tasks.filter(t => t.state === 'ready').length;
-
-  const watched = (runs.automations || []).filter(a => a.verdict !== 'unwatched');
-  const failedRuns = watched.reduce((n, a) => n + (a.failed || 0), 0);
-  // Broken means the newest run failed. Without this the tile said "13 failed
-  // runs" for a week in which every one of them was fixed days ago, which is
-  // the exact confusion the run log's clean streak exists to remove.
-  const broken = watched.filter(a => a.verdict === 'broken');
-  // Newest last, so the strip reads left to right like the run log's does.
-  const recent = watched.flatMap(a => (a.runs || []).slice(0, 6))
-    .sort((x, y) => new Date(x.at) - new Date(y.at)).slice(-28);
-
-  const today = new Date(); today.setHours(23, 59, 59, 999);
-  // apps here is already the due set, filtered on the server, and the total
-  // rides in separately. Both are counts; neither needed the rows.
-  const due = apps.length;
-
+  const working = sess.filter(s => s.state === 'working').length;
   const m = mach.memory || {}, sw = mach.swap || {}, dk = mach.disk || {};
   const top = (mach.top || [])[0];
+  const today = new Date(); today.setHours(23, 59, 59, 999);
+  const due = apps.filter(a => a.followUpAt && new Date(a.followUpAt) <= today && !['Offer','Rejected'].includes(a.status)).length;
+  const items = recent.items || [];
+  const hackItems = items.filter(i => i.kind === 'hack');
+  const nextClose = hackItems.find(i => /closes in/.test(i.detail || ''));
+  const hhmm = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
 
-  const tiles = [
-    { tab: 'agents', view: 'board', name: 'agents',
-      big: sess.length, bigClass: blocked ? 'warn' : '',
-      sub: blocked ? `${blocked} waiting on you` : 'none waiting on you',
-      rows: [['live', sess.length], ['blocked', blocked], ['queued', ready]] },
-    { tab: 'automations', name: 'automations',
-      big: `${healthy}/${reports.length}`, bigClass: broken.length || healthy !== reports.length ? 'bad' : 'ok',
-      sub: broken.length ? `${broken.length} failing right now`
-         : failedRuns ? `all recovered, ${failedRuns} failed earlier this week`
-         : `no failed runs in ${runs.days || 7} days`,
-      strip: recent },
-    { tab: 'money', name: 'money',
+  // Needs-you is tiered. Blocking is a session or decision waiting on you and a
+  // probe that has failed; a new charge or a follow-up date is informational and
+  // collapses to a line, so four money notices no longer take a third of the
+  // screen. A feed that did not answer is still named first: it is never an
+  // all-clear.
+  const blocking = actions.filter(a => a.tone === 'urgent');
+  const informational = actions.filter(a => a.tone !== 'urgent');
+  const item = (a, cls) => `<div class="w-act ${cls}"><span class="n">${esc(a.title)}</span><span class="lbl">${esc(a.label)}</span><span class="d">${esc(a.detail)}</span></div>`;
+  const needs = `
+    ${unread.length ? `<div class="w-act bad"><span class="n">cannot tell</span><span class="lbl">daemon</span><span class="d">could not read ${esc(unread.join(', '))}</span></div>` : ''}
+    ${blocking.map(a => item(a, 'urgent')).join('')}
+    ${informational.map(a => item(a, '')).join('')}
+    ${!unread.length && !actions.length ? `<div class="w-sub">nothing needs you. read ${esc(new Date().toLocaleTimeString())}</div>` : ''}`;
+
+  const widgets = [
+    { key:'needs', cls:'wide', head:'needs you', badge: actions.length ? String(actions.length) : '',
+      body:`<div class="w-list">${needs}</div>`, tab:null },
+    { key:'hack', head:'hack', tab:'hack',
+      big: hack.needsYou != null ? hack.needsYou : '--', bigClass: hack.needsYou ? 'blocked' : '',
+      sub: hack.warning ? 'queue unreachable' : nextClose ? `${nextClose.title}: ${nextClose.detail}` : hack.needsYou ? 'waiting on a decision from you' : 'nothing waiting on you',
+      list: hackItems.filter(i => !/closes in/.test(i.detail || '')).slice(0, 3).map(i => ({ t: hhmm(i.at), n: i.title, d: i.detail })) },
+    { key:'machine', head:'machine', tab:'automations',
+      big: m.percent != null ? m.percent + '%' : '--', bigClass: m.percent >= 90 ? 'bad' : m.percent >= 80 ? 'warn' : '',
+      sub: top ? `memory · most of it is ${top.name}` : 'memory in use',
+      rows: [['swap', (sw.percent || 0) + '%'], ['disk', (dk.percent || 0) + '%'], ['wired', m.wired ? Math.round(m.wired / 1073741824 * 10) / 10 + ' GB' : '--']] },
+    { key:'recent', cls:'wide', head:'recently', badge: `${recent.warnings && recent.warnings.length ? 'partial · ' : ''}last 24h`, tab:null,
+      body:`<div class="w-list">${items.filter(i => !(i.kind === 'hack' && /closes in/.test(i.detail || ''))).slice(0, 9).map(i => `<div class="w-item"><span class="t">${esc(hhmm(i.at))}</span><span class="n">${esc(i.kind === 'session' ? i.project : i.title)}</span><span class="d">${esc(i.kind === 'session' ? `session · ${i.detail || ''}` : i.detail || i.kind)}</span></div>`).join('') || '<div class="w-sub">nothing recorded in the last day</div>'}</div>` },
+    { key:'agents', head:'agents', tab:'agents', view:'board',
+      big: sess.length, bigClass: blocked ? 'blocked' : '',
+      sub: Object.entries(byKind).map(([k, n]) => `${n} ${k}`).join(' · ') || 'no sessions seen',
+      rows: [['working', working], ['blocked', blocked], ['queued', tasks.filter(t => t.state === 'ready').length]] },
+    { key:'automations', head:'automations', tab:'automations',
+      big: `${healthy}/${automationsOnly.length}`, bigClass: broken.length ? 'bad' : unknown ? 'warn' : 'ok',
+      sub: broken.length ? `${broken.length} failing right now` : unknown ? `${unknown} unknown: a probe could not tell` : `all delivering`,
+      strip },
+    { key:'money', head:'money', tab:'money',
       big: spend.monthlyUsd || '$0', sub: 'recurring per month, actually billed',
-      rows: [['today', (spend.todayUsd || '$0') + ' eq'],
-             ['30d', (spend.agentUsd || '$0') + ' eq'],
-             ['alerts', (spend.alerts || []).length]] },
-    { tab: 'jobs', name: 'jobs',
-      big: appsTotal, bigClass: due ? 'warn' : '',
-      sub: due ? `${due} follow-up${due === 1 ? '' : 's'} due` : 'applications tracked, nothing due',
-      rows: [['follow-ups due', due]] },
-    { tab: 'hack', name: 'hack',
-      big: hack.needsYou != null ? hack.needsYou : '--',
-      bigClass: hack.needsYou ? 'warn' : '',
-      sub: hack.warning ? 'queue unreachable' : hack.needsYou ? 'waiting on a decision from you' : 'nothing waiting on you' },
-    { tab: 'automations', name: 'machine',
-      big: m.percent != null ? m.percent + '%' : '--',
-      bigClass: m.percent >= 90 ? 'bad' : m.percent >= 80 ? 'warn' : '',
-      sub: top ? `most of it is ${top.name}` : 'memory in use',
-      rows: [['swap', (sw.percent || 0) + '%'], ['disk', (dk.percent || 0) + '%']] },
+      rows: [['today', (spend.todayUsd || '$0') + ' eq'], ['30d', (spend.agentUsd || '$0') + ' eq'], ['alerts', (spend.alerts || []).length]] },
+    { key:'jobs', head:'jobs', tab:'jobs',
+      big: appsTotal, bigClass: due ? 'warn' : '', sub: due ? `${due} follow-up${due === 1 ? '' : 's'} due` : 'applications tracked, nothing due' },
+    { key:'codexlb', cls:'slot', head:'codex-lb', badge:'reserved', tab:null,
+      body:'<div class="w-sub">accounts · remaining · burn. wired when yours exists.</div>' },
   ];
 
-  el.className = 'tiles';
-  el.innerHTML = tiles.map((t, i) => `
-    <button class="tile" data-tile="${i}">
-      <span class="tile-head"><b>${esc(t.name)}</b><span class="go">open &rsaquo;</span></span>
-      <span class="tile-big ${esc(t.bigClass || '')}">${esc(String(t.big))}</span>
-      <span class="tile-sub">${esc(t.sub)}</span>
-      ${t.strip && t.strip.length ? `<span class="strip" role="img" aria-label="${t.strip.length} recent runs">`
-        + t.strip.map(x => `<span class="tick ${esc(x.status)}" title="${esc(runTitle(x))}"></span>`).join('')
-        + `</span>` : ''}
-      ${t.rows ? `<span class="tile-row">${t.rows.map(([k, v]) =>
-        `<span>${esc(k)} <b>${esc(String(v))}</b></span>`).join('')}</span>` : ''}
-    </button>`).join('');
-
-  el.querySelectorAll('[data-tile]').forEach(b => {
-    b.onclick = () => {
-      const t = tiles[Number(b.dataset.tile)];
-      openTopTab(t.tab);
-      if (t.view) setAgentView(t.view);
-    };
+  el.className = 'widgets';
+  el.innerHTML = widgets.map((w, i) => `
+    <${w.tab ? 'button' : 'div'} class="widget ${esc(w.cls || '')}" ${w.tab ? `data-widget="${i}"` : ''}>
+      <span class="w-head"><b>${esc(w.head)}</b><span class="go">${esc(w.badge || (w.tab ? 'open ›' : ''))}</span></span>
+      ${w.big !== undefined ? `<span class="w-big ${esc(w.bigClass || '')}">${esc(String(w.big))}</span>` : ''}
+      ${w.sub ? `<span class="w-sub">${esc(w.sub)}</span>` : ''}
+      ${w.strip && w.strip.length ? `<span class="strip" role="img" aria-label="${w.strip.length} recent runs">${w.strip.map(x => `<span class="tick ${esc(x.status)}" title="${esc(runTitle(x))}"></span>`).join('')}</span>` : ''}
+      ${w.rows ? `<span class="w-rows">${w.rows.map(([k, v]) => `<span>${esc(k)} <b>${esc(String(v))}</b></span>`).join('')}</span>` : ''}
+      ${w.list && w.list.length ? `<div class="w-list">${w.list.map(x => `<div class="w-item"><span class="t">${esc(x.t)}</span><span class="n">${esc(x.n)}</span><span class="d">${esc(x.d || '')}</span></div>`).join('')}</div>` : ''}
+      ${w.body || ''}
+    </${w.tab ? 'button' : 'div'}>`).join('');
+  el.querySelectorAll('[data-widget]').forEach(b => {
+    b.onclick = () => { const w = widgets[Number(b.dataset.widget)]; openTopTab(w.tab); if (w.view) setAgentView(w.view); };
+  });
+  // Rows inside needs-you go to their own place, not the widget's.
+  const needsEl = el.querySelector('.widget.wide .w-list');
+  if (needsEl) [...needsEl.querySelectorAll('.w-act')].forEach((row, i) => {
+    const a = [...blocking, ...informational][unread.length ? i - 1 : i];
+    if (!a) return;
+    row.onclick = () => { openTopTab(a.tab); if (a.view) setAgentView(a.view); if (a.anchor) focusRow(a.anchor); };
   });
 }
 
