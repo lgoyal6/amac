@@ -1164,12 +1164,18 @@ function sessionActions(s) {
   said.className = 'copied';
   const help = document.createElement('div');
   help.className = 'session-help';
-  help.textContent = s.kind === 'tmux'
-    ? 'Terminal session · attach to the same tmux session on your Mac.'
-    : 'AMAC-managed session · continue here or resume it in a terminal.';
+  // Four kinds, four truths. A card must not promise an action its session
+  // cannot take: "open on Mac" attaches a tmux session, and a desktop window
+  // is already open.
+  const observed = s.kind === 'desktop' || s.kind === 'terminal';
+  help.textContent = ({
+    tmux: 'Terminal session · attach to the same tmux session on your Mac.',
+    desktop: 'Desktop session · already open in the Claude app. Read-only here; copy the resume command to pick it up in a terminal.',
+    terminal: 'Terminal session · running in a window amac cannot reach. Read-only here.',
+  })[s.kind] || 'AMAC-managed session · continue here or resume it in a terminal.';
   row.appendChild(help);
 
-  if (s.continueCommand) {
+  if (s.continueCommand && !observed) {
 	const open = document.createElement('button');
 	open.className = 'sm go';
 	open.textContent = 'open on Mac';
@@ -1180,7 +1186,8 @@ function sessionActions(s) {
 	  said.textContent = r.ok ? 'opened in Terminal' : ((await r.json()).error || 'could not open');
 	};
 	row.appendChild(open);
-
+  }
+  if (s.continueCommand) {
     const copy = document.createElement('button');
     copy.className = 'sm copy-command';
     copy.textContent = s.kind === 'tmux' ? 'attach on Mac' : 'copy resume command';
