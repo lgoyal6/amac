@@ -48,7 +48,7 @@
     --fg:#e7eaf0; --dim:#9aa4b5; --faint:#8993a5;
 
     --blocked:#ff9147; --working:#4c9aff; --idle:#6b7688;
-    --ok:#3fb950; --fail:#f85149; --late:#d29922;
+    --ok:#3fb950; --fail:#f85149; --late:#d29922; --unknown:#63b3ff;
 
     /* An ordinal ramp for charts: one hue, three monotone lightness steps.
        Ordinal rather than categorical because every series drawn with it has a
@@ -68,7 +68,7 @@
   }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) { --bg:#f7f8fa; --surface:#fff; --raise:#f1f3f6; --line:#e3e7ee;
-            --fg:#11141a; --dim:#5f6878; --faint:#98a1b0;
+            --fg:#11141a; --dim:#5f6878; --faint:#646b76;
             /* Status colours were only ever defined for the dark surface, so on
                white every one of them failed 4.5:1: blocked 2.24, late 2.52, ok
                2.54, working 2.85, fail 3.35, all at 10px and all carrying the
@@ -76,7 +76,7 @@
                darkened until they clear 4.5 on both --surface #fff and --raise
                #f1f3f6: measured 5.08, 5.88, 5.54, 6.21, 5.99 and 4.57 upward. */
             --blocked:#a34400; --working:#0b5cd5; --idle:#5f6878;
-            --ok:#1a7f37; --fail:#c0272d; --late:#8a6100;
+            --ok:#1a7f37; --fail:#c0272d; --late:#8a6100; --unknown:#0a57ad;
             /* Stepped again for the light surface rather than flipped: the
                dark ramp's lightest step is 1.75:1 on #f1f3f6 and invisible.
                The lightest step here is 2.27:1, which the checks allow only
@@ -86,10 +86,10 @@
 
   :root[data-theme="light"] {
     --bg:#f7f8fa; --surface:#fff; --raise:#f1f3f6; --line:#e3e7ee;
-    --fg:#11141a; --dim:#5f6878; --faint:#98a1b0;
+    --fg:#11141a; --dim:#5f6878; --faint:#646b76;
     --c1:#58a6ff; --c2:#1f6feb; --c3:#0d419d; --track:#e3e7ee;
     --blocked:#a34400; --working:#0b5cd5; --idle:#5f6878;
-    --ok:#1a7f37; --fail:#c0272d; --late:#8a6100;
+    --ok:#1a7f37; --fail:#c0272d; --late:#8a6100; --unknown:#0a57ad;
   }
   .themebtn { background:none; border:1px solid var(--line); color:var(--dim);
     border-radius:6px; padding:3px 9px; font:inherit; font-size:11px; font-weight:600;
@@ -137,7 +137,7 @@
      you touch anything. The action list above it stays the lede: these are a
      glance, not a to-do. auto-fit rather than a fixed column count, because the
      same grid has to hold five tiles on a phone and five across a laptop. */
-  .tiles { display:grid; gap:var(--s2); grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); }
+  .tiles { display:grid; gap:var(--s2); grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); }
   .tile { background:var(--surface); border:1px solid var(--line); border-radius:var(--r);
           padding:var(--s3) var(--s4); text-align:left; color:inherit; cursor:pointer;
           display:flex; flex-direction:column; gap:var(--s1); min-width:0; }
@@ -188,7 +188,9 @@
   .all-clear b { display:block; color:var(--ok); font:600 14px/1.4 var(--mono); }
   .all-clear span { color:var(--dim); font-size:12px; }
 
-  main { padding:var(--s4) var(--s4) 96px; }
+  /* A 2000px monitor is not a reason for a card to be 2000px wide. */
+  main { padding:var(--s4) var(--s4) 96px; max-width:1440px; margin:0 auto; }
+  @media (min-width:601px) { header .brand, header nav { max-width:1408px; margin-left:auto; margin-right:auto; } }
   /* align-items:start, not the default stretch. Opening one card grows its row,
      and every other card in that row grew with it into a tall empty box that
      read as a rendering fault. A card should be as tall as what it contains. */
@@ -218,7 +220,6 @@
           overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .state { font:11px/1.4 var(--mono); color:var(--faint); flex:none; }
   .state.blocked { color:var(--blocked); } .state.working { color:var(--working); }
-  .pip { display:none; }
 
   .tags { display:flex; gap:var(--s2); margin-top:var(--s2); flex-wrap:wrap; }
   .agent, .kind { font:10px/1.6 var(--mono); color:var(--dim);
@@ -232,7 +233,7 @@
   /* ---- the pane, which is the thing worth looking at ------------------- */
   .pane { margin-top:var(--s3); background:var(--bg); border:1px solid var(--line);
           border-radius:var(--r); padding:var(--s3);
-          font:11px/1.45 var(--mono); color:#c3cad8; white-space:pre;
+          font:11px/1.45 var(--mono); color:var(--dim); white-space:pre;
           overflow:auto; max-height:280px; }
 
   /* A keypad: one dense row, monospace, sized like keys rather than buttons. */
@@ -252,7 +253,6 @@
                    border:1px solid var(--line); border-radius:8px;
                    padding:9px var(--s3); font:12.5px/1 var(--sans); }
   .typebar input::placeholder { color:var(--faint); }
-  .note { display:none; }
 
   .ask { margin-top:var(--s3); padding-top:var(--s3); border-top:1px solid var(--line); }
   .ask-title { font-size:12.5px; margin-bottom:var(--s2); }
@@ -402,7 +402,7 @@
   .tile-pane.blocked { border-left-color:var(--blocked); }
   .tile-pane.working { border-left-color:var(--working); }
   .tile-pane.idle    { border-left-color:var(--idle); }
-  .tile-head { display:flex; align-items:baseline; gap:var(--s2);
+  .tile-pane .tile-head { display:flex; align-items:baseline; gap:var(--s2);
                padding:var(--s2) var(--s3); border-bottom:1px solid var(--line); }
   .tile-name { font:600 11.5px/1.4 var(--mono); flex:1 1 auto; min-width:0;
                overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -500,7 +500,7 @@
   .rs.waiting{color:var(--faint)} .rs.ready{color:var(--blocked)}
   .art { margin-top:var(--s2); background:var(--bg); border:1px solid var(--line);
          border-radius:8px; padding:var(--s3); font:11px/1.5 var(--mono);
-         color:#c3cad8; white-space:pre-wrap; max-height:320px; overflow:auto; }
+         color:var(--dim); white-space:pre-wrap; max-height:320px; overflow:auto; }
   .size { font:10px/1.6 var(--mono); color:var(--dim);
           border:1px solid var(--line); border-radius:5px; padding:0 6px; }
 
@@ -510,7 +510,14 @@
   .hstate { font:10px/1.8 var(--mono); width:56px; flex:none; color:var(--faint); }
   .hstate.ok{color:var(--ok)} .hstate.failing{color:var(--fail)}
   .hstate.late{color:var(--late)} .hstate.down{color:var(--blocked)}
-  .hstate.warning{color:var(--late)}
+  .hstate.warning{color:var(--late)} .hstate.unknown{color:var(--unknown)}
+  /* Kind labels on the money tab were borrowing .hstate, whose 56px width was
+     sized for health words. "subscription_cancelled" is 22 characters and ran
+     into the service name. A label grows; a status column does not. */
+  .klabel { font:10px/1.8 var(--mono); flex:none; min-width:56px; white-space:nowrap; color:var(--faint); }
+  .klabel.ok{color:var(--ok)} .klabel.late{color:var(--late)} .klabel.failing{color:var(--fail)}
+  .flash { outline:2px solid var(--blocked); outline-offset:2px; border-radius:var(--r); }
+  .explain-count { margin-bottom:var(--s3); }
   .hname { font:600 12.5px/1.5 var(--mono); }
   .hdetail { color:var(--dim); font-size:12px; margin-top:2px; }
   .acts { display:flex; gap:var(--s2); align-items:center; margin-top:var(--s2); flex-wrap:wrap; }
@@ -568,10 +575,8 @@
   .schedule-meta { display:flex; gap:var(--s2); flex-wrap:wrap; margin:var(--s2) 0; }
 
   /* ---- spend ------------------------------------------------------------ */
-  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  #money .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
            gap:var(--s3); margin-bottom:var(--s3); }
-  .tile { background:var(--surface); border:1px solid var(--line);
-          border-radius:var(--r); padding:var(--s3) var(--s4); }
   .tv { font:600 22px/1.2 var(--mono); letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
   .tl { color:var(--dim); font-size:11.5px; margin-top:var(--s1); }
   .bar-row { display:flex; align-items:center; gap:var(--s3); padding:5px 0; }
@@ -1475,6 +1480,12 @@ async function loadHome(force = false) {
   const tasks = feed("tasks", "tasks", []);
   const spend = feed("spend", "money", {});
   const jobData = feed("jobs", "jobs", {});
+  const hack = feed("hack", "hackqueue", {});
+  // The nav badge rides this one request rather than polling on its own. A
+  // count that could not be taken hides the badge: zero is a claim.
+  const hackBadge = $('hackCount');
+  hackBadge.hidden = !(hack.needsYou && !hack.warning);
+  hackBadge.textContent = hack.needsYou || '';
   const duePart = parts.due;
   const dueData = duePart && duePart.status === 200 && duePart.body !== undefined ? duePart.body : {};
   // Two shapes from the same endpoint: the meta carries the true total, and
@@ -1499,16 +1510,16 @@ async function loadHome(force = false) {
   for (const rep of (health.reports || []).filter(x => x.category !== 'machine' && x.state !== 'ok').slice(0, 3)) {
     actions.push({tone:rep.state === 'failing' || rep.state === 'down' ? 'urgent' : '',
       title:`${rep.name} is ${rep.state}`, detail:rep.detail || 'The latest expected evidence is missing.',
-      label:'check', tab:'automations'});
+      label:'check', tab:'automations', anchor:`auto-${rep.name}`});
   }
   const machine = (health.reports || []).find(x => x.category === 'machine' && x.state !== 'ok');
   if (machine) actions.push({tone:'', title:'Mac capacity warning',
     detail:`Automations are not marked failed. ${machine.detail || 'The machine is under pressure.'}`,
     label:'details', tab:'automations'});
-  for (const alert of (spend.alerts || []).slice(0, 3)) {
+  (spend.alerts || []).slice(0, 3).forEach((alert, i) => {
     actions.push({tone:alert.severity >= 3 ? 'urgent' : '', title:'Money needs attention',
-      detail:alert.message || 'A balance, trial, or charge needs review.', label:'review', tab:'money'});
-  }
+      detail:alert.message || 'A balance, trial, or charge needs review.', label:'review', tab:'money', anchor:`malert-${i}`});
+  });
   const today = new Date(); today.setHours(23, 59, 59, 999);
   const due = apps.filter(a => a.followUpAt && new Date(a.followUpAt) <= today && !['Offer','Rejected'].includes(a.status));
   if (due.length) actions.push({tone:'', title:`${due.length} job follow-up${due.length === 1 ? '' : 's'} due`,
@@ -1542,8 +1553,19 @@ async function loadHome(force = false) {
       const action = actions[Number(b.dataset.action)];
       openTopTab(action.tab);
       if (action.view) setAgentView(action.view);
+      if (action.anchor) focusRow(action.anchor);
     };
   });
+}
+
+// The tab loads after the click, so the row may not exist yet. Poll briefly
+// rather than await a load whose promise the tab opener does not return.
+function focusRow(id, tries = 25) {
+  const el = document.getElementById(id);
+  if (!el) { if (tries > 0) setTimeout(() => focusRow(id, tries - 1), 100); return; }
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.add('flash');
+  setTimeout(() => el.classList.remove('flash'), 1800);
 }
 
 $('refreshHome').onclick = () => { homeLoadedAt = 0; loadHome(true); };
@@ -1571,7 +1593,7 @@ async function loadHealth() {
   const rows = automations.map(rep => {
     const plan = planned.get(rep.name) || {};
     return `
-    <div class="hrow">
+    <div class="hrow" id="auto-${esc(rep.name)}">
       <span class="hstate ${esc(rep.state)}">${esc(rep.state)}</span>
       <div style="min-width:0;flex:1">
         <div class="hname">${esc(rep.name)}</div>
@@ -1595,7 +1617,7 @@ async function loadHealth() {
       ${pressureBreakdown(rep.detail)}
       ${(rep.notes || []).map(n => `<div class="hdetail">${esc(n)}</div>`).join('')}
     </div></div>`).join('');
-  el.innerHTML = `<div class="explain"><b>${automations.filter(x => x.state === 'ok').length} of ${automations.length} automations healthy.</b> Machine capacity is shown separately and never counted as a failed automation.</div>`
+  el.innerHTML = `<div class="hdetail explain-count" title="Machine capacity is shown separately and never counted as a failed automation."><b>${automations.filter(x => x.state === 'ok').length} of ${automations.length} automations healthy</b></div>`
     + rows
     + (machineRows ? `<div class="hdetail" style="margin-top:16px"><b>Machine status</b></div>${machineRows}` : '')
     + `<div class="hdetail" style="margin-top:12px">swept ${esc(new Date(at).toLocaleString())}</div>`;
@@ -1670,6 +1692,10 @@ function renderTiles({ health, spend, apps, appsTotal, runs, mach, tasks }) {
       big: appsTotal, bigClass: due ? 'warn' : '',
       sub: due ? `${due} follow-up${due === 1 ? '' : 's'} due` : 'applications tracked, nothing due',
       rows: [['follow-ups due', due]] },
+    { tab: 'hack', name: 'hack',
+      big: hack.needsYou != null ? hack.needsYou : '--',
+      bigClass: hack.needsYou ? 'warn' : '',
+      sub: hack.warning ? 'queue unreachable' : hack.needsYou ? 'waiting on a decision from you' : 'nothing waiting on you' },
     { tab: 'automations', name: 'machine',
       big: m.percent != null ? m.percent + '%' : '--',
       bigClass: m.percent >= 90 ? 'bad' : m.percent >= 80 ? 'warn' : '',
@@ -2247,7 +2273,7 @@ async function loadSpend() {
     }).join('')}</div></div>` : '';
   const eventRows = events.length ? `<div class="card money-section">
     <div class="hname">recent activity</div>${events.slice(0, 10).map(e => `<div class="hrow">
-      <span class="hstate ${e.severity >= 3 ? 'failing' : e.severity ? 'late' : 'ok'}">${esc(e.kind || 'event')}</span>
+      <span class="klabel ${e.severity >= 3 ? 'failing' : e.severity ? 'late' : 'ok'}">${esc(e.kind || 'event')}</span>
       <div style="min-width:0;flex:1"><div class="hname">${esc(e.service || e.serviceId || 'service')}</div>
       <div class="hdetail">${esc([e.date, e.amountUsd, e.creditsRemainingUsd ? `${e.creditsRemainingUsd} credits left` : '', e.unread ? 'unread' : ''].filter(Boolean).join(' · '))}</div></div>
     </div>`).join('')}</div>` : '';
@@ -2272,7 +2298,7 @@ async function loadSpend() {
     ${bars('what ran it', d.byModel)}
     <div class="card">
       ${d.alerts && d.alerts.length
-        ? d.alerts.map(a => `<div class="hrow">
+        ? d.alerts.map((a, i) => `<div class="hrow" id="malert-${i}">
              <span class="hstate ${a.severity >= 3 ? 'failing' : 'late'}">${a.severity >= 3 ? 'act' : 'watch'}</span>
              <div style="min-width:0"><div class="hdetail">${esc(a.message)}</div></div>
            </div>`).join('')
@@ -2524,21 +2550,6 @@ function loadHack(force) {
 
 $('refreshHack').onclick = () => loadHack(true);
 
-async function loadHackCount() {
-  const badge = $('hackCount');
-  try {
-    const r = await api('/api/hackqueue/count');
-    const d = r.ok ? await r.json() : null;
-    // A count that could not be taken hides the badge. Showing 0 would be a
-    // claim that nothing needs you, which is the one thing it must not say
-    // when it does not know.
-    const n = d && !d.warning ? d.needsYou : null;
-    badge.hidden = !n;
-    badge.textContent = n ?? '';
-  } catch (_) {
-    badge.hidden = true;
-  }
-}
 
 // -------------------------------------------------------------------- tabs --
 
@@ -2695,10 +2706,7 @@ if (window.visualViewport) {
 measureChrome();
 loadTodaySpend();
 setInterval(loadTodaySpend, 60000);
-// A minute is plenty: the queue moves when the sweep runs or when you decide
-// something, neither of which is a per-second event.
-loadHackCount();
-setInterval(loadHackCount, 60000);
+
 refresh();
 connect();
 refreshLoop = setInterval(refresh, 15000);   // backstop if the stream silently stalls

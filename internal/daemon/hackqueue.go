@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -172,7 +173,50 @@ func (s *Server) hackboard(w http.ResponseWriter, r *http.Request) {
 //
 // It is deliberately not the two-list JSON this file used to serve. That tried
 // to be a second board and was a worse one; this is a count.
+// Five minutes, shared by every caller. Every read of the queue costs the
+// Worker a KV list() and the free plan meters those at a thousand a day; a
+// badge polling once a minute from two open tabs spent the whole allowance by
+// nine in the evening and took the dispatcher down with it. The count moves
+// when the sweep runs or a decision is made, so five minutes loses nothing.
+var hackCountCache struct {
+	sync.Mutex
+	at   time.Time
+	body map[string]any
+}
+
 func (s *Server) hackqueueCount(w http.ResponseWriter, r *http.Request) {
+	hackCountCache.Lock()
+	if hackCountCache.body != nil && time.Since(hackCountCache.at) < 5*time.Minute {
+		body := hackCountCache.body
+		hackCountCache.Unlock()
+		writeJSON(w, 200, body)
+		return
+	}
+	hackCountCache.Unlock()
+	rec := &countRecorder{header: http.Header{}}
+	s.hackqueueCountUncached(rec, r)
+	if rec.body != nil {
+		hackCountCache.Lock()
+		hackCountCache.at, hackCountCache.body = time.Now(), rec.body
+		hackCountCache.Unlock()
+	}
+	writeJSON(w, 200, rec.body)
+}
+
+// countRecorder captures the one JSON object hackqueueCountUncached writes.
+type countRecorder struct {
+	header http.Header
+	body   map[string]any
+}
+
+func (c *countRecorder) Header() http.Header { return c.header }
+func (c *countRecorder) WriteHeader(int)     {}
+func (c *countRecorder) Write(b []byte) (int, error) {
+	_ = json.Unmarshal(b, &c.body)
+	return len(b), nil
+}
+
+func (s *Server) hackqueueCountUncached(w http.ResponseWriter, r *http.Request) {
 	base, secret, err := hackqueueEnv()
 	if err != nil {
 		writeJSON(w, 200, map[string]any{"needsYou": 0, "warning": err.Error()})

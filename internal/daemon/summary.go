@@ -70,6 +70,7 @@ func (s *Server) summary(w http.ResponseWriter, r *http.Request) {
 		{"health", "", s.health},
 		{"tasks", "", s.tasks},
 		{"spend", "", s.spend},
+		{"hack", "", s.hackqueueCount},
 		{"jobs", "limit=1", s.listApplications},
 		{"due", "limit=1000&due=1", s.listApplications},
 		{"runs", "", s.healthRuns},
