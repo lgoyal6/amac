@@ -2584,7 +2584,11 @@ function renderHackQueue() {
   out.innerHTML = (hackData.warning ? `<div class="action bad"><div class="action-copy"><b>partial</b><span>${esc(hackData.warning)}</span></div></div>` : '')
     + rows.map(e => {
     const left = hackLeft(e.closes);
-    const act = e.status === 'failed' ? 'retry' : (left.hours <= 0 ? 'pass' : '');
+    // A settled entry gets no button. Offering "pass" on something already
+    // passed or expired is a control that either does nothing or, worse,
+    // rewrites an expired entry as denied and erases why it closed.
+    const settled = ['done', 'denied', 'rejected', 'expired'].includes(e.status);
+    const act = settled ? '' : (e.status === 'failed' ? 'retry' : (left.hours <= 0 ? 'pass' : ''));
     return `<div class="action ${hackTone(e)}">
       <div class="action-copy">
         <b>${esc(e.title)}</b>
