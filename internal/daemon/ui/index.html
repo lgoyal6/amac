@@ -156,6 +156,22 @@
   /* Reuses the run log's tick vocabulary rather than inventing a second one. */
   .tile .strip { margin:var(--s1) 0 0; }
 
+  /* The hack tab is one whole page from somewhere else, so it gets the height
+     rather than the document: a board with its own rail and its own scrolling
+     detail pane inside a scrolling document scrolls twice and neither works. */
+  .frame-head { display:flex; align-items:center; gap:var(--s3); margin-bottom:var(--s2); }
+  .frame-head .hdetail { flex:1; min-width:0; }
+  .frame-wrap { height:calc(100vh - var(--header-h) - 44px); min-height:420px;
+    border:1px solid var(--line); border-radius:var(--r); overflow:hidden; background:var(--surface); }
+  .frame-wrap iframe { display:block; width:100%; height:100%; border:0; }
+  @media (max-width:700px) {
+    .frame-wrap { height:calc(100dvh - var(--header-h) - var(--mobile-nav-h, 0px) - env(safe-area-inset-bottom) - 46px);
+      border-radius:0; border-left:0; border-right:0; margin:0 calc(-1 * var(--s4)); }
+    /* main already reserves room for the fixed nav, and the frame is sized to
+       the viewport, so leaving that padding in place would push it up by the
+       height of the nav twice and cut the board off. */
+    body:has(#hack:not([hidden])) main { padding-bottom:0; }
+  }
   .action-list { display:grid; gap:var(--s2); }
   .action { display:flex; align-items:flex-start; gap:var(--s3); background:var(--surface);
             border:1px solid var(--line); border-left:2px solid var(--late);
@@ -317,7 +333,7 @@
     .mobile-new { display:block; margin-left:auto; min-height:36px; padding:0 12px !important; }
     nav { position:fixed; z-index:8; left:0; right:0; bottom:0; height:calc(var(--mobile-nav-h) + env(safe-area-inset-bottom));
           margin:0; padding:0 var(--s2) env(safe-area-inset-bottom); overflow:visible;
-          display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:0;
+          display:grid; grid-auto-flow:column; grid-auto-columns:minmax(0,1fr); gap:0;
           background:color-mix(in srgb, var(--surface) 96%, transparent); border-top:1px solid var(--line); }
     nav button { position:relative; min-width:0; padding:8px 1px 6px; border-bottom:0; border-top:2px solid transparent;
                  font-size:10.5px; overflow:hidden; text-overflow:ellipsis; }
@@ -752,31 +768,12 @@
     <div id="jobsOut" class="empty">loading</div>
   </section>
   <section id="hack" hidden>
-    <div class="section-head">
-      <div class="grow"><h2>hack</h2><p>Every open online hackathon, and the handful actually queued for a decision.</p></div>
+    <div class="frame-head">
+      <span class="hdetail">the hackqueue board, whole</span>
+      <a class="sm" id="hackPop" href="/board" target="_blank" rel="noreferrer">open alone</a>
       <button class="sm" id="refreshHack">refresh</button>
     </div>
-    <div class="subnav" role="tablist" aria-label="hackathon views">
-      <button class="on" role="tab" aria-selected="true" data-hack-view="hackQueue">queue<span class="badge" id="hackWaiting" hidden></span></button>
-      <button role="tab" aria-selected="false" data-hack-view="hackBoard">board<span class="badge" id="hackBoardCount" hidden></span></button>
-    </div>
-
-    <section id="hackQueue">
-      <div id="hackQueueOut" class="action-list"><div class="empty">loading</div></div>
-    </section>
-
-    <section id="hackBoard" hidden>
-      <div class="jobs-toolbar">
-        <input id="hackSearch" type="search" placeholder="search title or organizer" aria-label="Search the board">
-        <select id="hackFilter" aria-label="Filter the board">
-          <option value="fresh">not offered yet</option>
-          <option value="all">everything open</option>
-          <option value="offered">already offered</option>
-        </select>
-      </div>
-      <div class="section-head"><span id="hackBoardState" class="job-count"></span></div>
-      <div id="hackBoardOut" class="action-list"><div class="empty">loading</div></div>
-    </section>
+    <div class="frame-wrap"><iframe id="hackFrame" title="hackqueue board" src="about:blank"></iframe></div>
   </section>
 </main>
 
@@ -2503,160 +2500,45 @@ $('findClear').onclick = () => { $('findQ').value = ''; findQuery = ''; openTopT
 
 // -------------------------------------------------------------------- hack --
 //
-// Two panes because they answer different questions. The queue is the handful
-// hackqueue actually offered and is where a decision happens. The board is the
-// whole market, read-mostly, and it is there so "what else is open" does not
-// mean opening a second dashboard on the laptop.
+// The board is not re-rendered here. hackqueue already draws a rail grouped by
+// what is waiting on you and a detail pane with the researched brief, the
+// ranked ideas and every decision button, and amac proxies that page at /board
+// so the forms inside it post back to this same origin. A second rendering
+// would be a worse board that drifts from the real one, which is exactly what
+// the first version of this tab was.
+//
+// Loaded lazily, so a tab nobody opened costs nothing, and reloaded by pointing
+// src at itself rather than by reaching into contentWindow, which the proxy
+// makes same-origin and therefore legal, and which would break silently the
+// day it is not.
 
-let hackView = 'hackQueue';
-let hackData = { board: [], queue: [], cap: 10, waiting: 0 };
+let hackLoaded = false;
 
-// Needs-you first, then by how soon it closes. A queue sorted purely by
-// deadline buries the three that are waiting on you under six that are not.
-const HACK_WAITING_ON_YOU = ['pending', 'idea_pending', 'ready', 'failed'];
-const HACK_SAYS = {
-  pending: 'pick a direction',
-  idea_pending: 'choose one of three ideas',
-  ready: 'built and not submitted',
-  failed: 'stalled, retry or let it pass',
-  approved: 'queued for a shortlist',
-  build_approved: 'queued to build',
-  selecting: 'writing three ideas',
-  building: 'building',
-  idea_changes_requested: 'revising the three',
-  research_requested: 'researching deeper',
-  done: 'submitted',
-  denied: 'passed',
-  rejected: 'rejected',
-  expired: 'closed before you decided',
-};
-
-function hackLeft(closes) {
-  if (!closes) return { text: 'no deadline', hours: Infinity };
-  const hours = (Date.parse(closes) - Date.now()) / 3600000;
-  if (!Number.isFinite(hours)) return { text: 'no deadline', hours: Infinity };
-  if (hours <= 0) return { text: 'closed', hours };
-  if (hours < 48) return { text: `${Math.round(hours)}h left`, hours };
-  return { text: `${Math.round(hours / 24)}d left`, hours };
-}
-
-// Tone is about the clock, not the status. A build that is finished and closes
-// tomorrow is the most urgent thing on this page even though nothing failed.
-function hackTone(entry) {
-  const { hours } = hackLeft(entry.closes);
-  if (!HACK_WAITING_ON_YOU.includes(entry.status)) return '';
-  if (hours <= 24) return 'bad';
-  if (hours <= 72) return 'warn';
-  return '';
-}
-
-async function loadHack() {
-  const r = await api('/api/hackqueue');
-  if (!r.ok) {
-    $('hackQueueOut').innerHTML = '<div class="empty">could not read the queue</div>';
-    return;
+function loadHack(force) {
+  const frame = $('hackFrame');
+  if (!hackLoaded || force) {
+    hackLoaded = true;
+    frame.src = `/board?t=${Date.now()}`;
   }
-  hackData = await r.json();
-  renderHackQueue();
-  renderHackBoard();
+}
 
-  const needs = hackData.queue.filter(e => HACK_WAITING_ON_YOU.includes(e.status)).length;
+$('refreshHack').onclick = () => loadHack(true);
+
+async function loadHackCount() {
   const badge = $('hackCount');
-  badge.textContent = needs;
-  badge.hidden = needs === 0;
-  const waiting = $('hackWaiting');
-  waiting.textContent = `${hackData.waiting}/${hackData.cap}`;
-  waiting.hidden = false;
-}
-
-function renderHackQueue() {
-  const out = $('hackQueueOut');
-  const rows = [...hackData.queue].sort((a, b) => {
-    const mine = HACK_WAITING_ON_YOU.indexOf(a.status) >= 0 ? 0 : 1;
-    const theirs = HACK_WAITING_ON_YOU.indexOf(b.status) >= 0 ? 0 : 1;
-    if (mine !== theirs) return mine - theirs;
-    return hackLeft(a.closes).hours - hackLeft(b.closes).hours;
-  });
-  if (!rows.length) {
-    out.innerHTML = `<div class="empty">${esc(hackData.warning || 'nothing offered yet')}</div>`;
-    return;
+  try {
+    const r = await api('/api/hackqueue/count');
+    const d = r.ok ? await r.json() : null;
+    // A count that could not be taken hides the badge. Showing 0 would be a
+    // claim that nothing needs you, which is the one thing it must not say
+    // when it does not know.
+    const n = d && !d.warning ? d.needsYou : null;
+    badge.hidden = !n;
+    badge.textContent = n ?? '';
+  } catch (_) {
+    badge.hidden = true;
   }
-  out.innerHTML = (hackData.warning ? `<div class="action bad"><div class="action-copy"><b>partial</b><span>${esc(hackData.warning)}</span></div></div>` : '')
-    + rows.map(e => {
-    const left = hackLeft(e.closes);
-    // A settled entry gets no button. Offering "pass" on something already
-    // passed or expired is a control that either does nothing or, worse,
-    // rewrites an expired entry as denied and erases why it closed.
-    const settled = ['done', 'denied', 'rejected', 'expired'].includes(e.status);
-    const act = settled ? '' : (e.status === 'failed' ? 'retry' : (left.hours <= 0 ? 'pass' : ''));
-    return `<div class="action ${hackTone(e)}">
-      <div class="action-copy">
-        <b>${esc(e.title)}</b>
-        <span>${esc(HACK_SAYS[e.status] || e.status)} &middot; ${esc(left.text)}${e.error ? ` &middot; ${esc(e.error.slice(0, 90))}` : ''}</span>
-      </div>
-      ${act ? `<button class="sm" data-hack-act="${esc(act)}" data-hack-id="${esc(e.id)}">${esc(act)}</button>` : ''}
-      ${safeHref(e.url) ? `<a class="sm" href="${esc(safeHref(e.url))}" target="_blank" rel="noreferrer">open</a>` : ''}
-    </div>`;
-  }).join('');
-  out.querySelectorAll('[data-hack-act]').forEach(b => {
-    b.onclick = async () => {
-      b.disabled = true;
-      const r = await api(`/api/hackqueue/${b.dataset.hackAct}`, {
-        method: 'POST', body: JSON.stringify({ id: b.dataset.hackId }),
-      });
-      // The Worker re-checks its own guards, so a refusal is an answer rather
-      // than an error. Reloading is what says whether anything actually moved.
-      if (!r.ok) b.textContent = 'refused';
-      await loadHack();
-    };
-  });
 }
-
-function renderHackBoard() {
-  const out = $('hackBoardOut');
-  const q = ($('hackSearch').value || '').toLowerCase();
-  const filter = $('hackFilter').value;
-  const rows = hackData.board.filter(row => {
-    if (filter === 'fresh' && row.offered) return false;
-    if (filter === 'offered' && !row.offered) return false;
-    if (!q) return true;
-    return `${row.title} ${row.organizer || ''}`.toLowerCase().includes(q);
-  });
-  const count = $('hackBoardCount');
-  count.textContent = hackData.board.length;
-  count.hidden = hackData.board.length === 0;
-  $('hackBoardState').textContent = hackData.rankedAt
-    ? `${rows.length} of ${hackData.board.length} open, ranked ${new Date(hackData.rankedAt).toLocaleString()}`
-    : `${rows.length} of ${hackData.board.length} open`;
-
-  if (!rows.length) { out.innerHTML = '<div class="empty">nothing matches</div>'; return; }
-  out.innerHTML = rows.map(row => {
-    const left = hackLeft(row.closes);
-    const money = row.prize ? `$${row.prize.toLocaleString()}` : 'no prize stated';
-    return `<div class="action">
-      <div class="action-copy">
-        <b>${esc(row.title)}</b>
-        <span>fit ${row.fit} &middot; ${esc(left.text)} &middot; ${esc(money)} &middot; ${row.going || 0} going${row.offered ? ` &middot; ${esc(HACK_SAYS[row.status] || row.status)}` : ''}</span>
-      </div>
-      ${safeHref(row.url) ? `<a class="sm" href="${esc(safeHref(row.url))}" target="_blank" rel="noreferrer">open</a>` : ''}
-    </div>`;
-  }).join('');
-}
-
-function setHackView(next) {
-  hackView = next;
-  document.querySelectorAll('[data-hack-view]').forEach(x => {
-    const active = x.dataset.hackView === hackView;
-    x.classList.toggle('on', active);
-    x.setAttribute('aria-selected', active ? 'true' : 'false');
-  });
-  for (const id of ['hackQueue', 'hackBoard']) $(id).hidden = id !== hackView;
-}
-
-document.querySelectorAll('[data-hack-view]').forEach(b => { b.onclick = () => setHackView(b.dataset.hackView); });
-$('refreshHack').onclick = () => loadHack();
-$('hackSearch').oninput = () => renderHackBoard();
-$('hackFilter').onchange = () => renderHackBoard();
 
 // -------------------------------------------------------------------- tabs --
 
@@ -2813,6 +2695,10 @@ if (window.visualViewport) {
 measureChrome();
 loadTodaySpend();
 setInterval(loadTodaySpend, 60000);
+// A minute is plenty: the queue moves when the sweep runs or when you decide
+// something, neither of which is a per-second event.
+loadHackCount();
+setInterval(loadHackCount, 60000);
 refresh();
 connect();
 refreshLoop = setInterval(refresh, 15000);   // backstop if the stream silently stalls
