@@ -64,6 +64,13 @@ func procViews(list []procs.Session, known map[string]bool, now time.Time) []ses
 			ContinueCommand: resumeCommand(p.Agent, p.ResumeID),
 			Detail:          procDetail(p),
 		}
+		// dispatch.mjs builds a hackathon by spawning claude -p in the project
+		// directory. On the board that is a session like any other, named for
+		// what it is building rather than for its pid.
+		if slug := hackqueueSlug(p.Dir); slug != "" {
+			v.Name = "hackqueue build · " + slug
+			v.Detail = "claude -p, building in " + p.Dir
+		}
 		out = append(out, v)
 	}
 	return out

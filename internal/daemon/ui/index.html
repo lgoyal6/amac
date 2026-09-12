@@ -212,6 +212,15 @@
   .w-item button { justify-self:end; }
   .w-more { font:var(--t-10)/1.5 var(--mono); color:var(--faint); margin-top:var(--s1); }
   @media (max-width:631px) { .widget.wide { grid-column:span 1; } }
+  .chart-body { display:grid; grid-template-columns:auto minmax(0,1fr); gap:0 var(--s2); }
+  .yaxis { display:flex; flex-direction:column; justify-content:space-between; height:96px; text-align:right;
+           font:400 var(--t-10)/1 var(--mono); color:var(--faint); font-variant-numeric:tabular-nums; }
+  .cols-wrap { position:relative; min-width:0; }
+  .gridlines { position:absolute; inset:0 0 auto 0; height:96px; display:flex; flex-direction:column; justify-content:space-between; pointer-events:none; }
+  .gridlines i { display:block; height:1px; background:var(--line); }
+  .cols-wrap .cols { position:relative; }
+  .coverage summary { cursor:pointer; list-style:none; } .coverage summary::-webkit-details-marker { display:none; }
+  .coverage summary .hdetail { font-weight:400; margin-left:var(--s2); }
   .spend-charts { display:grid; grid-template-columns:2fr 1fr; gap:var(--s3); margin-bottom:var(--s3); }
   .spend-charts .card { margin:0; }
   .range { display:flex; gap:var(--s1); }
@@ -712,7 +721,7 @@
 <main>
   <section id="home">
     <div class="section-head">
-      <div class="grow"><h2>home</h2><p>What needs you, what happened, what is running.</p></div>
+      <div class="grow"><h2>home</h2></div>
       <button class="sm" id="refreshHome">refresh</button>
     </div>
     <div id="homeGrid" class="widgets"><div class="empty">checking</div></div>
@@ -727,7 +736,7 @@
   </section>
 
   <section id="agents" hidden>
-    <div class="section-head"><div class="grow"><h2>agents</h2><p>Sessions, live output, queued work, and crews.</p></div></div>
+    <div class="section-head"><div class="grow"><h2>agents</h2></div></div>
     <div class="subnav" role="tablist" aria-label="agent views">
       <button class="on" role="tab" aria-selected="true" data-agent-view="board">board</button>
       <button role="tab" aria-selected="false" data-agent-view="wall">wall</button>
@@ -778,7 +787,7 @@
   </section>
 
   <section id="automations" hidden>
-    <div class="section-head"><div class="grow"><h2>automations</h2><p>What runs where, when it should run, and whether the evidence is current.</p></div></div>
+    <div class="section-head"><div class="grow"><h2>automations</h2></div></div>
     <div class="subnav" role="tablist" aria-label="health views">
       <button class="on" role="tab" aria-selected="true" data-health-view="status">status now</button>
       <button role="tab" aria-selected="false" data-health-view="runs">run log</button>
@@ -790,13 +799,13 @@
   </section>
 
   <section id="money" hidden>
-    <div class="section-head"><div class="grow"><h2>money</h2><p>Subscriptions, usage, credits, trials, and anything needing attention.</p></div></div>
+    <div class="section-head"><div class="grow"><h2>money</h2></div></div>
     <div id="spendOut" class="empty">loading</div>
   </section>
 
   <section id="jobs" hidden>
     <div class="section-head">
-      <div class="grow"><h2>jobs</h2><p>Fast local view of applications synced from Notion.</p></div>
+      <div class="grow"><h2>jobs</h2></div>
       <button class="sm" id="syncJobs">sync Notion</button>
     </div>
     <div class="jobs-toolbar">
@@ -1119,6 +1128,7 @@ function cardFor(s) {
     card.appendChild(sessionActions(s));
 
     if (s.kind === 'tmux') card.appendChild(remote(s));
+    if (s.kind === 'desktop' || s.kind === 'terminal') card.appendChild(observe(s));
 
     const log = document.createElement('div');
     log.className = 'log';
@@ -1234,6 +1244,28 @@ async function updateManaged(id, body) {
 // deliberately does not try: a row of Allow/Deny buttons over a pane it had
 // parsed would be a positional guess, and an approval sent to the wrong option
 // is worse than no button at all. You read the options; amac types the key.
+// A pane for a session amac can only see. Same element and the same capture
+// loop as a tmux pane, minus the keys: there is nothing to send to a process
+// whose input is a desktop window or someone else's terminal. What shows is
+// the transcript, or for a hackqueue build the run log, rendered as speech.
+function observe(s) {
+  const wrap = document.createElement('div');
+  const pre = document.createElement('div');
+  pre.className = 'pane';
+  pre.tabIndex = 0;
+  const cached = panes.get(s.id);
+  pre.textContent = cached === undefined ? 'reading the transcript...' : (cached || '(nothing written yet)');
+  wrap.appendChild(pre);
+  paneEls.set(s.id, pre);
+  requestAnimationFrame(() => { pre.scrollTop = pre.scrollHeight; });
+  if (cached === undefined) capture(s.id);
+  const note = document.createElement('div');
+  note.className = 'session-help';
+  note.textContent = s.name && s.name.startsWith('hackqueue build') ? 'the build\u2019s own log, read as it is written. read-only.' : 'read-only: this session is driven from its own window.';
+  wrap.appendChild(note);
+  return wrap;
+}
+
 function remote(s) {
   const wrap = document.createElement('div');
 
@@ -1393,7 +1425,7 @@ async function capture(id) {
 setInterval(() => {
   if (tab !== 'agents' || agentView !== 'board' || document.hidden) return;
   const s = sessions.get(activeSessionId);
-  if (s && s.kind === 'tmux') capture(activeSessionId);
+  if (s && (s.kind === 'tmux' || s.kind === 'desktop' || s.kind === 'terminal')) capture(activeSessionId);
 }, 4000);
 
 // ------------------------------------------------------------------- crew --
@@ -2292,12 +2324,18 @@ const fmtTokens = n => n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? Math.r
 // Columns from the existing .cols chart, so the two charts and the run log
 // share one drawing. Nulls draw as gaps, never as zero: a day with no data is
 // not a day with no spend.
-function columns(points, valueOf, labelOf, tipOf) {
+function spendColumns(points, valueOf, labelOf, tipOf, fmt) {
   const vals = points.map(valueOf).filter(v => v != null);
   const max = Math.max(1, ...vals);
-  return `<div class="cols">${points.map(p => { const v = valueOf(p);
-    return `<div class="col" title="${esc(tipOf(p))}">${v == null ? '' : `<i style="height:${Math.max(2, Math.round(v / max * 100))}%"></i>`}</div>`; }).join('')}</div>
-    <div class="cols-axis"><span>${esc(labelOf(points[0]))}</span><span>${esc(labelOf(points[points.length - 1]))}</span></div>`;
+  const f = fmt || (v => String(Math.round(v)));
+  // A chart without a scale is a shape. Three labels, and a line for each,
+  // are enough to read a bar as a number.
+  return `<div class="chart-body">
+    <div class="yaxis"><span>${esc(f(max))}</span><span>${esc(f(max / 2))}</span><span>0</span></div>
+    <div class="cols-wrap"><div class="gridlines"><i></i><i></i><i></i></div>
+    <div class="cols">${points.map(p => { const v = valueOf(p);
+      return `<div class="col" title="${esc(tipOf(p))}">${v == null ? '' : `<i style="height:${Math.max(2, Math.round(v / max * 100))}%"></i>`}</div>`; }).join('')}</div>
+    <div class="cols-axis"><span>${esc(labelOf(points[0]))}</span><span>${esc(labelOf(points[points.length - 1]))}</span></div></div></div>`;
 }
 async function loadSpendCharts() {
   const [sr, tr] = await Promise.all([api(`/api/spend/series?days=${spendDays}`), api('/api/spend/today')]);
@@ -2305,14 +2343,14 @@ async function loadSpendCharts() {
   if (se) {
     if (!sr.ok) { se.className = 'chart-empty'; se.textContent = 'could not read the series'; }
     else { const d = await sr.json(); se.className = '';
-      se.innerHTML = columns(d.points || [], p => p.agentUsd, p => (p.date || '').slice(5), p => `${p.date}: ${p.agentUsd == null ? 'no data' : '$' + Math.round(p.agentUsd).toLocaleString() + ' eq'}`)
+      se.innerHTML = spendColumns(d.points || [], p => p.agentUsd, p => (p.date || '').slice(5), p => `${p.date}: ${p.agentUsd == null ? 'no data' : '$' + Math.round(p.agentUsd).toLocaleString() + ' eq'}`, v => '$' + Math.round(v).toLocaleString())
         + (d.warning ? `<div class="chart-note">${esc(d.warning)}</div>` : ''); }
   }
   if (te) {
     if (!tr.ok) { te.className = 'chart-empty'; te.textContent = 'could not read today'; }
     else { const d = await tr.json(); te.className = '';
       const priced = (d.buckets || []).some(b => b.agentUsd != null);
-      te.innerHTML = columns(d.buckets || [], b => priced ? b.agentUsd : (b.tokens || 0), b => String(b.hour).padStart(2, '0'), b => `${String(b.hour).padStart(2, '0')}:00 ${priced ? '$' + Math.round(b.agentUsd || 0) : fmtTokens(b.tokens || 0) + ' tokens'}`);
+      te.innerHTML = spendColumns(d.buckets || [], b => priced ? b.agentUsd : (b.tokens || 0), b => String(b.hour).padStart(2, '0'), b => `${String(b.hour).padStart(2, '0')}:00 ${priced ? '$' + Math.round(b.agentUsd || 0) : fmtTokens(b.tokens || 0) + ' tokens'}`, priced ? (v => '$' + Math.round(v)) : fmtTokens);
       const note = $('spendTodayNote'); if (note) note.textContent = priced ? '' : (d.source || 'tokens, unpriced'); }
   }
   document.querySelectorAll('[data-days]').forEach(b => { b.onclick = () => { spendDays = Number(b.dataset.days); document.querySelectorAll('[data-days]').forEach(x => x.classList.toggle('on', Number(x.dataset.days) === spendDays)); loadSpendCharts(); }; });
@@ -2345,12 +2383,13 @@ async function loadSpend() {
       <div style="min-width:0;flex:1"><div class="hname">${esc(e.service || e.serviceId || 'service')}</div>
       <div class="hdetail">${esc([e.date, e.amountUsd, e.creditsRemainingUsd ? `${e.creditsRemainingUsd} credits left` : '', e.unread ? 'unread' : ''].filter(Boolean).join(' · '))}</div></div>
     </div>`).join('')}</div>` : '';
-  const providerRows = providers.length || noApi.length ? `<div class="card money-section">
-    <div class="hname">data coverage</div>
+  const notConnected = providers.filter(p => p.status !== 'ok').length + noApi.length;
+  const providerRows = providers.length || noApi.length ? `<details class="card money-section coverage">
+    <summary class="hname">data coverage <span class="hdetail">${providers.filter(p => p.status === 'ok').length} connected · ${notConnected} not. skipped means no token was given for that provider; manual means it has no billing API and is entered by hand.</span></summary>
     ${providers.map(p => `<div class="hrow"><span class="hstate ${p.status === 'ok' ? 'ok' : 'late'}">${esc(p.status || 'check')}</span>
       <div><div class="hname">${esc(p.name || p.id)}</div><div class="hdetail">${esc(p.note || p.error || '')}</div></div></div>`).join('')}
     ${noApi.map(p => `<div class="hrow"><span class="hstate">manual</span><div><div class="hname">${esc(p.name)}</div><div class="hdetail">${esc(p.reason)}</div></div></div>`).join('')}
-    </div>` : '';
+    </details>` : '';
   el.className = '';
   el.innerHTML = `
     <div class="spend-charts">

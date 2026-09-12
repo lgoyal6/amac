@@ -76,14 +76,22 @@ func (s *Server) target(name string) (string, bool) {
 
 func (s *Server) pane(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("id")
+	n, _ := strconv.Atoi(r.URL.Query().Get("lines"))
+	if n <= 0 || n > 200 {
+		n = paneLines
+	}
+	if strings.HasPrefix(name, procIDPrefix) {
+		if v, ok := s.procPane(name, n); ok {
+			writeJSON(w, 200, v)
+			return
+		}
+		writeJSON(w, 404, map[string]string{"error": "that process is gone"})
+		return
+	}
 	target, ok := s.target(name)
 	if !ok {
 		writeJSON(w, 404, map[string]string{"error": "no such tmux session"})
 		return
-	}
-	n, _ := strconv.Atoi(r.URL.Query().Get("lines"))
-	if n <= 0 || n > 200 {
-		n = paneLines
 	}
 
 	out, err := exec.CommandContext(r.Context(), "tmux", "capture-pane", "-p", "-t", target).Output()
