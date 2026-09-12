@@ -69,7 +69,7 @@
        real order, and a reader who sees the order in the colour does not have
        to read a legend. The status colours are deliberately not reused for
        series: they mean a state, and a chart band is not a state. */
-    --c1:#c4b5fd; --c2:#a78bfa; --c3:#7c5ce6; --track:var(--line);
+    --c1:#9be7d9; --c2:#5fcfbf; --c3:#2ea89a; --track:var(--line);
 
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:36px;
     --r-sm:4px; --r:6px; --r-md:8px; --r-lg:12px;
@@ -87,7 +87,7 @@
       --fg:#111114; --dim:#5c5c66; --faint:#646b76;
       --ok:#0f7a45; --fail:#c4302f; --late:#8a5a00; --unknown:#0a57ad; --working:#6d4fd8; --idle:#646b76; --blocked:#a34400;
       --accent:#6d4fd8;
-      --c1:#8b74e8; --c2:#6d4fd8; --c3:#4c32b0;
+      --c1:#3fb1a0; --c2:#25907f; --c3:#146b5e;
     }
   }
   :root[data-theme="light"] {
@@ -95,7 +95,7 @@
     --fg:#111114; --dim:#5c5c66; --faint:#646b76;
     --ok:#0f7a45; --fail:#c4302f; --late:#8a5a00; --unknown:#0a57ad; --working:#6d4fd8; --idle:#646b76; --blocked:#a34400;
     --accent:#6d4fd8;
-    --c1:#8b74e8; --c2:#6d4fd8; --c3:#4c32b0;
+    --c1:#3fb1a0; --c2:#25907f; --c3:#146b5e;
   }
   .themebtn { background:none; border:1px solid var(--line); color:var(--dim);
     border-radius:var(--r); padding:3px 9px; font:inherit; font-size:var(--t-12); font-weight:600;
@@ -178,6 +178,8 @@
   .widget:hover { border-color:var(--line-2); }
   .widget:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
   .widget.wide { grid-column:span 2; }
+  div.widget { cursor:default; }
+  div.widget:hover { border-color:var(--line); }
   .widget.slot { border-style:dashed; background:transparent; cursor:default; color:var(--faint); }
   .w-head { display:flex; align-items:baseline; justify-content:space-between; gap:var(--s2);
             font:600 var(--t-12)/1.4 var(--mono); color:var(--dim); letter-spacing:.06em; text-transform:uppercase; }
@@ -209,7 +211,12 @@
   .w-item.bad .n { color:var(--fail); }
   .w-item button { justify-self:end; }
   .w-more { font:var(--t-10)/1.5 var(--mono); color:var(--faint); margin-top:var(--s1); }
-  @media (max-width:700px) { .widget.wide { grid-column:span 1; } }
+  @media (max-width:631px) { .widget.wide { grid-column:span 1; } }
+  .spend-charts { display:grid; grid-template-columns:2fr 1fr; gap:var(--s3); margin-bottom:var(--s3); }
+  .spend-charts .card { margin:0; }
+  .range { display:flex; gap:var(--s1); }
+  .range button.on { background:var(--raise); color:var(--fg); border-color:var(--line-2); }
+  @media (max-width:760px) { .spend-charts { grid-template-columns:1fr; } }
   .action-list { display:grid; gap:var(--s2); }
   .action { display:flex; align-items:flex-start; gap:var(--s3); background:var(--surface);
             border:1px solid var(--line); border-left:2px solid var(--late);
@@ -625,11 +632,12 @@
   .bar-name { width:36%; font:var(--t-12)/1.4 var(--mono); color:var(--fg);
               overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .bar-track { flex:1; height:6px; background:var(--raise); border-radius:var(--r-sm); overflow:hidden; }
-  .bar-fill { height:100%; background:var(--working); border-radius:var(--r-sm); }
+  .bar-fill { height:100%; background:var(--c2); border-radius:var(--r-sm); }
   .bar-val { width:62px; text-align:right; font:var(--t-12)/1.4 var(--mono);
              color:var(--dim); font-variant-numeric:tabular-nums; }
   /* An account row names the login and then who it is, so it needs two lines
      where a project row needs one. */
+  .mark { width:12px; height:12px; vertical-align:-2px; margin-right:6px; }
   .bar-row.who { align-items:flex-start; }
   .bar-row.who .bar-track { margin-top:6px; }
   .bar-row.who .bar-val { margin-top:-1px; }
@@ -776,7 +784,6 @@
       <button role="tab" aria-selected="false" data-health-view="runs">run log</button>
       <button role="tab" aria-selected="false" data-health-view="schedule">intended schedule</button>
     </div>
-    <div class="card" id="machineCard"><div id="machineOut" class="empty">loading</div></div>
     <div class="card" id="healthStatus"><div id="healthOut" class="empty">loading</div></div>
     <div class="card" id="healthRuns" hidden><div id="runsOut" class="empty">loading</div></div>
     <div class="card" id="healthSchedule" hidden><div id="scheduleOut" class="empty">loading</div></div>
@@ -1064,9 +1071,8 @@ function cardFor(s) {
   // stay short because the row is glanced at, and each carries what it means.
   tags.innerHTML = `<span class="agent" title="agent">${esc(s.agent || 'shell')}</span>
     ${account ? `<span class="agent" title="login this is spending">${esc(account)}</span>` : ''}
-    <span class="kind" title="${s.kind === 'acp'
-      ? 'started by amac, driven over ACP'
-      : 'a tmux session amac only watches'}">${s.kind === 'acp' ? 'managed' : 'terminal'}</span>
+    <span class="kind" title="${({acp:'started by amac, driven over ACP', tmux:'a tmux session amac only watches',
+      desktop:'a Claude Code desktop session, seen in the process table', terminal:'a claude in a plain terminal, seen in the process table'})[s.kind] || s.kind}">${({acp:'managed', tmux:'tmux', desktop:'desktop', terminal:'terminal'})[s.kind] || esc(s.kind || '')}</span>
     ${s.attached ? '<span class="kind on" title="a terminal is attached to this session right now">attached</span>' : ''}`;
   card.appendChild(tags);
 
@@ -1702,12 +1708,14 @@ function renderHome({ actions, unread, health, spend, apps, appsTotal, runs, mac
       big: hack.needsYou != null ? hack.needsYou : '--', bigClass: hack.needsYou ? 'blocked' : '',
       sub: hack.warning ? 'queue unreachable' : nextClose ? `${nextClose.title}: ${nextClose.detail}` : hack.needsYou ? 'waiting on a decision from you' : 'nothing waiting on you',
       list: hackItems.filter(i => !/closes in/.test(i.detail || '')).slice(0, 3).map(i => ({ t: hhmm(i.at), n: i.title, d: i.detail })) },
-    { key:'machine', head:'machine', tab:'automations',
-      big: m.percent != null ? m.percent + '%' : '--', bigClass: m.percent >= 90 ? 'bad' : m.percent >= 80 ? 'warn' : '',
-      sub: top ? `memory · most of it is ${top.name}` : 'memory in use',
-      rows: [['swap', (sw.percent || 0) + '%'], ['disk', (dk.percent || 0) + '%'], ['wired', m.wired ? Math.round(m.wired / 1073741824 * 10) / 10 + ' GB' : '--']] },
+    // The full panel, memory split, storage and swap, and what is holding it,
+    // lives here now rather than at the top of the automations tab: Mac capacity
+    // is not an automation, and it is the thing to look at when the machine
+    // feels slow, which is a home question.
+    { key:'machine', cls:'wide', head:'machine', tab:null, badge:`${m.percent != null ? m.percent + '% memory' : ''}${sw.percent ? ` · swap ${sw.percent}%` : ''}`,
+      body:'<div id="machineOut" class="empty">loading</div>' },
     { key:'recent', cls:'wide', head:'recently', badge: `${recent.warnings && recent.warnings.length ? 'partial · ' : ''}last 24h`, tab:null,
-      body:`<div class="w-list">${items.filter(i => !(i.kind === 'hack' && /closes in/.test(i.detail || ''))).slice(0, 9).map(i => `<div class="w-item"><span class="t">${esc(hhmm(i.at))}</span><span class="n">${esc(i.kind === 'session' ? i.project : i.title)}</span><span class="d">${esc(i.kind === 'session' ? `session · ${i.detail || ''}` : i.detail || i.kind)}</span></div>`).join('') || '<div class="w-sub">nothing recorded in the last day</div>'}</div>` },
+      body:`<div class="w-list">${items.filter(i => !(i.kind === 'hack' && /closes in/.test(i.detail || ''))).slice(0, 9).map(i => `<div class="w-item"><span class="t">${esc(hhmm(i.at))}</span><span class="n">${esc(i.kind === 'session' ? (/^-Users-[^-]+$/.test(i.project) ? 'home' : i.project) : i.title)}</span><span class="d">${esc(i.kind === 'session' ? `session · ${i.detail || ''}` : i.detail || i.kind)}</span></div>`).join('') || '<div class="w-sub">nothing recorded in the last day</div>'}</div>` },
     { key:'agents', head:'agents', tab:'agents', view:'board',
       big: sess.length, bigClass: blocked ? 'blocked' : '',
       sub: Object.entries(byKind).map(([k, n]) => `${n} ${k}`).join(' · ') || 'no sessions seen',
@@ -1739,6 +1747,7 @@ function renderHome({ actions, unread, health, spend, apps, appsTotal, runs, mac
   el.querySelectorAll('[data-widget]').forEach(b => {
     b.onclick = () => { const w = widgets[Number(b.dataset.widget)]; openTopTab(w.tab); if (w.view) setAgentView(w.view); };
   });
+  loadMachine();
   // Rows inside needs-you go to their own place, not the widget's.
   const needsEl = el.querySelector('.widget.wide .w-list');
   if (needsEl) [...needsEl.querySelectorAll('.w-act')].forEach((row, i) => {
@@ -1939,13 +1948,12 @@ function setHealthView(next) {
   // The machine belongs to "status now": what it has left is a fact about
   // this moment, and it says nothing at all about an intended schedule or
   // about runs that already happened.
-  $('machineCard').hidden = next !== 'status';
   $('healthStatus').hidden = next !== 'status';
   $('healthRuns').hidden = next !== 'runs';
   $('healthSchedule').hidden = next !== 'schedule';
   if (next === 'runs') loadHealthRuns();
   else if (next === 'schedule') loadHealthSchedule();
-  else { loadHealth(); loadMachine(); }
+  else { loadHealth(); }
 }
 
 document.querySelectorAll('[data-health-view]').forEach(b => {
@@ -2251,6 +2259,13 @@ function bars(title, rows) {
 // logs cannot tell "this account was quiet" from "this account was never
 // read", and the second is how a whole Codex login stayed invisible for as
 // long as it had been in use.
+// Twelve pixels of brand, inline before the login, so laksh.g@gmi reads as
+// Claude at a glance. Simplified marks, not the official artwork.
+const MARKS = {
+  claude: '<svg class="mark" viewBox="0 0 24 24" aria-label="Claude"><path fill="#D97757" d="M12 2l1.9 6.1L20 6.2l-4.4 4.6L21 14l-6.4-.9L12 19l-2.6-5.9L3 14l5.4-3.2L4 6.2l6.1 1.9z"/></svg>',
+  codex: '<svg class="mark" viewBox="0 0 24 24" aria-label="OpenAI"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M12 3.2l7.6 4.4v8.8L12 20.8l-7.6-4.4V7.6zM12 3.2v8.8M12 12l7.6 4.4M12 12L4.4 16.4M4.4 7.6L12 12l7.6-4.4"/></svg>',
+};
+const providerMark = agent => MARKS[String(agent || '').toLowerCase().includes('codex') || String(agent || '').toLowerCase().includes('gpt') ? 'codex' : 'claude'] || '';
 function accountBars(rows) {
   if (!rows || !rows.length) return '';
   return `<div class="card" style="margin-bottom:12px">
@@ -2258,7 +2273,7 @@ function accountBars(rows) {
     ${rows.map(r => {
       const who = r.present ? [r.email, r.plan].filter(Boolean).join(' · ') : 'not on this Mac';
       return `<div class="bar-row who">
-        <div class="bar-who${r.present ? '' : ' absent'}">${esc(r.label || r.id)}
+        <div class="bar-who${r.present ? '' : ' absent'}">${providerMark(r.agent)}${esc(r.label || r.id)}
           <span>${esc([r.agent, who].filter(Boolean).join(' · '))}</span></div>
         <div class="bar-track"><div class="bar-fill" style="width:${r.cents ? Math.max(r.share, 1) : 0}%"></div></div>
         <div class="bar-val">${esc(usd(r.cents))}</div>
@@ -2272,6 +2287,36 @@ function accountBars(rows) {
 const usd = c => c === 0 ? '$0' : c < 100 ? `$${(c / 100).toFixed(2)}`
   : c < 100000 ? `$${Math.round(c / 100)}` : `$${Math.round(c / 100).toLocaleString()}`;
 
+let spendDays = 30;
+const fmtTokens = n => n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? Math.round(n / 1e6) + 'M' : n >= 1e3 ? Math.round(n / 1e3) + 'k' : String(n);
+// Columns from the existing .cols chart, so the two charts and the run log
+// share one drawing. Nulls draw as gaps, never as zero: a day with no data is
+// not a day with no spend.
+function columns(points, valueOf, labelOf, tipOf) {
+  const vals = points.map(valueOf).filter(v => v != null);
+  const max = Math.max(1, ...vals);
+  return `<div class="cols">${points.map(p => { const v = valueOf(p);
+    return `<div class="col" title="${esc(tipOf(p))}">${v == null ? '' : `<i style="height:${Math.max(2, Math.round(v / max * 100))}%"></i>`}</div>`; }).join('')}</div>
+    <div class="cols-axis"><span>${esc(labelOf(points[0]))}</span><span>${esc(labelOf(points[points.length - 1]))}</span></div>`;
+}
+async function loadSpendCharts() {
+  const [sr, tr] = await Promise.all([api(`/api/spend/series?days=${spendDays}`), api('/api/spend/today')]);
+  const se = $('spendSeries'), te = $('spendToday');
+  if (se) {
+    if (!sr.ok) { se.className = 'chart-empty'; se.textContent = 'could not read the series'; }
+    else { const d = await sr.json(); se.className = '';
+      se.innerHTML = columns(d.points || [], p => p.agentUsd, p => (p.date || '').slice(5), p => `${p.date}: ${p.agentUsd == null ? 'no data' : '$' + Math.round(p.agentUsd).toLocaleString() + ' eq'}`)
+        + (d.warning ? `<div class="chart-note">${esc(d.warning)}</div>` : ''); }
+  }
+  if (te) {
+    if (!tr.ok) { te.className = 'chart-empty'; te.textContent = 'could not read today'; }
+    else { const d = await tr.json(); te.className = '';
+      const priced = (d.buckets || []).some(b => b.agentUsd != null);
+      te.innerHTML = columns(d.buckets || [], b => priced ? b.agentUsd : (b.tokens || 0), b => String(b.hour).padStart(2, '0'), b => `${String(b.hour).padStart(2, '0')}:00 ${priced ? '$' + Math.round(b.agentUsd || 0) : fmtTokens(b.tokens || 0) + ' tokens'}`);
+      const note = $('spendTodayNote'); if (note) note.textContent = priced ? '' : (d.source || 'tokens, unpriced'); }
+  }
+  document.querySelectorAll('[data-days]').forEach(b => { b.onclick = () => { spendDays = Number(b.dataset.days); document.querySelectorAll('[data-days]').forEach(x => x.classList.toggle('on', Number(x.dataset.days) === spendDays)); loadSpendCharts(); }; });
+}
 async function loadSpend() {
   const el = $('spendOut');
   const r = await api('/api/spend');
@@ -2308,6 +2353,17 @@ async function loadSpend() {
     </div>` : '';
   el.className = '';
   el.innerHTML = `
+    <div class="spend-charts">
+      <div class="card">
+        <div class="chart-head"><span class="chart-title">API-equivalent by day</span>
+          <span class="range">${[30, 60, 90].map(n => `<button class="sm ${n === spendDays ? 'on' : ''}" data-days="${n}">${n}d</button>`).join('')}</span></div>
+        <div id="spendSeries" class="chart-empty">loading</div>
+      </div>
+      <div class="card">
+        <div class="chart-head"><span class="chart-title">today by the hour</span><span class="chart-note" id="spendTodayNote"></span></div>
+        <div id="spendToday" class="chart-empty">loading</div>
+      </div>
+    </div>
     <div class="tiles">
       <div class="tile"><div class="tv">${esc(d.monthlyUsd)}</div><div class="tl">recurring / month</div></div>
       <div class="tile"><div class="tv">${esc(d.todayUsd)}</div><div class="tl">API equivalent today, not billed spend</div></div>
@@ -2331,6 +2387,7 @@ async function loadSpend() {
       </div>
     </div>
     ${serviceRows}${eventRows}${providerRows}`;
+  loadSpendCharts();
 }
 
 // -------------------------------------------------------------------- jobs --
