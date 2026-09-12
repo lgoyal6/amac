@@ -118,6 +118,7 @@ func (s *Server) Handler() http.Handler {
 	act("POST /api/health/{name}/shell", s.healthShell)
 	act("GET /api/spend", s.spend)
 	act("GET /api/spend/series", s.spendSeries)
+	act("GET /api/spend/today", s.spendToday)
 	act("GET /api/tasks", s.tasks)
 	act("POST /api/tasks", s.fileTask)
 	act("POST /api/tasks/claim", s.claimTask)
