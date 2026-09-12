@@ -107,12 +107,12 @@ func localJob(ctx context.Context, label, logPath string) (Report, string, error
 	return r, d.note, nil
 }
 
-var lastExitRe = regexp.MustCompile(`"LastExitStatus"\s*=\s*(-?\d+)`)
+var lastExitRe = regexp.MustCompile(`(?m)(?:"LastExitStatus"\s*=\s*|last exit code\s*=\s*)(-?\d+)`)
+var pidRe = regexp.MustCompile(`(?m)(?:"PID"\s*=\s*|pid\s*=\s*)\d+`)
 
 // launchdStatus returns whether the job is loaded and its last exit status.
-// `launchctl list <label>` prints a plist-ish block, not JSON, and exits
-// non-zero when the label is unknown, which is the "not loaded" answer rather
-// than an error.
+// Modern launchctl exposes per-user agents through `print gui/<uid>/<label>`.
+// Older macOS versions use `list <label>`, so retain it as a fallback.
 func launchdStatus(ctx context.Context, label string) (loaded bool, exit int, running bool, err error) {
 	bin, err := exec.LookPath("launchctl")
 	if err != nil {
@@ -122,19 +122,26 @@ func launchdStatus(ctx context.Context, label string) (loaded bool, exit int, ru
 		return false, 0, false, fmt.Errorf(
 			"launchctl is not on this machine: launchd_marker is macOS-only, use systemd_unit on Linux")
 	}
-	out, err := exec.CommandContext(ctx, bin, "list", label).Output()
+	domain := fmt.Sprintf("gui/%d/%s", os.Getuid(), label)
+	out, err := exec.CommandContext(ctx, bin, "print", domain).Output()
 	if err != nil {
-		return false, 0, false, nil
+		out, err = exec.CommandContext(ctx, bin, "list", label).Output()
+		if err != nil {
+			return false, 0, false, nil
+		}
 	}
+	loaded, exit, running = parseLaunchdStatus(label, out)
+	return loaded, exit, running, nil
+}
+
+func parseLaunchdStatus(label string, out []byte) (loaded bool, exit int, running bool) {
 	if m := lastExitRe.FindSubmatch(out); m != nil {
 		exit, _ = strconv.Atoi(string(m[1]))
 	}
 	// launchd prints a PID key only while the job is actually executing, which
 	// is how an in-flight run is told from one that died at the same point.
-	return strings.Contains(string(out), label), exit, pidRe.Match(out), nil
+	return strings.Contains(string(out), label), exit, pidRe.Match(out)
 }
-
-var pidRe = regexp.MustCompile(`"PID"\s*=\s*\d+`)
 
 // marker is one completed run recorded in a job's log.
 type marker struct {
