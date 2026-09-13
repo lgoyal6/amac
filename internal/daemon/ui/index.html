@@ -567,9 +567,11 @@
      are each their own object (an automation, a provider, a queued task) sit
      in a grid of cards instead; the row form stays for lists read in time
      order, where the width is the point. */
-  .hgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:var(--s3); align-items:start; }
+  .hgrid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:var(--s3); }
   .hgrid > .hrow, .hgrid > .hrow:last-child { border:1px solid var(--line); border-radius:var(--r-md);
-    background:var(--raise); padding:var(--s3); margin:0; }
+    background:var(--raise); padding:var(--s3) var(--s4); margin:0; }
+  .hgrid .hname { font-size:var(--t-14); }
+  @media (max-width: 760px) { .hgrid { grid-template-columns:1fr; } }
   .hgrid + .hdetail { margin-top:var(--s3); }
   .hstate { font:600 var(--t-10)/1.8 var(--mono); min-width:64px; flex:none; text-align:center;
             text-transform:uppercase; letter-spacing:.06em; padding:1px 8px; border-radius:var(--r-sm);
