@@ -562,6 +562,15 @@
   .hrow { display:flex; gap:var(--s3); padding:var(--s3) 0; border-bottom:1px solid var(--line); align-items:flex-start; }
   .hrow > .hstate { order:9; margin-left:auto; }
   .hrow:last-child { border-bottom:none; }
+  /* A list of full-width rows with the name at the left edge and a pill at
+     the right leaves most of a wide screen empty between them. Things that
+     are each their own object (an automation, a provider, a queued task) sit
+     in a grid of cards instead; the row form stays for lists read in time
+     order, where the width is the point. */
+  .hgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(320px, 1fr)); gap:var(--s3); align-items:start; }
+  .hgrid > .hrow, .hgrid > .hrow:last-child { border:1px solid var(--line); border-radius:var(--r-md);
+    background:var(--raise); padding:var(--s3); margin:0; }
+  .hgrid + .hdetail { margin-top:var(--s3); }
   .hstate { font:600 var(--t-10)/1.8 var(--mono); min-width:64px; flex:none; text-align:center;
             text-transform:uppercase; letter-spacing:.06em; padding:1px 8px; border-radius:var(--r-sm);
             --tone:var(--faint); color:var(--tone); background:color-mix(in srgb, var(--tone) 12%, transparent);
@@ -1677,8 +1686,8 @@ async function loadHealth() {
       ${(rep.notes || []).map(n => `<div class="hdetail">${esc(n)}</div>`).join('')}
     </div></div>`).join('');
   el.innerHTML = `<div class="hdetail explain-count" title="Machine capacity is shown separately and never counted as a failed automation."><b>${automations.filter(x => x.state === 'ok').length} of ${automations.length} automations healthy</b></div>`
-    + rows
-    + (machineRows ? `<div class="hdetail" style="margin-top:16px"><b>Machine status</b></div>${machineRows}` : '')
+    + `<div class="hgrid">${rows}</div>`
+    + (machineRows ? `<div class="hdetail" style="margin-top:16px"><b>Machine status</b></div><div class="hgrid">${machineRows}</div>` : '')
     + `<div class="hdetail" style="margin-top:12px">swept ${esc(new Date(at).toLocaleString())}</div>`;
 
   // Only on rows that are not ok. Every row carrying two buttons made the
@@ -1867,7 +1876,7 @@ async function loadHealthRuns() {
     </div>` : '';
 
   el.innerHTML = `<div class="explain">${lead}</div>`
-    + watched.map(a => runRow(a, days)).join('') + footnote;
+    + `<div class="hgrid">${watched.map(a => runRow(a, days)).join('')}</div>` + footnote;
 
   el.querySelectorAll('button.runs-toggle').forEach(b => {
     b.onclick = () => {
@@ -1956,7 +1965,7 @@ async function loadHealthSchedule() {
     <b>Every</b> is how often the automation should produce evidence. <b>Grace</b> is extra
     time allowed before AMAC calls it late. <b>Check</b> is the evidence AMAC reads.
     AMAC monitors these jobs; it does not run them.
-  </div>` + automations.filter(a => a.category !== 'machine').map(a => `
+  </div><div class="hgrid">` + automations.filter(a => a.category !== 'machine').map(a => `
     <div class="hrow">
       <span class="hstate">plan</span>
       <div style="min-width:0;flex:1">
@@ -1971,7 +1980,7 @@ async function loadHealthSchedule() {
         <div class="hdetail"><b>Check:</b> ${esc(a.check)}</div>
         <div class="hdetail">${esc(a.role)}</div>
       </div>
-    </div>`).join('') + `<div class="hdetail" style="margin-top:16px"><b>Machine status</b> is monitored separately. High swap or disk can warn without marking any automation failed.</div>`;
+    </div>`).join('') + `</div><div class="hdetail" style="margin-top:16px"><b>Machine status</b> is monitored separately. High swap or disk can warn without marking any automation failed.</div>`;
 }
 
 let healthView = 'status';
@@ -2094,7 +2103,7 @@ async function loadQueue() {
 
   if (!list.length) { el.className = 'empty'; el.textContent = 'nothing queued'; return; }
   el.className = 'card';
-  el.innerHTML = list.map(t => `
+  el.innerHTML = `<div class="hgrid">` + list.map(t => `
     <div class="hrow">
       <span class="hstate ${esc(qstate(t))}">${esc(t.state)}</span>
       <div style="min-width:0;flex:1">
@@ -2111,7 +2120,7 @@ async function loadQueue() {
             <button class="sm" data-cancel="${esc(t.id)}">cancel</button>
           </div>` : ''}
       </div>
-    </div>`).join('');
+    </div>`).join('') + `</div>`;
 
   el.querySelectorAll('.acts button').forEach(b => {
     b.onclick = async () => {
@@ -2392,9 +2401,9 @@ async function loadSpend() {
   const notConnected = providers.filter(p => p.status !== 'ok').length + noApi.length;
   const providerRows = providers.length || noApi.length ? `<details class="card money-section coverage">
     <summary class="hname">data coverage <span class="hdetail">${providers.filter(p => p.status === 'ok').length} connected · ${notConnected} not. skipped means no token was given for that provider; manual means it has no billing API and is entered by hand.</span></summary>
-    ${providers.map(p => `<div class="hrow"><span class="hstate ${p.status === 'ok' ? 'ok' : 'late'}">${esc(p.status || 'check')}</span>
+    <div class="hgrid">${providers.map(p => `<div class="hrow"><span class="hstate ${p.status === 'ok' ? 'ok' : 'late'}">${esc(p.status || 'check')}</span>
       <div><div class="hname">${esc(p.name || p.id)}</div><div class="hdetail">${esc(p.note || p.error || '')}</div></div></div>`).join('')}
-    ${noApi.map(p => `<div class="hrow"><span class="hstate">manual</span><div><div class="hname">${esc(p.name)}</div><div class="hdetail">${esc(p.reason)}</div></div></div>`).join('')}
+    ${noApi.map(p => `<div class="hrow"><span class="hstate">manual</span><div><div class="hname">${esc(p.name)}</div><div class="hdetail">${esc(p.reason)}</div></div></div>`).join('')}</div>
     </details>` : '';
   el.className = '';
   el.innerHTML = `
