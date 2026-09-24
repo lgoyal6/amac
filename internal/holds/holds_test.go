@@ -268,3 +268,67 @@ func TestPathsAreNormalisedBeforeComparison(t *testing.T) {
 		}
 	}
 }
+
+// The bug this fixes: a session that named its paths but did not quote a fencing token got
+// "stale fencing token", which reads as "your lease is gone". The lease was fine. The number
+// was simply absent, and the holds sat there until they expired while other agents were told
+// the paths were taken.
+func TestReleaseOwnedNeedsNoToken(t *testing.T) {
+	h := open(t)
+	ctx := context.Background()
+	paths := []string{"/repo/a.go", "/repo/b.go"}
+	if _, err := h.Claim(ctx, "sess-1", paths, 30*min, "editing"); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := h.ReleaseOwned(ctx, "sess-1", paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Fatalf("released %d, want both paths", n)
+	}
+	live, err := h.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(live) != 0 {
+		t.Fatalf("%d hold(s) survived a release of every path this session held", len(live))
+	}
+}
+
+// Releasing without a token must still not reach across sessions. The delete matches on
+// owner, so this is the property that makes dropping the token safe at all.
+func TestReleaseOwnedCannotTakeAnotherSessionsHold(t *testing.T) {
+	h := open(t)
+	ctx := context.Background()
+	if _, err := h.Claim(ctx, "sess-1", []string{"/repo/a.go"}, 30*min, "mine"); err != nil {
+		t.Fatal(err)
+	}
+
+	n, err := h.ReleaseOwned(ctx, "sess-2", []string{"/repo/a.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("sess-2 released %d of sess-1's holds; it must release none", n)
+	}
+	live, _ := h.List(ctx)
+	if len(live) != 1 || live[0].Owner != "sess-1" {
+		t.Fatalf("sess-1's hold did not survive: %+v", live)
+	}
+}
+
+// A token that is supplied still has to match, so a caller that quotes a stale number is
+// refused rather than silently releasing a hold it re-claimed under a newer one.
+func TestReleaseWithWrongTokenIsStillRefused(t *testing.T) {
+	h := open(t)
+	ctx := context.Background()
+	got, err := h.Claim(ctx, "sess-1", []string{"/repo/a.go"}, 30*min, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Release(ctx, "sess-1", got[0].Token+1, []string{"/repo/a.go"}); !errors.Is(err, ErrStaleToken) {
+		t.Fatalf("a wrong token gave %v, want ErrStaleToken", err)
+	}
+}

@@ -226,6 +226,48 @@ func (h *Holds) Release(ctx context.Context, owner string, token int64, paths []
 	return nil
 }
 
+// ReleaseOwned releases this owner's holds on the named paths without a fencing token.
+//
+// The token exists to stop a caller acting on a lease it no longer has. It cannot do that
+// job here: the DELETE already matches on owner, so a session can only ever release its own
+// holds, and a lease that expired and was re-taken by someone else belongs to that someone
+// else and will not match. What the token additionally protects against is narrow, one
+// session releasing a hold it re-claimed under a newer token, and ReleaseAll has always
+// ignored it for exactly that reason.
+//
+// Without this, naming paths and omitting the token parsed the token as zero, matched no
+// row, and reported a stale token: a message that sends you looking for a lease you lost
+// when the truth is that you never passed the number.
+func (h *Holds) ReleaseOwned(ctx context.Context, owner string, paths []string) (int, error) {
+	want := normalise(paths)
+	if len(want) == 0 {
+		return 0, errors.New("a release needs at least one path")
+	}
+	tx, err := h.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	released := make([]Hold, 0, len(want))
+	for _, p := range want {
+		res, err := tx.ExecContext(ctx, `DELETE FROM holds WHERE path = ? AND owner = ?`, p, owner)
+		if err != nil {
+			return 0, err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			released = append(released, Hold{Path: p, Owner: owner})
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	if len(released) > 0 {
+		h.record(ctx, "hold.released", owner, released, "")
+	}
+	return len(released), nil
+}
+
 // ErrStaleToken means the caller's fencing token is not the one the table holds.
 var ErrStaleToken = errors.New("stale fencing token")
 

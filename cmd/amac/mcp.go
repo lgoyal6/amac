@@ -195,7 +195,7 @@ func cmdMCP(args []string) error {
 			"expire. Omit paths to release everything this session holds.",
 		InputSchema: mcp.Schema(map[string]string{
 			"paths": "paths to release, comma separated, or omit for all of them",
-			"token": "the fencing token claim_files gave you, required when naming paths",
+			"token": "optional. the fencing token claim_files gave you. Supplying it makes the release strict, so it refuses if the hold has since been re-claimed under a newer token",
 		}),
 		Handler: func(ctx context.Context, raw json.RawMessage) (string, error) {
 			owner := callerSession()
@@ -210,9 +210,23 @@ func cmdMCP(args []string) error {
 				}
 				return fmt.Sprintf("Released all %d path(s) held by %s.", n, owner), nil
 			}
+			// A missing token is not a stale one. Releasing without it still only ever
+			// touches this session's own holds, because the delete matches on owner.
+			if strings.TrimSpace(arg(raw, "token")) == "" {
+				n, err := hold.ReleaseOwned(ctx, owner, paths)
+				if err != nil {
+					return "", err
+				}
+				if n == 0 {
+					return fmt.Sprintf("Nothing released: %s holds none of those %d path(s). "+
+						"They may have expired, or another session may hold them now.",
+						owner, len(paths)), nil
+				}
+				return fmt.Sprintf("Released %d path(s) held by %s.", n, owner), nil
+			}
 			token, _ := strconv.ParseInt(arg(raw, "token"), 10, 64)
 			if err := hold.Release(ctx, owner, token, paths); err != nil {
-				return fmt.Sprintf("Nothing released: %v. If your claim expired, another session may hold these now.", err), nil
+				return fmt.Sprintf("Nothing released: %v. The hold may have been re-claimed under a newer token, or it may have expired. Retry without the token to release whatever this session still holds.", err), nil
 			}
 			return fmt.Sprintf("Released %d path(s).", len(paths)), nil
 		},
