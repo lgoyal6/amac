@@ -100,10 +100,24 @@ func newService(d Declaration) (func(context.Context) (Report, error), error) {
 	if port == "0" {
 		p.errs = append(p.errs, "missing port")
 	}
+	// Where the service is expected to answer. The default is the tailnet, so
+	// every roster written before this option behaves exactly as it did. A
+	// service that binds loopback on purpose is not reachable on the tailnet and
+	// never will be, so dialling one there reports a healthy daemon as down.
+	bind := p.str("bind", false)
+	if bind == "" {
+		bind = "tailnet"
+	}
+	if bind != "tailnet" && bind != "loopback" {
+		p.errs = append(p.errs, `bind must be "tailnet" or "loopback"`)
+	}
 	if err := p.err(); err != nil {
 		return nil, err
 	}
 	return func(ctx context.Context) (Report, error) {
+		if bind == "loopback" {
+			return serviceOnLoopback(ctx, label, port)
+		}
 		return serviceOnTailnet(ctx, label, port)
 	}, nil
 }

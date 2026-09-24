@@ -73,6 +73,48 @@ func serviceOnTailnet(ctx context.Context, label, daemonPort string) (Report, er
 	return r, nil
 }
 
+// serviceOnLoopback checks a service that binds 127.0.0.1 and refuses anything else.
+//
+// The tailnet probe would report such a service down forever, and the reason it
+// gives would be wrong: there is no tailnet address to dial because refusing to
+// have one is the entire point. codex-relay is the case this exists for. It
+// rejects a non-loopback --addr at startup, so "reachable from another machine"
+// is not a health question about it, and answering it would only ever produce a
+// false alarm.
+//
+// Two distinguishable states, for the same reason the tailnet probe separates
+// three: not loaded is a setup problem, loaded with nothing answering is a
+// crash, and one "down" covering both sends you to the wrong place.
+func serviceOnLoopback(ctx context.Context, label, port string) (Report, error) {
+	r := Report{State: OK}
+
+	loaded, _, _, err := launchdStatus(ctx, label)
+	if err != nil {
+		return r, err
+	}
+	if !loaded {
+		r.State = Down
+		r.Detail = label + " is not loaded in launchd"
+		return r, nil
+	}
+
+	// A dial, not an HTTP request. codex-relay mints a session token into its
+	// index page and every API route demands it, so asking for more than "something
+	// is listening" would mean giving the probe a credential to hold.
+	conn, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", port))
+	if err != nil {
+		r.State = Down
+		r.Detail = "loaded, but nothing is listening on 127.0.0.1:" + port
+		r.Err = err.Error()
+		return r, nil
+	}
+	_ = conn.Close()
+
+	r.Detail = "serving on 127.0.0.1:" + port
+	r.Notes = []string{"http://127.0.0.1:" + port + " on this Mac only"}
+	return r, nil
+}
+
 // tailnetAddr finds this machine's tailnet address on a local interface.
 //
 // Deliberately not the Tailscale CLI: it reports the node's address from the

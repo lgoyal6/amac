@@ -78,6 +78,34 @@ func TestServiceNeedsNoCadence(t *testing.T) {
 	}
 }
 
+// A service that binds loopback on purpose is not reachable on the tailnet and
+// never will be, so the roster has to be able to say so. Dialling such a service
+// on the tailnet reports a healthy daemon as down, every sweep, forever.
+func TestServiceBindLoopbackIsAccepted(t *testing.T) {
+	p := writeRoster(t, `{"automations":[
+	  {"name":"relay","probe":"service","with":{"label":"com.lgoyal.codex-relay","port":7815,"bind":"loopback"}}
+	]}`)
+	if _, err := Load(p, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// An unknown bind is refused rather than quietly falling back to the tailnet.
+// A typo that silently picks the wrong network is the bug this option exists to
+// prevent, so it must not be reachable through a misspelling of the option.
+func TestServiceBindMustBeKnown(t *testing.T) {
+	p := writeRoster(t, `{"automations":[
+	  {"name":"relay","probe":"service","with":{"label":"x","port":1,"bind":"localhost"}}
+	]}`)
+	_, err := Load(p, nil)
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), "bind must be") {
+		t.Errorf("error = %v, want it to name the bind option", err)
+	}
+}
+
 // Every problem at once. Someone editing this by hand should not have to run
 // the command five times to learn about five typos.
 func TestLoadReportsEveryProblem(t *testing.T) {
