@@ -69,7 +69,13 @@ func (f *fakeTailnet) addr() string {
 
 func get(t *testing.T, addr string) (int, error) {
 	t.Helper()
-	c := &http.Client{Timeout: 2 * time.Second}
+	// Its own transport, with pooling off. The default one is shared and reuses
+	// connections, so a closed listener would keep answering down a socket that
+	// was opened while it was still accepting, and the test would prove nothing.
+	c := &http.Client{
+		Timeout:   2 * time.Second,
+		Transport: &http.Transport{DisableKeepAlives: true},
+	}
 	resp, err := c.Get("http://" + addr + "/")
 	if err != nil {
 		return 0, err
@@ -86,10 +92,12 @@ func get(t *testing.T, addr string) (int, error) {
 func TestLoopbackServesWithNoTailnet(t *testing.T) {
 	port := freePort(t)
 	srv := hello()
+	fake := &fakeTailnet{}
 	b := &Binder{
 		Servers:       map[int]*http.Server{port: srv},
 		LookupTailnet: func() (string, error) { return "", fmt.Errorf("is Tailscale running?") },
 		Poll:          20 * time.Millisecond,
+		Listen:        fake.listen,
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -102,8 +110,11 @@ func TestLoopbackServesWithNoTailnet(t *testing.T) {
 	if err != nil || code != 200 {
 		t.Fatalf("want 200 on loopback, got %d %v", code, err)
 	}
-	if got := b.Tailnet(); got != "" {
-		t.Errorf("no tailnet address should be claimed, got %q", got)
+	fake.mu.Lock()
+	asked := len(fake.asked)
+	fake.mu.Unlock()
+	if asked != 0 {
+		t.Errorf("no tailnet address should have been bound, tried %d", asked)
 	}
 }
 
@@ -140,16 +151,12 @@ func TestTailnetIsPickedUpWhenItAppears(t *testing.T) {
 	ip = "100.64.0.5"
 	mu.Unlock()
 
-	waitFor(t, func() bool { return b.Tailnet() == "100.64.0.5" },
-		"the address should be bound once it exists")
-
 	want := fmt.Sprintf("100.64.0.5:%d", port)
-	fake.mu.Lock()
-	asked := append([]string(nil), fake.asked...)
-	fake.mu.Unlock()
-	if len(asked) != 1 || asked[0] != want {
-		t.Fatalf("binder should have asked for %q, asked for %v", want, asked)
-	}
+	waitFor(t, func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return len(fake.asked) == 1 && fake.asked[0] == want
+	}, "the address should be bound once it exists")
 	if code, err := get(t, fake.addr()); err != nil || code != 200 {
 		t.Fatalf("the tailnet listener must serve, got %d %v", code, err)
 	}
@@ -185,21 +192,22 @@ func TestStaleTailnetListenerIsDropped(t *testing.T) {
 	}
 	defer srv.Close()
 
-	waitFor(t, func() bool { return b.Tailnet() == "100.64.0.5" }, "bound to start with")
+	waitFor(t, func() bool { return fake.addr() != "" }, "bound to start with")
 	live := fake.addr()
+	if code, err := get(t, live); err != nil || code != 200 {
+		t.Fatalf("the tailnet listener should be serving first, got %d %v", code, err)
+	}
 
 	mu.Lock()
 	ip = ""
 	mu.Unlock()
 
-	waitFor(t, func() bool { return b.Tailnet() == "" },
-		"the address going away must release the listener")
-
-	// The socket itself must be gone, not merely forgotten: a listener left open
-	// on a vanished interface is exactly the state this is meant to prevent.
-	if _, err := get(t, live); err == nil {
-		t.Error("the stale listener is still accepting; it should have been closed")
-	}
+	// The socket itself must go, not merely be forgotten: a listener left open on
+	// a vanished interface is exactly the state this is meant to prevent.
+	waitFor(t, func() bool {
+		_, err := get(t, live)
+		return err != nil
+	}, "the address going away must close the listener")
 
 	// Loopback is unaffected: the Mac keeps its dashboard.
 	code, err := get(t, fmt.Sprintf("127.0.0.1:%d", port))
