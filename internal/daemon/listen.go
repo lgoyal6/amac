@@ -141,13 +141,6 @@ func (b *Binder) reconcile(lookup func() (string, error)) {
 	b.say(fmt.Sprintf("tailnet address %s is up; reachable from your phone", ip))
 }
 
-// Tailnet reports the address currently served, or "" when there is none.
-func (b *Binder) Tailnet() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.bound
-}
-
 func (b *Binder) listen(network, addr string) (net.Listener, error) {
 	if b.Listen != nil {
 		return b.Listen(network, addr)
