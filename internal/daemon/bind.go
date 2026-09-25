@@ -5,7 +5,6 @@ import (
 	"net"
 	"os/exec"
 	"strings"
-	"time"
 )
 
 // Resolving the bind address is a security decision, not a config detail. This
@@ -86,21 +85,4 @@ func assigned(ip string) bool {
 		}
 	}
 	return false
-}
-
-// WaitForTailnet blocks until the mesh is up. A daemon started at login before
-// Tailscale finishes connecting should wait, not fall back to a public bind
-// and not exit.
-func WaitForTailnet(timeout time.Duration) (string, error) {
-	deadline := time.Now().Add(timeout)
-	for {
-		ip, err := TailnetIP()
-		if err == nil {
-			return ip, nil
-		}
-		if time.Now().After(deadline) {
-			return "", err
-		}
-		time.Sleep(3 * time.Second)
-	}
 }

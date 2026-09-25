@@ -2,10 +2,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -25,29 +23,9 @@ func cmdDaemon(args []string) error {
 	fs := flag.NewFlagSet("daemon", flag.ExitOnError)
 	port := fs.Int("port", 7788, "listen port")
 	dbPath := fs.String("db", defaultLogPath(), "event log path")
-	wait := fs.Duration("wait-tailnet", 2*time.Minute, "how long to wait for Tailscale before giving up")
-	localhost := fs.Bool("localhost", false, "bind 127.0.0.1 instead of the tailnet (local testing only)")
+	localhost := fs.Bool("localhost", false, "serve this machine only; never bind the tailnet")
 	if err := fs.Parse(args); err != nil {
 		return err
-	}
-
-	// Bind resolution is fail-closed. This daemon starts agents, approves
-	// their tool calls and writes files; there is no version of exposing it on
-	// 0.0.0.0 that is acceptable, so a missing tailnet is a startup failure
-	// rather than a fallback. -localhost exists for tests on this machine only.
-	var host string
-	if *localhost {
-		host = "127.0.0.1"
-	} else {
-		// Said before the wait, not after. Under launchd this is the whole
-		// log for two minutes, and an empty log while a process sits there
-		// looks exactly like a hang with no cause.
-		fmt.Printf("waiting up to %s for the tailnet...\n", *wait)
-		ip, err := daemon.WaitForTailnet(*wait)
-		if err != nil {
-			return fmt.Errorf("refusing to start without a tailnet address: %w", err)
-		}
-		host = ip
 	}
 
 	token, err := daemon.Token()
@@ -76,7 +54,6 @@ func cmdDaemon(args []string) error {
 
 	api := daemon.New(sup, log, orch, q, token)
 	srv := &http.Server{
-		Addr:              net.JoinHostPort(host, fmt.Sprint(*port)),
 		Handler:           api.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		// No WriteTimeout: /api/stream is a long-lived SSE connection and a
@@ -90,45 +67,42 @@ func cmdDaemon(args []string) error {
 	// separately because the page it serves asks for /api at the root, which is a
 	// path amac already answers.
 	relay := &http.Server{
-		Addr:              net.JoinHostPort(host, fmt.Sprint(daemon.RelayProxyPort)),
 		Handler:           api.RelayProxy(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
 
-	head, _ := log.Head(context.Background())
-	fmt.Printf("amac daemon\n")
-	fmt.Printf("  dashboard  http://%s:%d/?token=%s\n", host, *port, token)
-	fmt.Printf("  relay      %s\n", daemon.RelayProxyURL(host))
-	fmt.Printf("  events     %s (head=%d)\n", *dbPath, head)
-	fmt.Printf("  bind       %s (%s)\n\n", host, bindNote(*localhost))
-
-	errc := make(chan error, 1)
-	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errc <- err
-		}
-	}()
-	// A failure here is reported but not fatal. The relay dashboard is one tab of
-	// several, and losing its port is no reason to take down the queue, the agents
-	// and the board with it.
-	go func() {
-		if err := relay.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fmt.Printf("codex-relay dashboard unavailable on :%d: %v\n", daemon.RelayProxyPort, err)
-		}
-	}()
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	binder := &daemon.Binder{
+		Servers:  map[int]*http.Server{*port: srv, daemon.RelayProxyPort: relay},
+		Announce: func(msg string) { fmt.Printf("  %s\n", msg) },
+	}
+	if *localhost {
+		// Asked for this machine only, so do not go looking for the tailnet at all.
+		binder.LookupTailnet = func() (string, error) {
+			return "", fmt.Errorf("-localhost was given")
+		}
+	}
+	if err := binder.Start(ctx); err != nil {
+		return err
+	}
+
+	head, _ := log.Head(context.Background())
+	fmt.Printf("amac daemon\n")
+	fmt.Printf("  dashboard  http://127.0.0.1:%d/?token=%s\n", *port, token)
+	fmt.Printf("  relay      %s\n", daemon.RelayProxyURL("127.0.0.1"))
+	fmt.Printf("  events     %s (head=%d)\n", *dbPath, head)
+	fmt.Printf("  bind       %s\n\n", bindNote(*localhost))
 
 	// The jobs tab reads a local cache that nothing but the sync button moved.
 	go api.SyncNotionPeriodically(ctx)
 
-	select {
-	case err := <-errc:
-		return err
-	case <-ctx.Done():
-	}
+	// Losing a listener is no longer a reason to exit. Loopback failing is caught
+	// at startup, and a tailnet address that comes and goes is now an expected
+	// thing the binder absorbs rather than a fault that ends the process.
+	<-ctx.Done()
 
 	fmt.Println("\nshutting down")
 	// Stop agents first: they are child processes, and leaving them orphaned
@@ -142,9 +116,9 @@ func cmdDaemon(args []string) error {
 
 func bindNote(localhost bool) string {
 	if localhost {
-		return "LOCAL ONLY - not reachable from your phone"
+		return "127.0.0.1 only - not reachable from your phone"
 	}
-	return "tailnet only"
+	return "127.0.0.1 always, plus the tailnet whenever Tailscale is up"
 }
 
 // cmdURL prints the dashboard link.
