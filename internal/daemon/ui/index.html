@@ -345,28 +345,13 @@
           border:1px solid var(--line); border-radius:var(--r);
           color:var(--dim); font:500 var(--t-10)/1.5 var(--mono); }
   .pill.bad { border-color:var(--blocked); color:var(--blocked); }
-  .pill.ready { border-color:var(--ok); color:var(--ok); }
-  .rgrid { display:grid; gap:var(--s3); margin:var(--s3) 0;
-           grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }
-  .rcard.rbad { border-left-color:var(--blocked); }
-  .rhead { margin-bottom:var(--s2); }
-  .rrow { display:flex; align-items:center; gap:var(--s2); margin-top:4px;
-          font-size:var(--t-12); }
-  .rlabel { width:5.5em; color:var(--dim); flex:none; }
-  .rbar { flex:1; height:6px; border-radius:999px; background:var(--line);
-          overflow:hidden; }
-  .rbar i { display:block; height:100%; background:var(--ok); }
-  .rpct { width:6em; text-align:right; font-family:var(--mono); flex:none; }
-  .rrules { margin:var(--s2) 0 0; padding-left:1.1em; font-size:var(--t-12); }
-  /* Fixed layout, because the cells hold an email and a reason code and a mono
-     font will not shrink either one. Left to itself the table sets its own
-     width and takes the phone's whole page sideways with it. */
-  .rtable { width:100%; table-layout:fixed; border-collapse:collapse;
-            margin-top:var(--s2); font:var(--t-12)/1.6 var(--mono); }
-  .rtable td { padding:1px 6px 1px 0; overflow:hidden;
-               text-overflow:ellipsis; white-space:nowrap; }
-  .rtable td:first-child { width:4.75em; }
-  .rtable td:last-child { width:4.5em; }
+  /* The relay tab embeds the codex-relay dashboard. It sizes itself against the
+     viewport rather than its content, because a cross-origin frame will not tell
+     us how tall it is and a fixed height would either crop the page or leave a
+     band of dead space under it. */
+  #relayFrame { width:100%; height:calc(100vh - 190px); min-height:420px;
+                border:1px solid var(--line); border-radius:var(--r);
+                background:var(--surface); display:block; }
 
   .bar { position:fixed; left:0; right:0; bottom:0; background:var(--surface);
          border-top:1px solid var(--line);
@@ -846,17 +831,10 @@
        account is about to serve, and which of them can still serve at all. -->
   <section id="relay" hidden>
     <div class="section-head"><div class="grow"><h2>codex-relay</h2></div>
+      <a class="sm" id="relayPop" href="#" target="_blank" rel="noreferrer" hidden>open alone</a>
       <button class="ghost" id="refreshRelay" type="button">refresh</button></div>
-    <div class="subnav" role="tablist" aria-label="codex-relay views">
-      <button class="on" role="tab" aria-selected="true" data-relay-view="pool">pool</button>
-      <button role="tab" aria-selected="false" data-relay-view="profiles">profiles</button>
-      <button role="tab" aria-selected="false" data-relay-view="rules">rules</button>
-      <button role="tab" aria-selected="false" data-relay-view="activity">activity</button>
-    </div>
-    <div id="relayPool"><div id="relayOut" class="empty">loading</div></div>
-    <div id="relayProfiles" hidden><div id="relayProfilesOut" class="empty">loading</div></div>
-    <div id="relayRules" hidden><div id="relayRulesOut" class="empty">loading</div></div>
-    <div id="relayActivity" hidden><div id="relayActivityOut" class="empty">loading</div></div>
+    <div id="relayOut" class="empty">loading</div>
+    <iframe id="relayFrame" title="codex-relay dashboard" hidden></iframe>
   </section>
 
   <section id="money" hidden>
@@ -2746,215 +2724,70 @@ $('refreshHack').onclick = () => loadHack(true);
 // decision or a quota figure: both come from the relay, because a second
 // implementation of its rules would disagree with it the first time either
 // changed, and the disagreement would look like a bug in the pool.
-let relayView = 'pool';
 let relayData = null;
 
-function setRelayView(next) {
-  relayView = next;
-  document.querySelectorAll('[data-relay-view]').forEach(x => {
-    const on = x.dataset.relayView === relayView;
-    x.classList.toggle('on', on);
-    x.setAttribute('aria-selected', on ? 'true' : 'false');
-  });
-  for (const [view, id] of [['pool','relayPool'],['profiles','relayProfiles'],['rules','relayRules'],['activity','relayActivity']]) {
-    $(id).hidden = view !== relayView;
-  }
-  if (relayView === 'activity') loadRelayActivity();
-  else if (relayData) renderRelay(relayData);
-  else loadRelay();
-}
-
-// The pool, as the relay itself reports it. Nothing here re-derives a routing decision or a
-// quota figure: both come from the relay, because a second implementation of its rules would
-// disagree with it the first time either changed, and the disagreement would look like a bug
-// in the pool rather than in this page.
+// The relay tab is the codex-relay dashboard itself, carried across by the proxy the
+// daemon runs beside this one. It used to be a hand-written pool, profile and rule
+// view, which was read-only and drifted the moment codex-relay grew a column. An
+// embedded copy of the real page cannot drift and cannot be read-only: every control
+// it has is the control codex-relay ships.
+//
+// This still asks amac about the relay, for two things the frame cannot say: whether
+// codex-relay is running at all, and how many accounts need a person. A blank frame
+// and a stopped service look identical.
 async function loadRelay() {
   try {
     const r = await api('/api/codex-relay');
     if (!r.ok) throw new Error(r.status);
     relayData = await r.json();
   } catch (e) {
+    $('relayOut').hidden = false;
     $('relayOut').className = 'empty';
     $('relayOut').textContent = 'could not reach amac to ask about codex-relay';
+    $('relayFrame').hidden = true;
     return;
   }
   renderRelay(relayData);
 }
 
-function renderRelay(d) {
-  // Not running is a state to report, not an empty pool to draw. An empty pool and a stopped
-  // relay look identical once you render zero accounts.
-  if (!d.running) {
-    for (const id of ['relayOut','relayProfilesOut','relayRulesOut','relayActivityOut']) {
-      $(id).className = 'empty';
-      $(id).textContent = d.detail || 'codex-relay is not running';
-    }
-    $('relayCount').hidden = true;
-    return;
-  }
-  renderRelayPool(d);
-  renderRelayProfiles(d);
-  renderRelayRules(d);
-}
-
-const relayPct = w => `${Math.round(w.remaining_percent)}%`;
 const relayHurt = ws => ws.paused || !ws.credential_ok
   || (ws.windows || []).some(w => w.remaining_percent <= 2);
 
-function renderRelayPool(d) {
-  const el = $('relayOut');
-  const badge = ws => [
-    ws.is_next ? '<span class="pill ready">next</span>' : '',
-    ws.is_default ? '<span class="pill">default</span>' : '',
-    ws.paused ? '<span class="pill">paused</span>' : '',
-    !ws.credential_ok ? '<span class="pill bad">needs sign-in</span>' : '',
-    ws.protected ? '<span class="pill">reserved</span>' : '',
-  ].join('');
+function renderRelay(d) {
+  const frame = $('relayFrame'), out = $('relayOut'), pop = $('relayPop');
 
-  // A count only when something needs a person. A badge that is always lit is a decoration,
-  // and it trains you to stop looking at it.
+  // The link is worth showing even when the service is down, because following it is
+  // how you find out what it says for itself.
+  if (d.dashboard_url) {
+    pop.href = d.dashboard_url;
+    pop.hidden = false;
+  }
+
+  // Not running is a state to report, not an empty page to draw.
+  if (!d.running) {
+    frame.hidden = true;
+    frame.removeAttribute('src');
+    out.hidden = false;
+    out.className = 'empty';
+    out.textContent = d.detail || 'codex-relay is not running';
+    $('relayCount').hidden = true;
+    return;
+  }
+
+  // A count only when something needs a person. A badge that is always lit is a
+  // decoration, and it trains you to stop looking at it.
   const wounded = (d.workspaces || []).filter(relayHurt).length;
   $('relayCount').hidden = wounded === 0;
   $('relayCount').textContent = wounded;
 
-  const accounts = (d.workspaces || []).map(ws => {
-    const bars = (ws.windows || []).map(w => `
-      <div class="rrow"><span class="rlabel">${esc(w.label)}</span>
-        <span class="rbar"><i style="width:${Math.max(0, Math.min(100, w.remaining_percent))}%"></i></span>
-        <span class="rpct">${relayPct(w)} left</span></div>
-      ${w.evidence && w.evidence !== 'fresh' ? `<div class="rrow"><span class="rlabel"></span><span class="dim">${esc(w.evidence)} reading</span></div>` : ''}`).join('')
-      || '<div class="rrow"><span class="dim">no quota reading yet</span></div>';
-    return `<div class="card rcard${relayHurt(ws) ? ' rbad' : ''}">
-      <div class="rhead"><b>${esc(ws.name)}</b> ${badge(ws)}</div>${bars}</div>`;
-  }).join('');
-
-  const s = d.summary || {};
-  const tiles = s.turns ? `<div class="rgrid">
-      <div class="card"><div class="dim">turns (7d)</div><b>${s.turns.toLocaleString()}</b>
-        <div class="dim">${(s.turns_served||0).toLocaleString()} served · ${(s.turns_blocked||0).toLocaleString()} blocked</div></div>
-      <div class="card"><div class="dim">median first token</div><b>${s.median_first_token_ms||0} ms</b>
-        <div class="dim">measured at the proxy</div></div>
-      <div class="card"><div class="dim">API-equivalent</div><b>$${(s.estimated_cost||0).toFixed(2)}</b>
-        <div class="dim">not what your plan charges</div></div>
-    </div>` : '';
-
-  const problems = (d.problems || []).length
-    ? `<div class="card rbad"><div class="dim">needs attention</div>
-        <ul class="rrules">${d.problems.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '';
-
-  el.className = '';
-  el.innerHTML = `
-    <div class="card"><b>${esc(d.next || 'no routing decision yet')}</b>
-      <div class="dim">${esc(d.addr || '')}${d.version ? ` · ${esc(d.version)}` : ''}${d.credential_storage ? ` · ${esc(d.credential_storage)}` : ''}</div></div>
-    ${problems}
-    <div class="rgrid">${accounts}</div>
-    ${tiles}`;
-}
-
-function renderRelayProfiles(d) {
-  const el = $('relayProfilesOut');
-  const list = d.profiles || [];
-  if (!list.length) {
-    el.className = 'empty';
-    el.textContent = 'No routing profiles yet. Create one in the codex-relay dashboard.';
-    return;
-  }
-  el.className = '';
-  el.innerHTML = list.map(p => `
-    <div class="card rcard">
-      <div class="rhead"><b>${esc(p.name)}</b>
-        ${p.active ? '<span class="pill ready">active</span>' : ''}
-        <span class="pill">relaypool ${esc(p.command)}</span></div>
-      <div class="dim">${esc(p.sentence || '')}</div>
-      ${p.active ? '' : `<div style="margin-top:8px"><button class="btn sm" data-activate="${esc(p.command)}">activate</button></div>`}
-    </div>`).join('');
-  el.querySelectorAll('[data-activate]').forEach(b => {
-    b.onclick = () => activateRelayProfile(b.dataset.activate, b);
-  });
-}
-
-// The one write this tab offers, and the reason it is worth having on a phone: deciding which
-// account burns next is a thing you want to change while away from the machine.
-async function activateRelayProfile(command, btn) {
-  btn.disabled = true;
-  btn.textContent = 'activating…';
-  try {
-    const r = await api('/api/codex-relay/activate', {
-      method: 'POST', headers: {'content-type': 'application/json'},
-      body: JSON.stringify({command}),
-    });
-    const d = await r.json();
-    if (!r.ok || !d.ok) throw new Error(d.detail || d.error || r.status);
-    relayData = null;
-    await loadRelay();
-  } catch (e) {
-    btn.disabled = false;
-    btn.textContent = 'activate';
-    // Say it where the button is. A failure that only reaches the console is a button that
-    // silently did nothing.
-    const warn = document.createElement('div');
-    warn.className = 'bad';
-    warn.textContent = `could not activate: ${e.message || e}`;
-    btn.parentElement.appendChild(warn);
+  out.hidden = true;
+  frame.hidden = false;
+  // Only ever assigned once. Setting src again on every refresh would reload the
+  // dashboard under the reader, losing whatever form they had open.
+  if (d.dashboard_url && frame.getAttribute('src') !== d.dashboard_url) {
+    frame.setAttribute('src', d.dashboard_url);
   }
 }
-
-function renderRelayRules(d) {
-  const el = $('relayRulesOut');
-  const rules = d.rules || [];
-  if (!rules.length) {
-    el.className = 'empty';
-    el.textContent = 'No rules. Every connected, unpaused workspace is eligible.';
-    return;
-  }
-  // Two systems order routing and only one of them wins. Saying so where the rules are is the
-  // difference between a rule that looks active and a rule that is.
-  const active = (d.profiles || []).find(p => p.active);
-  const note = active && rules.some(r => r.enabled && r.kind === 'prefer')
-    ? `<div class="card"><div class="dim">The <b>${esc(active.name)}</b> profile is active, so it orders
-        eligible workspaces first and these preferences apply after it. Protection rules are not
-        affected: a profile cannot route to a workspace a reserve rule is holding back.</div></div>` : '';
-  el.className = '';
-  el.innerHTML = note + rules.map(r => `
-    <div class="card rcard">
-      <div class="rhead">
-        <span class="pill">${esc(r.kind)}</span>
-        <span class="pill${r.enabled ? ' ready' : ''}">${r.enabled ? 'on' : 'off'}</span>
-        ${r.enabled && r.kind === 'prefer' && active ? '<span class="pill">after the profile</span>' : ''}
-      </div>
-      <div>${esc(r.sentence || '')}</div>
-    </div>`).join('');
-}
-
-async function loadRelayActivity() {
-  const el = $('relayActivityOut');
-  let d;
-  try {
-    const r = await api('/api/codex-relay/activity?limit=60');
-    if (!r.ok) throw new Error(r.status);
-    d = await r.json();
-  } catch (e) {
-    el.className = 'empty';
-    el.textContent = 'could not read codex-relay activity';
-    return;
-  }
-  const turns = d.turns || [];
-  if (!d.running || !turns.length) {
-    el.className = 'empty';
-    el.textContent = d.detail || 'no turns recorded yet';
-    return;
-  }
-  el.className = '';
-  el.innerHTML = `<div class="card"><table class="rtable">${turns.map(t => `<tr>
-      <td class="dim">${esc((t.at || '').slice(11, 19))}</td>
-      <td>${esc(t.workspace || '')}</td>
-      <td>${esc(t.reason || t.outcome || '')}</td>
-      <td class="${t.error ? 'bad' : 'dim'}">${esc(t.error || '')}</td></tr>`).join('')}</table></div>`;
-}
-
-document.querySelectorAll('[data-relay-view]').forEach(b => {
-  b.onclick = () => setRelayView(b.dataset.relayView);
-});
 
 $('refreshRelay').onclick = () => loadRelay();
 
@@ -2977,7 +2810,7 @@ function openTopTab(next) {
   if (tab === 'money') loadSpend();
   if (tab === 'jobs') loadJobs();
   if (tab === 'hack') loadHack();
-  if (tab === 'relay') setRelayView(relayView);
+  if (tab === 'relay') loadRelay();
 }
 
 function setAgentView(next) {

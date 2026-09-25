@@ -106,6 +106,12 @@ type relayView struct {
 	Summary    *relaySummary    `json:"summary,omitempty"`
 	Problems   []string         `json:"problems,omitempty"`
 	Credential string           `json:"credential_storage,omitempty"`
+
+	// Dashboard is where the real codex-relay dashboard can be reached from
+	// whatever device is reading this. The page does not build it from a port
+	// of its own, because two places holding the same port number is how they
+	// come to disagree.
+	Dashboard string `json:"dashboard_url,omitempty"`
 }
 
 // relayState is the slice of codex-relay's own state document this tab needs. Decoding a
@@ -163,9 +169,13 @@ type relayState struct {
 // an error to fail on: the tab says so and shows nothing else, rather than rendering an
 // empty pool that looks like a pool with no accounts.
 func (s *Server) codexRelay(w http.ResponseWriter, r *http.Request) {
+	// Derived from the address this request came in on, so the link works from
+	// whichever name or address the reader used to reach amac.
+	dash := RelayProxyURL(hostOnly(r.Host))
+
 	base, token, err := relayDial(r.Context())
 	if err != nil {
-		writeJSON(w, 200, relayView{Detail: err.Error()})
+		writeJSON(w, 200, relayView{Detail: err.Error(), Dashboard: dash})
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
@@ -173,12 +183,12 @@ func (s *Server) codexRelay(w http.ResponseWriter, r *http.Request) {
 
 	var state relayState
 	if err := relayGet(ctx, base, "/api/state", token, &state); err != nil {
-		writeJSON(w, 200, relayView{Detail: "codex-relay answered, but its state could not be read: " + err.Error(), Addr: base})
+		writeJSON(w, 200, relayView{Detail: "codex-relay answered, but its state could not be read: " + err.Error(), Addr: base, Dashboard: dash})
 		return
 	}
 
 	out := relayView{
-		Running: true, Addr: base, Version: state.AppVersion, Next: state.Proposed.Summary,
+		Running: true, Addr: base, Dashboard: dash, Version: state.AppVersion, Next: state.Proposed.Summary,
 		Detail:  fmt.Sprintf("%d account(s) connected", len(state.Workspaces)),
 		Summary: &state.Summary,
 	}
