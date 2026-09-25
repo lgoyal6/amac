@@ -85,9 +85,21 @@ func cmdDaemon(args []string) error {
 		IdleTimeout: 120 * time.Second,
 	}
 
+	// codex-relay binds loopback and refuses anything else, so the only way to open
+	// its dashboard from a phone is to carry it across on this machine. It listens
+	// separately because the page it serves asks for /api at the root, which is a
+	// path amac already answers.
+	relay := &http.Server{
+		Addr:              net.JoinHostPort(host, fmt.Sprint(daemon.RelayProxyPort)),
+		Handler:           api.RelayProxy(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+
 	head, _ := log.Head(context.Background())
 	fmt.Printf("amac daemon\n")
 	fmt.Printf("  dashboard  http://%s:%d/?token=%s\n", host, *port, token)
+	fmt.Printf("  relay      %s\n", daemon.RelayProxyURL(host))
 	fmt.Printf("  events     %s (head=%d)\n", *dbPath, head)
 	fmt.Printf("  bind       %s (%s)\n\n", host, bindNote(*localhost))
 
@@ -95,6 +107,14 @@ func cmdDaemon(args []string) error {
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errc <- err
+		}
+	}()
+	// A failure here is reported but not fatal. The relay dashboard is one tab of
+	// several, and losing its port is no reason to take down the queue, the agents
+	// and the board with it.
+	go func() {
+		if err := relay.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			fmt.Printf("codex-relay dashboard unavailable on :%d: %v\n", daemon.RelayProxyPort, err)
 		}
 	}()
 
@@ -116,6 +136,7 @@ func cmdDaemon(args []string) error {
 	sup.Shutdown()
 	shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	_ = relay.Shutdown(shutCtx)
 	return srv.Shutdown(shutCtx)
 }
 
