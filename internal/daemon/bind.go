@@ -1,10 +1,12 @@
 package daemon
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // Resolving the bind address is a security decision, not a config detail. This
@@ -14,7 +16,47 @@ import (
 // The rule, carried over from the predecessor's ttyd setup: bind to the
 // Tailscale interface or do not start. There is deliberately no fallback.
 
-const tailscaleCLI = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+// A var, not a const, so a test can point it at a stand-in. There is no other
+// way to exercise a command that hangs.
+var tailscaleCLI = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+
+// cliTimeout bounds the one call that can hang. Also a var for the same reason.
+var cliTimeout = 3 * time.Second
+
+// tailnetFromCLI asks Tailscale what this node's address is, and gives up quickly.
+//
+// The deadline is not defensive padding. This command talks to the Tailscale GUI,
+// and under launchd that conversation can simply never finish: the process sits
+// there, Output blocks, and whoever called it blocks too. The daemon was found in
+// exactly that state, holding a `tailscale ip -4` child that had been alive for as
+// long as the daemon had, never binding the tailnet and never reporting a reason,
+// because a caller stuck inside exec has nothing to report.
+//
+// It also exits zero while printing a human-readable failure instead of an
+// address, so the answer is trusted only when it looks like one. Both failures
+// land in the same place: return nothing and let the caller read the interfaces,
+// which is the more reliable source anyway.
+func tailnetFromCLI() string {
+	ctx, cancel := context.WithTimeout(context.Background(), cliTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, tailscaleCLI, "ip", "-4")
+
+	// Cancelling is not enough on its own. Output waits for the stdout pipe to
+	// close, and the pipe is inherited, so anything the command left behind holds
+	// it open and we keep waiting on a process that is already dead. WaitDelay is
+	// what actually lets go.
+	cmd.WaitDelay = time.Second
+
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	ip := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
+	if !strings.HasPrefix(ip, "100.") {
+		return ""
+	}
+	return ip
+}
 
 // TailnetIP returns this machine's Tailscale address.
 //
@@ -23,15 +65,9 @@ const tailscaleCLI = "/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 // physical interface a 100.x address. Trusting that would bind the daemon to
 // the phone network. When the CLI is unavailable, only a utun interface counts.
 func TailnetIP() (string, error) {
-	reported := ""
-	if out, err := exec.Command(tailscaleCLI, "ip", "-4").Output(); err == nil {
-		ip := strings.TrimSpace(strings.SplitN(string(out), "\n", 2)[0])
-		if strings.HasPrefix(ip, "100.") {
-			reported = ip
-			if assigned(ip) {
-				return ip, nil
-			}
-		}
+	reported := tailnetFromCLI()
+	if reported != "" && assigned(reported) {
+		return reported, nil
 	}
 
 	ifaces, err := net.Interfaces()
