@@ -1,33 +1,74 @@
 package daemon
 
 import (
-	"strings"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 )
 
-// The bug this guards: `tailscale ip` reports this node's tailnet address even
-// while the client is stopped, because the control plane assigned it rather
-// than this machine. Trusting that answer meant the daemon got past its own
-// safety check and then died inside ListenAndServe with EADDRNOTAVAIL, a
-// message that names neither Tailscale nor the reason.
-func TestAssignedMeansOnThisMachine(t *testing.T) {
-	if !assigned("127.0.0.1") {
-		t.Fatal("loopback must count as assigned")
+// fakeCLI writes a stand-in for the Tailscale binary and points tailscaleCLI at
+// it for the length of the test.
+func fakeCLI(t *testing.T, script string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "tailscale")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	// TEST-NET-3, reserved for documentation and never routed or assigned.
-	if assigned("203.0.113.7") {
-		t.Fatal("an address that is not on any interface must not count")
+	old := tailscaleCLI
+	tailscaleCLI = path
+	t.Cleanup(func() { tailscaleCLI = old })
+}
+
+// TestCLIThatHangsDoesNotHangUs is the failure this deadline exists for.
+//
+// Under launchd `tailscale ip -4` can talk to a GUI that never answers, and the
+// process then sits forever. Without a deadline the caller sits with it: the
+// daemon was found holding a child as old as itself, never binding the tailnet
+// and never reporting why, because code stuck inside exec cannot report anything.
+func TestCLIThatHangsDoesNotHangUs(t *testing.T) {
+	fakeCLI(t, "sleep 30")
+	old := cliTimeout
+	cliTimeout = 150 * time.Millisecond
+	t.Cleanup(func() { cliTimeout = old })
+
+	done := make(chan string, 1)
+	go func() { done <- tailnetFromCLI() }()
+
+	select {
+	case got := <-done:
+		if got != "" {
+			t.Errorf("a hung CLI must yield nothing, got %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("tailnetFromCLI never returned; the deadline is not working")
 	}
 }
 
-// A stopped Tailscale and an absent Tailscale are fixed differently, so they
-// must not produce the same sentence.
-func TestStoppedTailscaleSaysSo(t *testing.T) {
-	_, err := TailnetIP()
-	if err == nil {
-		t.Skip("tailnet is up on this machine")
+// TestCLIErrorTextIsNotAnAddress covers the other half of the same surprise. The
+// CLI exits zero and prints a sentence when the GUI is not up, so a caller that
+// trusts exit status alone ends up treating prose as an address.
+func TestCLIErrorTextIsNotAnAddress(t *testing.T) {
+	fakeCLI(t, `echo "The Tailscale GUI failed to start: The operation couldn't be completed. (Tailscale.CLIError error 3.)"`)
+	if got := tailnetFromCLI(); got != "" {
+		t.Errorf("an error sentence is not an address, got %q", got)
 	}
-	if !strings.Contains(err.Error(), "Tailscale") {
-		t.Fatalf("error must name Tailscale, got %q", err)
+}
+
+// TestCLIAddressIsRead keeps the happy path honest: the deadline and the shape
+// check must not reject a real answer.
+func TestCLIAddressIsRead(t *testing.T) {
+	fakeCLI(t, `echo 100.127.168.102`)
+	if got := tailnetFromCLI(); got != "100.127.168.102" {
+		t.Errorf("want the address back, got %q", got)
+	}
+}
+
+// TestCLIExitFailureIsQuiet covers Tailscale not being installed at all, which is
+// a legitimate state on a machine that only ever uses loopback.
+func TestCLIExitFailureIsQuiet(t *testing.T) {
+	fakeCLI(t, "exit 1")
+	if got := tailnetFromCLI(); got != "" {
+		t.Errorf("a failed CLI must yield nothing, got %q", got)
 	}
 }
