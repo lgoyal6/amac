@@ -227,3 +227,56 @@ func waitFor(t *testing.T, cond func() bool, what string) {
 	}
 	t.Fatalf("timed out: %s", what)
 }
+
+// TestBoundAddressIsNotRePolled guards a cost rather than a behaviour.
+//
+// The full lookup shells out to Tailscale. Running it every few seconds for the
+// life of the daemon is tens of thousands of processes a day, and each one is a
+// fresh chance to meet the invocation that hangs. While the address we already
+// hold is still on an interface, there is nothing to ask.
+func TestBoundAddressIsNotRePolled(t *testing.T) {
+	port := freePort(t)
+	srv := hello()
+
+	var mu sync.Mutex
+	calls := 0
+	b := &Binder{
+		Servers: map[int]*http.Server{port: srv},
+		LookupTailnet: func() (string, error) {
+			mu.Lock()
+			calls++
+			mu.Unlock()
+			// A real, assigned address, so the skip can actually trigger.
+			return "127.0.0.1", nil
+		},
+		Poll: 15 * time.Millisecond,
+		// Always a fresh loopback port, so standing in for the tailnet does not
+		// collide with the loopback listener the binder already opened.
+		Listen: func(network, addr string) (net.Listener, error) {
+			return net.Listen(network, "127.0.0.1:0")
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := b.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+
+	waitFor(t, func() bool { return b.held() == "127.0.0.1" }, "should bind the address first")
+
+	mu.Lock()
+	settled := calls
+	mu.Unlock()
+
+	// Several poll intervals with nothing changing.
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	after := calls
+	mu.Unlock()
+	if after != settled {
+		t.Errorf("lookup ran %d more times while the address was still held; it should not run at all",
+			after-settled)
+	}
+}
