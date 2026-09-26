@@ -97,6 +97,15 @@ func (b *Binder) watch(ctx context.Context) {
 
 // reconcile makes the bound address match the one Tailscale reports.
 func (b *Binder) reconcile(lookup func() (string, error)) {
+	// While the address we hold is still on an interface, nothing has changed and
+	// there is nothing to ask. This matters more than it looks: the full lookup
+	// shells out to Tailscale, and doing that every few seconds for the life of the
+	// daemon is both tens of thousands of processes a day and a fresh chance to
+	// meet the command that hangs. Reading the interface list costs neither.
+	if held := b.held(); held != "" && assigned(held) {
+		return
+	}
+
 	ip, err := lookup()
 	if err != nil {
 		ip = ""
@@ -139,6 +148,13 @@ func (b *Binder) reconcile(lookup func() (string, error)) {
 	}
 	b.bound = ip
 	b.say(fmt.Sprintf("tailnet address %s is up; reachable from your phone", ip))
+}
+
+// held reports the tailnet address currently served, or "" for none.
+func (b *Binder) held() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.bound
 }
 
 func (b *Binder) listen(network, addr string) (net.Listener, error) {
