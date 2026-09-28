@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,10 +99,30 @@ func hackboardTarget(base, path string) (string, bool) {
 		return "", false
 	}
 	switch action {
-	case "pass", "retry", "direction", "build", "chat", "submission", "result":
+	case "pass", "retry", "direction", "build", "chat", "submission", "result", "want":
 		return base + "/board/" + action, true
 	}
 	return "", false
+}
+
+// The two things the board reads off its own address: which view, and which row
+// to open on. Dropping the query is what made the "board" link beside "queue"
+// land back on the queue every time, and every "Offer this now" redirect lose
+// the row it came from. Rebuilt from a fixed list, like the path above, so the
+// query can select a view and never say anything else.
+func hackboardQuery(raw string) string {
+	in, err := url.ParseQuery(raw)
+	if err != nil {
+		return ""
+	}
+	out := url.Values{}
+	if in.Get("view") == "board" {
+		out.Set("view", "board")
+	}
+	if sel := in.Get("sel"); sel != "" && len(sel) <= 512 {
+		out.Set("sel", sel)
+	}
+	return out.Encode()
 }
 
 func (s *Server) hackboard(w http.ResponseWriter, r *http.Request) {
@@ -114,6 +135,11 @@ func (s *Server) hackboard(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.NotFound(w, r)
 		return
+	}
+	if r.Method == http.MethodGet && r.URL.Path == "/board" {
+		if q := hackboardQuery(r.URL.RawQuery); q != "" {
+			target += "?" + q
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), hackqueueTimeout)
@@ -247,18 +273,42 @@ func (s *Server) hackqueueCountUncached(w http.ResponseWriter, r *http.Request) 
 	needs := 0
 	// The four the board files under "needs you": a direction to pick, three
 	// ideas to choose between, a build to submit, and a failure to resolve.
+	//
+	// A hackathon whose deadline has passed is not a decision any more, except a
+	// finished build, where whether it went in before the deadline is a fact only
+	// you have. The dispatcher reaps the rest within five minutes; counting them
+	// until then made the badge promise work that was only a dead row.
+	now := time.Now()
 	for _, status := range []string{"pending", "idea_pending", "ready", "failed"} {
 		var entries []struct {
-			ID string `json:"id"`
+			ID     string `json:"id"`
+			Closes string `json:"closes"`
 		}
 		if err := json.Unmarshal(queue[status], &entries); err != nil {
 			continue
 		}
 		for _, e := range entries {
-			if e.ID != "" {
-				needs++
+			if e.ID == "" {
+				continue
 			}
+			if status != "ready" && hackDeadlinePassed(e.Closes, now) {
+				continue
+			}
+			needs++
 		}
 	}
 	writeJSON(w, 200, map[string]any{"needsYou": needs})
+}
+
+// Whether a deadline has passed. An unreadable one is treated as open, so a
+// format the Worker changes can only over-count, never hide a live decision.
+func hackDeadlinePassed(closes string, now time.Time) bool {
+	if closes == "" {
+		return false
+	}
+	at, err := time.Parse(time.RFC3339, closes)
+	if err != nil {
+		return false
+	}
+	return at.Before(now)
 }
