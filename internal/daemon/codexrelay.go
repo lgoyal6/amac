@@ -47,6 +47,10 @@ type relayWindow struct {
 	ResetsAt  string  `json:"resets_at"`
 	Evidence  string  `json:"evidence"`
 	Reserve   float64 `json:"reserve_marker_percent,omitempty"`
+	// Burn is relay's own projection for this window, absent when it has none.
+	Burn         *float64 `json:"burn_percent_per_hour,omitempty"`
+	HoursToEmpty *float64 `json:"hours_to_empty,omitempty"`
+	RunsOut      bool     `json:"will_run_out_before_reset,omitempty"`
 }
 
 type relayWorkspace struct {
@@ -138,6 +142,7 @@ type relayState struct {
 		CredentialOK bool   `json:"credential_ok"`
 		Protected    bool   `json:"protected"`
 		Windows      []struct {
+			Minutes   int     `json:"minutes"`
 			Label     string  `json:"label"`
 			Remaining float64 `json:"remaining_percent"`
 			ResetsAt  string  `json:"resets_at"`
@@ -157,6 +162,13 @@ type relayState struct {
 		Enabled  bool   `json:"enabled"`
 		Sentence string `json:"sentence"`
 	} `json:"rules"`
+	Projections []struct {
+		WorkspaceID   string  `json:"workspace_id"`
+		WindowMinutes int     `json:"window_minutes"`
+		Burn          float64 `json:"burn_percent_per_hour"`
+		HoursToEmpty  float64 `json:"hours_to_empty"`
+		RunsOut       bool    `json:"will_run_out_before_reset"`
+	} `json:"projections"`
 	Summary  relaySummary `json:"summary"`
 	Problems []struct {
 		Kind    string `json:"kind"`
@@ -206,10 +218,16 @@ func (s *Server) codexRelay(w http.ResponseWriter, r *http.Request) {
 			IsNext:    ws.ID == state.Proposed.WorkspaceID,
 		}
 		for _, win := range ws.Windows {
-			v.Windows = append(v.Windows, relayWindow{
+			rw := relayWindow{
 				Label: win.Label, Remaining: win.Remaining, ResetsAt: win.ResetsAt,
 				Evidence: win.Evidence, Reserve: win.Reserve,
-			})
+			}
+			for _, p := range state.Projections {
+				if p.WorkspaceID == ws.ID && p.WindowMinutes == win.Minutes {
+					rw.Burn, rw.HoursToEmpty, rw.RunsOut = &p.Burn, &p.HoursToEmpty, p.RunsOut
+				}
+			}
+			v.Windows = append(v.Windows, rw)
 		}
 		out.Workspaces = append(out.Workspaces, v)
 	}
