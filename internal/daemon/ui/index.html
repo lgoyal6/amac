@@ -180,7 +180,6 @@
   .widget.wide { grid-column:span 2; }
   div.widget { cursor:default; }
   div.widget:hover { border-color:var(--line); }
-  .widget.slot { border-style:dashed; background:transparent; cursor:default; color:var(--faint); }
   .w-head { display:flex; align-items:baseline; justify-content:space-between; gap:var(--s2);
             font:600 var(--t-12)/1.4 var(--mono); color:var(--dim); letter-spacing:.06em; text-transform:uppercase; }
   .w-head .go { color:var(--faint); font-weight:500; text-transform:none; letter-spacing:0; }
@@ -1807,8 +1806,8 @@ function renderHome({ actions, unread, health, spend, apps, appsTotal, runs, mac
       rows: [['today', (spend.todayUsd || '$0') + ' eq'], ['30d', (spend.agentUsd || '$0') + ' eq'], ['alerts', (spend.alerts || []).length]] },
     { key:'jobs', head:'jobs', tab:'jobs',
       big: appsTotal, bigClass: due ? 'warn' : '', sub: due ? `${due} follow-up${due === 1 ? '' : 's'} due` : 'applications tracked, nothing due' },
-    { key:'codexlb', cls:'slot', head:'codex-lb', badge:'reserved', tab:null,
-      body:'<div class="w-sub">accounts · remaining · burn. wired when yours exists.</div>' },
+    { key:'codexlb', cls:'wide', head:'codex-relay', tab:'relay',
+      body:'<div id="relayWidgetOut" class="w-sub">loading</div>' },
   ];
 
   el.className = 'widgets';
@@ -1826,6 +1825,7 @@ function renderHome({ actions, unread, health, spend, apps, appsTotal, runs, mac
     b.onclick = () => { const w = widgets[Number(b.dataset.widget)]; openTopTab(w.tab); if (w.view) setAgentView(w.view); };
   });
   loadMachine();
+  loadRelayWidget();
   // Rows inside needs-you go to their own place, not the widget's.
   const needsEl = el.querySelector('.widget.wide .w-list');
   if (needsEl) [...needsEl.querySelectorAll('.w-act')].forEach((row, i) => {
@@ -2245,6 +2245,46 @@ function columns(points, label) {
         <span class="col-tip">${esc(p.label)} · ${p.value} ${esc(label)}</span>
       </div>`).join('')}</div>
     <div class="cols-axis"><span>${esc(points[0].label)}</span><span>${esc(points[points.length - 1].label)}</span></div>`;
+}
+
+// ------------------------------------------------------- codex-relay widget --
+
+// Every account codex-relay can route to, at its tightest window, since that is
+// the one that stops it: the account the next conversation goes to first, then
+// the ones that can take a turn, then the ones that need a person. Burn is
+// relay's own projection, not a figure worked out here.
+async function loadRelayWidget() {
+  const el = $('relayWidgetOut');
+  let d;
+  try {
+    const r = await api('/api/codex-relay');
+    if (!r.ok) throw new Error(r.status);
+    d = await r.json();
+  } catch (e) { el.textContent = 'could not reach amac to ask about codex-relay'; return; }
+  if (!d.running) { el.textContent = d.detail || 'codex-relay is not running'; return; }
+
+  const hours = h => h < 1 ? `${Math.round(h * 60)}m` : h < 48 ? `${Math.round(h)}h` : `${Math.round(h / 24)}d`;
+  const until = iso => hours(Math.max(0, (new Date(iso) - Date.now()) / 36e5));
+  const rows = (d.workspaces || []).map(ws => {
+    const tight = (ws.windows || []).reduce((a, w) => !a || w.remaining_percent < a.remaining_percent ? w : a, null);
+    const hurt = relayHurt(ws);
+    let detail;
+    if (ws.paused) detail = 'paused';
+    else if (!ws.credential_ok) detail = 'signed out';
+    else if (!tight) detail = 'no quota read yet';
+    else if (hurt) detail = `out of quota${tight.resets_at ? ` · back in ${until(tight.resets_at)}` : ''}`;
+    else if (tight.burn_percent_per_hour) detail = `${tight.label} · ${tight.burn_percent_per_hour.toFixed(1)}%/h${tight.will_run_out_before_reset ? ` · empty in ${hours(tight.hours_to_empty)}` : ''}`;
+    else detail = `${tight.label} · idle`;
+    return { ws, tight, hurt, detail, rank: ws.is_next ? 0 : hurt ? 2 : 1 };
+  }).sort((a, b) => a.rank - b.rank);
+
+  const ready = rows.filter(x => !x.hurt).length;
+  const go = el.closest('.widget').querySelector('.go');
+  if (go) go.textContent = `${ready}/${rows.length} ready${(d.problems || []).length ? ` · ${d.problems.length} problem${d.problems.length === 1 ? '' : 's'}` : ''}`;
+  el.className = 'w-list';
+  el.innerHTML = rows.map(x => `<div class="w-item"><span class="t">${x.tight ? Math.round(x.tight.remaining_percent) + '%' : '--'}</span><span class="n">${x.ws.is_next ? '▸ ' : ''}${esc(x.ws.name)}</span><span class="d">${esc(x.detail)}</span></div>`).join('')
+    || 'no accounts connected';
+  if (d.next) el.insertAdjacentHTML('afterend', `<div class="w-sub">${esc(d.next)}</div>`);
 }
 
 // ---------------------------------------------------------------- machine --
