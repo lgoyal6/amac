@@ -318,6 +318,19 @@ Tool calls, permission requests and output arrive as structured data, so
 Verified against Claude Agent v0.66.0 and Codex v1.1.14, both protocol v1, both
 driven by the same code.
 
+`fs/write_text_file` now has a guarded path that requires an explicit,
+session-bound grant for the exact path, and records a durable intent before the
+write plus an effect receipt afterward. ACP's separate permission request does
+not carry a standard correlation to that write, so it is not treated as this
+grant. Existing clients are not wired to issue the guarded grant and their
+writes fail closed until that client contract is added.
+
+`fs/preview_write_text_file` returns the same exact-path authorized write plan
+with `dryRun: true`, including the tool call and expected file effect. It checks
+the live session and grant but does not dispatch the tool, write a file, or add
+operation intent/effect events. Execution requires a separate
+`fs/write_text_file` request under the current grant.
+
 ```
 amac setup                     install pinned adapters once
 amac run -agent codex 'task'   start a session, send a prompt, answer it
@@ -483,9 +496,10 @@ amac prune -apply     carry it out
 amac prune -apply -vacuum   and reclaim the file space
 ```
 
-Permission requests and answers, actuations, session starts and ends and
-automation runs are never touched. That is the audit trail, it is tiny, and an
-audit log with a retention policy is not an audit log.
+Permission requests and answers, actuations, operation intents and receipts,
+session starts and ends and automation runs are never touched. That is the
+audit trail, it is tiny, and an audit log with a retention policy is not an
+audit log.
 
 On a copy of the real log with the clock moved forward, 4.9MB becomes 738KB.
 

@@ -36,6 +36,9 @@ const (
 	// Anything that changed the world outside amac. Every one is recorded so
 	// the audit log and kill switch have something to work with.
 	KindActuation Kind = "actuation"
+	// Operation intents and receipts bracket an authorized external effect.
+	KindOperationIntent Kind = "operation.intent"
+	KindOperationEffect Kind = "operation.effect"
 
 	// What you were doing. Metadata only, and only for allowlisted apps.
 	KindObservation Kind = "observation"

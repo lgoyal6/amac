@@ -61,7 +61,7 @@ func DefaultRetention() []Rule {
 		{Kind: "session.state", After: 90 * 24 * time.Hour,
 			Why: "cheap per row, and the history the board draws from"},
 		// Deliberately absent, and the absence is the policy: permission.requested,
-		// permission.answered, actuation, session.started, session.ended,
+		// permission.answered, actuation, operation.intent, operation.effect, session.started, session.ended,
 		// automation.run, application, route.decided. Audit and delivery history,
 		// all small, none of it worth reclaiming.
 	}

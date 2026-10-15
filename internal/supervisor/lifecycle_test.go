@@ -15,6 +15,13 @@ import (
 	"github.com/lgoyal6/amac/internal/event"
 )
 
+type fakeOperatorTask struct {
+	ID        string `json:"id"`
+	Path      string `json:"path"`
+	Content   string `json:"content"`
+	SessionID string `json:"sessionId"`
+}
+
 // The session lifecycle is the part of amac that actually starts, drives and
 // kills agents, and until this file it was the least tested thing in the
 // repository: twelve functions at zero coverage, including handlePermission,
@@ -47,6 +54,14 @@ func fakeAgent() {
 	in.Buffer(make([]byte, 1<<20), 1<<20)
 	out := json.NewEncoder(os.Stdout)
 	scenario := os.Getenv("AMAC_FAKE_SCENARIO")
+	var operatorTasks []fakeOperatorTask
+	var operatorResults []map[string]any
+	if scenario == "operator-study" {
+		b, err := os.ReadFile(os.Getenv("AMAC_FAKE_TASKS"))
+		if err != nil || json.Unmarshal(b, &operatorTasks) != nil {
+			os.Exit(87)
+		}
+	}
 
 	send := func(v any) { _ = out.Encode(v) }
 
@@ -82,12 +97,70 @@ func fakeAgent() {
 				}})
 			}
 		case "session/prompt":
+			if scenario == "operator-study" {
+				var prompt struct {
+					Prompt []struct {
+						Text string `json:"text"`
+					} `json:"prompt"`
+				}
+				if json.Unmarshal(req.Params, &prompt) != nil || len(prompt.Prompt) != 1 {
+					os.Exit(88)
+				}
+				parts := strings.SplitN(prompt.Prompt[0].Text, ":", 2)
+				if len(parts) != 2 {
+					os.Exit(89)
+				}
+				mode, taskID := parts[0], parts[1]
+				var task *fakeOperatorTask
+				for i := range operatorTasks {
+					if operatorTasks[i].ID == taskID {
+						task = &operatorTasks[i]
+						break
+					}
+				}
+				if task == nil || (mode != "recommendation" && mode != "execution") {
+					os.Exit(90)
+				}
+				method, requestID := "fs/preview_write_text_file", "preview-"+taskID
+				if mode == "execution" {
+					method, requestID = "fs/write_text_file", "execute-"+taskID
+				}
+				send(map[string]any{"jsonrpc": "2.0", "id": requestID, "method": method,
+					"params": map[string]any{"sessionId": task.SessionID, "path": task.Path, "content": task.Content}})
+				for in.Scan() {
+					var response struct {
+						ID    string `json:"id"`
+						Error *struct {
+							Code    int    `json:"code"`
+							Message string `json:"message"`
+						} `json:"error"`
+						Result json.RawMessage `json:"result"`
+					}
+					if json.Unmarshal(in.Bytes(), &response) != nil || response.ID != requestID {
+						continue
+					}
+					entry := map[string]any{"mode": mode, "taskId": taskID}
+					if response.Error != nil {
+						entry["errorCode"], entry["error"] = response.Error.Code, response.Error.Message
+					} else {
+						entry["result"] = response.Result
+					}
+					operatorResults = append(operatorResults, entry)
+					b, _ := json.Marshal(operatorResults)
+					_ = os.WriteFile(os.Getenv("AMAC_FAKE_RESULTS"), b, 0o644)
+					break
+				}
+			}
+			if scenario == "fsops-exit" {
+				send(map[string]any{"jsonrpc": "2.0", "id": "exit-write", "method": "fs/write_text_file",
+					"params": map[string]any{"sessionId": "fake-session-1", "path": os.Getenv("AMAC_FAKE_WRITE"), "content": "orphaned"}})
+				return
+			}
 			if scenario == "fsops" {
 				// Drive Handle's real branches and record what came back, so
 				// the assertions are on what an agent actually receives.
 				results := map[string]any{}
-				ask := func(label, method string, params any) {
-					id := label
+				askID := func(label, id, method string, params any) {
 					send(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
 					for in.Scan() {
 						var r struct {
@@ -109,10 +182,54 @@ func fakeAgent() {
 						return
 					}
 				}
-				ask("relative", "fs/write_text_file", map[string]any{"path": "notes.md", "content": "x"})
+				ask := func(label, method string, params any) { askID(label, label, method, params) }
+				ask("relative", "fs/write_text_file", map[string]any{
+					"sessionId": "fake-session-1", "path": "notes.md", "content": "x"})
+				ask("denied", "fs/write_text_file", map[string]any{
+					"sessionId": "fake-session-1", "path": os.Getenv("AMAC_FAKE_DENIED_WRITE"), "content": "denied"})
 				ask("absolute", "fs/write_text_file", map[string]any{
-					"path": os.Getenv("AMAC_FAKE_WRITE"), "content": "hello"})
+					"sessionId": "fake-session-1", "path": os.Getenv("AMAC_FAKE_WRITE"), "content": "hello"})
+				// A repeated JSON-RPC request id simulates at-least-once delivery.
+				askID("duplicate", "absolute", "fs/write_text_file", map[string]any{
+					"sessionId": "fake-session-1", "path": os.Getenv("AMAC_FAKE_WRITE"), "content": "hello"})
+				askID("conflict", "absolute", "fs/write_text_file", map[string]any{
+					"sessionId": "fake-session-1", "path": os.Getenv("AMAC_FAKE_WRITE"), "content": "changed"})
 				ask("unknown", "terminal/create", map[string]any{})
+				b, _ := json.Marshal(results)
+				_ = os.WriteFile(os.Getenv("AMAC_FAKE_RESULTS"), b, 0o644)
+			}
+			if scenario == "preview" {
+				results := map[string]any{}
+				ask := func(label, id string, params any) {
+					send(map[string]any{"jsonrpc": "2.0", "id": id, "method": "fs/preview_write_text_file", "params": params})
+					for in.Scan() {
+						var r struct {
+							ID    string `json:"id"`
+							Error *struct {
+								Code    int    `json:"code"`
+								Message string `json:"message"`
+							} `json:"error"`
+							Result json.RawMessage `json:"result"`
+						}
+						if json.Unmarshal(in.Bytes(), &r) != nil || r.ID != id {
+							continue
+						}
+						if r.Error != nil {
+							results[label] = map[string]any{"code": r.Error.Code, "message": r.Error.Message}
+						} else {
+							results[label] = map[string]any{"code": 0, "result": json.RawMessage(r.Result)}
+						}
+						return
+					}
+				}
+				ask("valid", "preview-valid", map[string]any{
+					"sessionId": "fake-session-1", "path": os.Getenv("AMAC_FAKE_WRITE"), "content": "proposed bytes"})
+				ask("wrong_path", "preview-wrong-path", map[string]any{
+					"sessionId": "fake-session-1", "path": os.Getenv("AMAC_FAKE_WRITE") + ".other", "content": "outside scope"})
+				ask("wrong_session", "preview-wrong-session", map[string]any{
+					"sessionId": "another-session", "path": os.Getenv("AMAC_FAKE_WRITE"), "content": "wrong owner"})
+				ask("relative", "preview-relative", map[string]any{
+					"sessionId": "fake-session-1", "path": "relative.txt", "content": "invalid path"})
 				b, _ := json.Marshal(results)
 				_ = os.WriteFile(os.Getenv("AMAC_FAKE_RESULTS"), b, 0o644)
 			}
@@ -146,6 +263,71 @@ func fakeAgent() {
 		default:
 			send(map[string]any{"jsonrpc": "2.0", "id": req.ID,
 				"error": map[string]any{"code": -32601, "message": "fake agent: " + req.Method}})
+		}
+	}
+}
+
+func TestWritePreviewReturnsAuthorizedPlanWithoutEffects(t *testing.T) {
+	dir := t.TempDir()
+	results := filepath.Join(dir, "results.json")
+	target := filepath.Join(dir, "nested", "result.txt")
+	t.Setenv("AMAC_FAKE_RESULTS", results)
+	t.Setenv("AMAC_FAKE_WRITE", target)
+	sup := withFakeAgent(t, "preview")
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	sess, err := sup.Start(ctx, "claude", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sup.Shutdown()
+	if err := sess.AuthorizeWrite(WriteScope{
+		SessionID: sess.ID, AuthorizationID: "preview-grant",
+		Path: target, ExpiresAt: time.Now().Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sess.Prompt(ctx, "preview only"); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	b, err := os.ReadFile(results)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]struct {
+		Code    int             `json:"code"`
+		Message string          `json:"message"`
+		Result  json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["valid"].Code != 0 {
+		t.Fatalf("valid preview refused: %+v", got["valid"])
+	}
+	var plan WritePlan
+	if err := json.Unmarshal(got["valid"].Result, &plan); err != nil {
+		t.Fatalf("preview plan unreadable: %v", err)
+	}
+	if !plan.DryRun || plan.ToolCall.Name != "fs/write_text_file" || plan.ToolCall.Params.Path != target ||
+		plan.ToolCall.Params.Content != "proposed bytes" || plan.ExpectedEffect.Path != target ||
+		plan.ExpectedEffect.Bytes != len("proposed bytes") || plan.AuthorizationID != "preview-grant" ||
+		plan.Scope != "fs.write_text_file:exact-path" || plan.Contract.ExactPath != target ||
+		plan.Contract.AuthorizationID != "preview-grant" || !plan.ExpectedEffect.CreateParentDirectories ||
+		plan.ExpectedEffect.FileMode != "0644" || len(plan.ExpectedAudit) != 3 || plan.OperationID == "" {
+		t.Fatalf("preview omitted the authorized operation plan: %+v", plan)
+	}
+	for _, label := range []string{"wrong_path", "wrong_session", "relative"} {
+		if got[label].Code == 0 {
+			t.Errorf("invalid preview %q was accepted: %+v", label, got[label])
+		}
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("dry-run created the target: %v", err)
+	}
+	for _, kind := range []event.Kind{event.KindOperationIntent, event.KindOperationEffect, event.KindActuation} {
+		if events := kinds(t, sup.log, kind); len(events) != 0 {
+			t.Errorf("dry-run wrote %s events: %v", kind, events)
 		}
 	}
 }
@@ -332,7 +514,6 @@ func TestAnsweringTwiceIsSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sup.Shutdown()
-
 	go func() { _, _ = sess.Prompt(ctx, "go") }()
 	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); {
 		if sess.Pending() != nil {
@@ -505,8 +686,10 @@ func TestHandleAnswersEveryRequestAnAgentMakes(t *testing.T) {
 	dir := t.TempDir()
 	results := filepath.Join(dir, "results.json")
 	target := filepath.Join(dir, "sub", "out.txt")
+	deniedTarget := filepath.Join(dir, "unapproved.txt")
 	t.Setenv("AMAC_FAKE_RESULTS", results)
 	t.Setenv("AMAC_FAKE_WRITE", target)
+	t.Setenv("AMAC_FAKE_DENIED_WRITE", deniedTarget)
 
 	sup := withFakeAgent(t, "fsops")
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
@@ -516,6 +699,12 @@ func TestHandleAnswersEveryRequestAnAgentMakes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sup.Shutdown()
+	if err := sess.AuthorizeWrite(WriteScope{
+		SessionID: sess.ID, AuthorizationID: "test-explicit-grant",
+		Path: target, ExpiresAt: time.Now().Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("install explicit exact-path write grant: %v", err)
+	}
 
 	if _, err := sess.Prompt(ctx, "do file things"); err != nil {
 		t.Fatalf("prompt: %v", err)
@@ -538,16 +727,169 @@ func TestHandleAnswersEveryRequestAnAgentMakes(t *testing.T) {
 	if got["unknown"].Code != -32601 {
 		t.Errorf("unknown method: code %d, want -32601", got["unknown"].Code)
 	}
+	if got["denied"].Code != -32000 {
+		t.Errorf("out-of-scope write: code %d, want -32000", got["denied"].Code)
+	}
+	if _, err := os.Stat(deniedTarget); !os.IsNotExist(err) {
+		t.Errorf("out-of-scope write had an effect: stat error %v", err)
+	}
 	if got["absolute"].Code != 0 {
 		t.Errorf("absolute write refused: %+v", got["absolute"])
 	}
+	if got["duplicate"].Code != 0 {
+		t.Errorf("duplicate delivery did not return the saved result: %+v", got["duplicate"])
+	}
+	if got["conflict"].Code != -32000 {
+		t.Errorf("request id reused with different content returned code %d, want -32000", got["conflict"].Code)
+	}
 	if c, err := os.ReadFile(target); err != nil || string(c) != "hello" {
-		t.Errorf("file not written: %v %q", err, c)
+		t.Errorf("duplicate delivery repeated the effect: %v %q", err, c)
 	}
 	// A write an agent makes is an actuation. Without it, "what did it change"
 	// is unanswerable after the fact.
 	acts := kinds(t, sup.log, event.KindActuation)
 	if len(acts) != 1 || acts[0]["path"] != target {
 		t.Errorf("actuation not recorded: %v", acts)
+	}
+	if got := kinds(t, sup.log, event.KindOperationIntent); len(got) != 1 || got[0]["authorizationId"] != "test-explicit-grant" {
+		t.Errorf("write intent missing explicit authority: %v", got)
+	}
+	if got := kinds(t, sup.log, event.KindOperationEffect); len(got) != 1 || got[0]["outcome"] != "succeeded" {
+		t.Errorf("write effect receipt missing: %v", got)
+	}
+}
+
+func TestFsWriteFailsClosedWhenIntentAuditCannotCommit(t *testing.T) {
+	dir := t.TempDir()
+	results := filepath.Join(dir, "results.json")
+	target := filepath.Join(dir, "out.txt")
+	t.Setenv("AMAC_FAKE_RESULTS", results)
+	t.Setenv("AMAC_FAKE_WRITE", target)
+	t.Setenv("AMAC_FAKE_DENIED_WRITE", filepath.Join(dir, "denied.txt"))
+
+	sup := withFakeAgent(t, "fsops")
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	sess, err := sup.Start(ctx, "claude", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sup.Shutdown()
+	if err := sess.AuthorizeWrite(WriteScope{
+		SessionID: sess.ID, AuthorizationID: "audit-failure-test",
+		Path: target, ExpiresAt: time.Now().Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sup.log.DB().Exec(`CREATE TRIGGER fail_operation_intent BEFORE INSERT ON events
+		WHEN NEW.kind = 'operation.intent' BEGIN SELECT RAISE(FAIL, 'injected audit outage'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sess.Prompt(ctx, "try file operations"); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	var got map[string]struct {
+		Code int `json:"code"`
+	}
+	b, err := os.ReadFile(results)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["absolute"].Code != -32000 {
+		t.Errorf("write with failed intent audit returned code %d, want -32000", got["absolute"].Code)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("write occurred without durable intent: stat error %v", err)
+	}
+}
+
+func TestFsWriteRefusesUnresolvedIntentAndReusedSessionIdentity(t *testing.T) {
+	dir := t.TempDir()
+	results := filepath.Join(dir, "results.json")
+	target := filepath.Join(dir, "out.txt")
+	t.Setenv("AMAC_FAKE_RESULTS", results)
+	t.Setenv("AMAC_FAKE_WRITE", target)
+	t.Setenv("AMAC_FAKE_DENIED_WRITE", filepath.Join(dir, "denied.txt"))
+
+	sup := withFakeAgent(t, "fsops")
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	sess, err := sup.Start(ctx, "claude", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sup.Shutdown()
+	if err := sess.AuthorizeWrite(WriteScope{
+		SessionID: sess.ID, AuthorizationID: "retry-test-grant",
+		Path: target, ExpiresAt: time.Now().Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	requestID := json.RawMessage(`"absolute"`)
+	intent := operationRecord{
+		OperationID: operationID(sess.ID, requestID), SessionID: sess.ID,
+		ACPSessionID: "previous-acp-session", RequestID: string(requestID),
+		AuthorizationID: "retry-test-grant", Scope: "fs.write_text_file:exact-path", Path: target,
+		InputDigest: inputDigest("hello"),
+	}
+	ev, err := event.New(event.KindOperationIntent, "test-crash-recovery", sess.ID, intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sup.log.Append(ctx, ev); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sess.Prompt(ctx, "retry after a crash"); err != nil {
+		t.Fatalf("prompt: %v", err)
+	}
+	var got map[string]struct {
+		Code int `json:"code"`
+	}
+	b, err := os.ReadFile(results)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["absolute"].Code != -32000 {
+		t.Errorf("unresolved old-session intent returned code %d, want -32000", got["absolute"].Code)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("unresolved intent was replayed: stat error %v", err)
+	}
+}
+
+func TestFsWriteDoesNotRunAfterAgentProcessExits(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "out.txt")
+	t.Setenv("AMAC_FAKE_WRITE", target)
+	sup := withFakeAgent(t, "fsops-exit")
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+	defer cancel()
+	sess, err := sup.Start(ctx, "claude", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sup.Shutdown()
+	if err := sess.AuthorizeWrite(WriteScope{
+		SessionID: sess.ID, AuthorizationID: "exit-test-grant",
+		Path: target, ExpiresAt: time.Now().Add(time.Minute),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Hold the effect critical section until the synthetic child exits so the
+	// request is delivered but cannot reach the write check prematurely.
+	sess.operationMu.Lock()
+	_, promptErr := sess.Prompt(ctx, "write and exit")
+	sess.operationMu.Unlock()
+	if promptErr == nil {
+		t.Fatal("prompt succeeded after its agent exited")
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Errorf("effect ran after its owner exited: stat error %v", err)
 	}
 }

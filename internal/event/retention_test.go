@@ -105,7 +105,8 @@ func TestTheAuditTrailIsNeverTouched(t *testing.T) {
 	ancient := now.Add(-5 * 365 * 24 * time.Hour)
 
 	for _, k := range []Kind{KindPermissionRequested, KindPermissionAnswered,
-		KindActuation, KindSessionStarted, KindSessionEnded, KindAutomationRun} {
+		KindActuation, KindOperationIntent, KindOperationEffect,
+		KindSessionStarted, KindSessionEnded, KindAutomationRun} {
 		put(t, l, k, ancient, map[string]any{"detail": "five years old", "path": "/etc/x"})
 	}
 
@@ -113,7 +114,8 @@ func TestTheAuditTrailIsNeverTouched(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, k := range []Kind{KindPermissionRequested, KindPermissionAnswered,
-		KindActuation, KindSessionStarted, KindSessionEnded, KindAutomationRun} {
+		KindActuation, KindOperationIntent, KindOperationEffect,
+		KindSessionStarted, KindSessionEnded, KindAutomationRun} {
 		got := payloadOf(t, l, k)
 		if len(got) != 1 {
 			t.Errorf("%s was pruned; it is audit or delivery history", k)

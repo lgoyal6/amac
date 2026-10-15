@@ -56,6 +56,37 @@ func TestSequenceIsTotalOrder(t *testing.T) {
 	}
 }
 
+func TestOperationIntentKeyIsUniqueAndReceiptLookupIsScoped(t *testing.T) {
+	l := mustOpen(t, filepath.Join(t.TempDir(), "operations.db"), Full)
+	ctx := context.Background()
+	intent, err := New(KindOperationIntent, "test", "session-1", map[string]any{"operationId": "op-1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.Append(ctx, intent); err != nil {
+		t.Fatal(err)
+	}
+	duplicate, _ := New(KindOperationIntent, "test", "session-1", map[string]any{"operationId": "op-1"})
+	if _, err := l.Append(ctx, duplicate); err == nil {
+		t.Fatal("duplicate operation intent was accepted")
+	}
+	effect, _ := New(KindOperationEffect, "test", "session-1", map[string]any{"operationId": "op-1"})
+	if _, err := l.Append(ctx, effect); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := l.OperationEvents(ctx, "op-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].Kind != KindOperationIntent || rows[1].Kind != KindOperationEffect {
+		t.Fatalf("operation lookup returned wrong rows: %+v", rows)
+	}
+	other, err := l.OperationEvents(ctx, "op-other")
+	if err != nil || len(other) != 0 {
+		t.Fatalf("unrelated operation lookup = %v, %v", other, err)
+	}
+}
+
 // Concurrent writers must still produce a total order with no duplicate or
 // skipped sequence numbers. The whole system uses seq as a join key and as the
 // replay cursor, so a duplicate is silent data corruption.

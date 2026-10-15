@@ -55,11 +55,13 @@ type Session struct {
 	ACPID   string
 	Started time.Time
 
-	mu      sync.RWMutex
-	state   State
-	detail  string
-	pending *Pending
-	mode    PermissionMode
+	mu          sync.RWMutex
+	state       State
+	detail      string
+	pending     *Pending
+	mode        PermissionMode
+	writeScope  *WriteScope
+	operationMu sync.Mutex
 
 	client *acp.Client
 	sup    *Supervisor
@@ -271,20 +273,15 @@ func (s *Session) Handle(ctx context.Context, req acp.IncomingRequest) {
 			_ = req.RespondErr(-32602, "bad params: "+err.Error())
 			return
 		}
-		if !filepath.IsAbs(p.Path) {
-			_ = req.RespondErr(-32602, "path must be absolute")
+		s.handleWrite(ctx, req, p)
+
+	case "fs/preview_write_text_file":
+		var p acp.WriteTextFileParams
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			_ = req.RespondErr(-32602, "bad params: "+err.Error())
 			return
 		}
-		if err := os.MkdirAll(filepath.Dir(p.Path), 0o755); err != nil {
-			_ = req.RespondErr(-32000, err.Error())
-			return
-		}
-		if err := os.WriteFile(p.Path, []byte(p.Content), 0o644); err != nil {
-			_ = req.RespondErr(-32000, err.Error())
-			return
-		}
-		s.sup.record(event.KindActuation, s.ID, map[string]any{"op": "write", "path": p.Path, "bytes": len(p.Content)})
-		_ = req.Respond(nil)
+		s.handleWritePreview(ctx, req, p)
 
 	default:
 		// Refuse explicitly. An agent that receives an error can report it;

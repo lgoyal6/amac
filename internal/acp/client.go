@@ -32,6 +32,9 @@ type Notification struct {
 type IncomingRequest struct {
 	Method string
 	Params json.RawMessage
+	// RequestID is the JSON-RPC id assigned by the peer. It is surfaced so
+	// durable effect handlers can correlate an intent with duplicate delivery.
+	RequestID json.RawMessage
 
 	id json.RawMessage
 	c  *Client
@@ -334,7 +337,7 @@ func (c *Client) read() error {
 			// decides, and doing that on the read loop would freeze every
 			// other session behind it.
 			if len(msg.ID) > 0 {
-				req := IncomingRequest{Method: msg.Method, Params: msg.Params, id: msg.ID, c: c}
+				req := IncomingRequest{Method: msg.Method, Params: msg.Params, RequestID: append(json.RawMessage(nil), msg.ID...), id: msg.ID, c: c}
 				c.mu.Lock()
 				h := c.handler
 				c.mu.Unlock()
