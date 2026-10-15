@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -239,10 +238,7 @@ func (s *Session) handleWrite(ctx context.Context, req acp.IncomingRequest, p ac
 
 	writeErr := s.operationOwnerError(ctx)
 	if writeErr == nil {
-		writeErr = os.MkdirAll(filepath.Dir(p.Path), 0o755)
-	}
-	if writeErr == nil {
-		writeErr = os.WriteFile(p.Path, []byte(p.Content), 0o644)
+		writeErr = writeExactPath(p.Path, []byte(p.Content))
 	}
 	if writeErr != nil {
 		rec.Outcome, rec.Error = "failed", writeErr.Error()
