@@ -1,3 +1,6 @@
+// Stores durable events and scoped operation receipts for supervisor/operation.go.
+// SQLite owns persistence; subscribers are a best-effort view of committed rows.
+// Operation lookup predicates match the partial index to avoid scanning operation history.
 package event
 
 import (
@@ -54,6 +57,12 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session, seq);
 CREATE INDEX IF NOT EXISTS idx_events_kind    ON events(kind, seq);
 CREATE INDEX IF NOT EXISTS idx_events_at      ON events(at);
+CREATE INDEX IF NOT EXISTS idx_events_operation
+  ON events(json_extract(payload, '$.operationId'))
+  WHERE kind IN ('operation.intent', 'operation.effect');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_operation_intent
+  ON events(json_extract(payload, '$.operationId'))
+  WHERE kind = 'operation.intent';
 `
 
 func Open(path string, d Durability) (*Log, error) {
@@ -186,6 +195,39 @@ func (l *Log) Since(ctx context.Context, seq int64, limit int) ([]Event, error) 
 		}
 		if e.At, err = time.Parse(time.RFC3339Nano, at); err != nil {
 			return nil, fmt.Errorf("parse event time %q: %w", at, err)
+		}
+		if len(payload) > 0 {
+			e.Payload = json.RawMessage(payload)
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+// Literal kinds let SQLite prove that the partial operation index applies.
+const operationEventsSQL = `
+        SELECT seq, at, kind, source, session, payload FROM events
+        WHERE kind IN ('operation.intent', 'operation.effect') AND json_extract(payload, '$.operationId') = ? ORDER BY seq`
+
+// OperationEvents returns the durable intent and effect receipt for one
+// idempotency key. The partial expression index keeps retries independent of
+// unrelated session telemetry volume.
+func (l *Log) OperationEvents(ctx context.Context, operationID string) ([]Event, error) {
+	rows, err := l.db.QueryContext(ctx, operationEventsSQL, operationID)
+	if err != nil {
+		return nil, fmt.Errorf("query operation events: %w", err)
+	}
+	defer rows.Close()
+	var out []Event
+	for rows.Next() {
+		var e Event
+		var at string
+		var payload []byte
+		if err := rows.Scan(&e.Seq, &at, &e.Kind, &e.Source, &e.Session, &payload); err != nil {
+			return nil, fmt.Errorf("scan operation event: %w", err)
+		}
+		if e.At, err = time.Parse(time.RFC3339Nano, at); err != nil {
+			return nil, fmt.Errorf("parse operation event time %q: %w", at, err)
 		}
 		if len(payload) > 0 {
 			e.Payload = json.RawMessage(payload)
