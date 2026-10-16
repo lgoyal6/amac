@@ -11,6 +11,7 @@ import (
 	"github.com/lgoyal6/amac/internal/apply"
 	"github.com/lgoyal6/amac/internal/event"
 	"github.com/lgoyal6/amac/internal/health"
+	healthdemo "github.com/lgoyal6/amac/internal/health/demo"
 )
 
 // cmdDemo runs the board against a seeded throwaway log.
@@ -87,40 +88,7 @@ func seedDemo(log *event.Log) error {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	type plan struct {
-		name    string
-		every   time.Duration
-		failAt  []int // which runs, counting back from the newest, failed
-		noOpAt  []int
-		detail  string
-		failing bool
-	}
-	plans := []plan{
-		// Failed six times in the middle of the week, green ever since. This is
-		// the row the whole run log exists to show.
-		{name: "invoice-sync", every: 6 * time.Hour, failAt: []int{12, 13, 15, 18, 19, 22},
-			detail: "synced 41 invoices"},
-		// Broken right now, so the two states are visibly different.
-		{name: "link-checker", every: 12 * time.Hour, failAt: []int{0, 1},
-			detail: "checked 208 links"},
-		// Chatty and healthy, which is what most of a roster looks like.
-		{name: "cache-warmer", every: time.Hour, detail: "index rebuilt in 4s"},
-		// Over-scheduled on purpose: mostly no-ops, so "last run green" is
-		// almost always true and almost meaningless.
-		{name: "digest-email", every: 24 * time.Hour, noOpAt: []int{1, 2, 3, 5},
-			detail: "digest sent to 3 addresses"},
-		{name: "nightly-backup", every: 24 * time.Hour, detail: "2.1GB copied"},
-	}
-
-	in := func(xs []int, i int) bool {
-		for _, x := range xs {
-			if x == i {
-				return true
-			}
-		}
-		return false
-	}
-
+	plans := demoHealthPlans()
 	for _, p := range plans {
 		runs := int(7 * 24 * time.Hour / p.every)
 		if runs > 60 {
@@ -154,17 +122,11 @@ func seedDemo(log *event.Log) error {
 		}
 	}
 
-	// One sweep, so the status tab has a verdict to render. link-checker is the
-	// only one failing now; the rest are ok, which is exactly the disagreement
-	// with the run log that the run log is for.
-	reports := []health.Report{}
-	for _, p := range plans {
-		r := health.Report{Name: p.name, Category: "automation", State: health.OK,
-			Last: now.Add(-p.every / 2), Detail: "last delivery " + short(p.every/2) + " ago"}
-		if p.name == "link-checker" {
-			r.State, r.Detail = health.Failing, "last run exited 1"
-		}
-		reports = append(reports, r)
+	// One sweep, so the status tab has a verdict to render. The latest run
+	// statuses are fed through the same evaluator used by native probes.
+	reports, err := demoHealthReports(plans, now)
+	if err != nil {
+		return err
 	}
 	sweep, err := event.New(event.KindAutomationCheck, "demo", "", map[string]any{"reports": reports})
 	if err != nil {
@@ -177,11 +139,64 @@ func seedDemo(log *event.Log) error {
 	return seedDemoApplications(log, now)
 }
 
-func short(d time.Duration) string {
-	if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
+func demoHealthPlans() []demoPlan {
+	return []demoPlan{
+		// Failed six times in the middle of the week, green ever since. This is
+		// the row the whole run log exists to show.
+		{name: "invoice-sync", every: 6 * time.Hour, grace: 3 * time.Hour, failAt: []int{12, 13, 15, 18, 19, 22},
+			detail: "synced 41 invoices"},
+		// Broken right now, so the two states are visibly different.
+		{name: "link-checker", every: 12 * time.Hour, grace: 6 * time.Hour, failAt: []int{0, 1}, failing: true,
+			detail: "checked 208 links"},
+		// Chatty and healthy, which is what most of a roster looks like.
+		{name: "cache-warmer", every: time.Hour, grace: 2 * time.Hour, detail: "index rebuilt in 4s"},
+		// Over-scheduled on purpose: mostly no-ops, so "last run green" is
+		// almost always true and almost meaningless.
+		{name: "digest-email", every: 24 * time.Hour, grace: 4 * time.Hour, noOpAt: []int{1, 2, 3, 5},
+			detail: "digest sent to 3 addresses"},
+		{name: "nightly-backup", every: 24 * time.Hour, grace: 6 * time.Hour, detail: "2.1GB copied"},
 	}
-	return fmt.Sprintf("%dh", int(d.Hours()))
+}
+
+type demoPlan struct {
+	name    string
+	every   time.Duration
+	grace   time.Duration
+	failAt  []int
+	noOpAt  []int
+	detail  string
+	failing bool
+}
+
+func demoHealthReports(plans []demoPlan, now time.Time) ([]health.Report, error) {
+	inputs := make([]healthdemo.Automation, 0, len(plans))
+	for _, p := range plans {
+		cadenceMinutes := int(p.every / time.Minute)
+		graceMinutes := int(p.grace / time.Minute)
+		ageMinutes := int((p.every / 2) / time.Minute)
+		outcome := "healthy"
+		if p.failing {
+			outcome = "failed"
+		}
+		inputs = append(inputs, healthdemo.Automation{
+			Name: p.name, CadenceMinutes: &cadenceMinutes, GraceMinutes: &graceMinutes,
+			LastDeliveryAge: &ageMinutes, Outcome: outcome,
+		})
+	}
+	raw, err := json.Marshal(healthdemo.Request{Automations: inputs})
+	if err != nil {
+		return nil, err
+	}
+	return healthdemo.Evaluate(raw, now)
+}
+
+func in(xs []int, i int) bool {
+	for _, x := range xs {
+		if x == i {
+			return true
+		}
+	}
+	return false
 }
 
 // seedDemoApplications fills the jobs tab, which is otherwise an empty table
