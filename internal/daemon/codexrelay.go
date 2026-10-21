@@ -57,6 +57,7 @@ type relayWorkspace struct {
 	ID           string        `json:"id"`
 	Name         string        `json:"name"`
 	AccountID    string        `json:"account_id,omitempty"`
+	PlanType     string        `json:"plan_type,omitempty"`
 	Paused       bool          `json:"paused"`
 	CredentialOK bool          `json:"credential_ok"`
 	Protected    bool          `json:"protected"`
@@ -138,6 +139,7 @@ type relayState struct {
 		ID           string `json:"id"`
 		Name         string `json:"name"`
 		AccountID    string `json:"account_id"`
+		PlanType     string `json:"plan_type"`
 		Paused       bool   `json:"paused"`
 		CredentialOK bool   `json:"credential_ok"`
 		Protected    bool   `json:"protected"`
@@ -212,7 +214,7 @@ func (s *Server) codexRelay(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, ws := range state.Workspaces {
 		v := relayWorkspace{
-			ID: ws.ID, Name: ws.Name, AccountID: ws.AccountID, Paused: ws.Paused,
+			ID: ws.ID, Name: ws.Name, AccountID: ws.AccountID, PlanType: ws.PlanType, Paused: ws.Paused,
 			CredentialOK: ws.CredentialOK, Protected: ws.Protected,
 			IsDefault: ws.ID == state.DefaultWorkspaceID,
 			IsNext:    ws.ID == state.Proposed.WorkspaceID,
