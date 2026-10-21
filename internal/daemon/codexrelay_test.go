@@ -20,7 +20,7 @@ func TestRelayWindowsCarryTheirOwnBurn(t *testing.T) {
 			w.Write([]byte(`<script type="application/json" id="codexrelay-boot">{"token":"tok"}</script>`))
 		case "/api/state":
 			w.Write([]byte(`{
-			  "workspaces":[{"id":"a","name":"a@x","credential_ok":true,"windows":[
+			  "workspaces":[{"id":"a","name":"a@x","plan_type":"prolite","credential_ok":true,"windows":[
 			    {"minutes":300,"label":"5-hour","remaining_percent":0},
 			    {"minutes":10080,"label":"weekly","remaining_percent":84},
 			    {"minutes":43200,"label":"30-day","remaining_percent":100}]}],
@@ -45,6 +45,9 @@ func TestRelayWindowsCarryTheirOwnBurn(t *testing.T) {
 		t.Fatalf("relay view not read: %v %s", err, rec.Body)
 	}
 	wins := v.Workspaces[0].Windows
+	if v.Workspaces[0].PlanType != "prolite" {
+		t.Errorf("account plan lost: %q", v.Workspaces[0].PlanType)
+	}
 	if wins[0].Burn == nil || *wins[0].Burn != 26.9 {
 		t.Errorf("5-hour window should carry the 5-hour burn, got %+v", wins[0])
 	}
