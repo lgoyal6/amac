@@ -2966,8 +2966,21 @@ $('refreshRelay').onclick = () => loadRelay();
 function syncEmbed(frame) {
   if (!frame.contentWindow || !frame.getAttribute('src') || frame.getAttribute('src') === 'about:blank') return;
   const theme = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme:dark)').matches ? 'dark' : 'light');
-  frame.contentWindow.postMessage({type:'amac:embed',theme}, new URL(frame.src,location.href).origin);
+  const heading = frame.closest('section')?.querySelector('.page-nav');
+  const stickyTop = heading ? Math.max(0, heading.getBoundingClientRect().bottom - frame.getBoundingClientRect().top) : 0;
+  frame.contentWindow.postMessage({type:'amac:embed',theme,stickyTop}, new URL(frame.src,location.href).origin);
 }
+let embedScrollPending = false;
+function syncEmbedScroll() {
+  if (embedScrollPending) return;
+  embedScrollPending = true;
+  requestAnimationFrame(() => {
+    embedScrollPending = false;
+    for (const id of ['hackFrame','relayFrame']) { const frame = $(id); if (!frame.closest('section').hidden) syncEmbed(frame); }
+  });
+}
+window.addEventListener('scroll', syncEmbedScroll, {passive:true});
+window.addEventListener('resize', syncEmbedScroll);
 for (const id of ['hackFrame','relayFrame']) $(id).addEventListener('load', () => syncEmbed($(id)));
 new MutationObserver(() => {syncEmbed($('hackFrame'));syncEmbed($('relayFrame'));}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
 matchMedia('(prefers-color-scheme:dark)').addEventListener('change', () => {syncEmbed($('hackFrame'));syncEmbed($('relayFrame'));});
