@@ -761,7 +761,13 @@
   .active-work .go { font-size:12px; color:var(--accent); }
   .hgrid { grid-template-columns:minmax(0,1fr); gap:0; }
   .hgrid > .hrow,.hgrid > .hrow:last-child { border:0; border-bottom:1px solid var(--line); background:transparent; border-radius:0; padding:18px 4px; }
-  .subnav { margin-bottom:22px; } .subnav button { font-family:var(--sans); padding:9px 14px; }
+  .page-nav { position:sticky; top:var(--header-h); z-index:4; background:var(--bg); padding:16px 0 12px; margin-top:-16px; margin-bottom:12px; border-bottom:1px solid var(--line); }
+  .page-nav .section-head { margin-bottom:0; }
+  .page-nav .subnav { margin:16px 0 0; overflow-x:auto; }
+  .page-nav .jobs-toolbar { margin:16px 0 0; }
+  .card.open { scroll-margin-top:calc(var(--header-h) + var(--page-nav-h, 0px) + var(--s3)); }
+  .card.open > .top { top:calc(var(--header-h) + var(--page-nav-h, 0px)); }
+  .subnav button { flex:none; font-family:var(--sans); padding:9px 14px; }
   .sm { font-family:var(--sans); min-height:32px; padding:6px 11px; }
   .data-freshness { padding:13px 16px; border:1px solid var(--line); border-radius:7px; background:var(--surface); font-size:12px; color:var(--dim); margin-bottom:20px; }
   .data-freshness.stale { color:var(--late); border-color:var(--late); }
@@ -774,12 +780,13 @@
   .job-status-text { font-size:12px; text-align:right; }
   .job-table-head,.pagination { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:14px 18px; color:var(--dim); font-size:12px; }
   .job-table-head { border-bottom:1px solid var(--line); background:var(--raise); }
-  .job-detail { position:sticky; top:84px; margin:0; }
+  .job-detail { position:sticky; top:calc(var(--header-h) + var(--page-nav-h, 0px) + 16px); margin:0; }
   .job-detail .section-head { margin-bottom:10px; justify-content:space-between; }
   .job-detail label { display:grid; gap:7px; font-size:12px; margin:20px 0; }
   .job-detail input,.job-detail select { width:100%; background:var(--raise); color:var(--fg); border:1px solid var(--line); padding:9px; border-radius:5px; font:inherit; }
   .bar { left:212px; width:calc(100% - 212px); }
-  #relayFrame { height:calc(100dvh - 145px); } .frame-wrap { height:calc(100dvh - 145px); }
+  #relayFrame { height:calc(100dvh - 145px); }
+  .frame-wrap { height:calc(100dvh - var(--header-h) - 104px); min-height:260px; }
   @media (max-width:1100px) { .home-layout { grid-template-columns:minmax(0,1fr) 260px; } .jobs-layout { grid-template-columns:minmax(0,1fr); } .job-detail { position:static; } }
   @media (max-width:800px) {
     body > header { margin:0; height:60px; padding:15px 18px; }
@@ -798,7 +805,8 @@
     .section-head h2 { font-size:25px; } .section-head p { font-size:12px; }
     .home-layout { grid-template-columns:1fr; } .home-aside { grid-template-columns:1fr; }
     .widget { padding:17px; } .bar { left:0; width:100%; bottom:calc(67px + env(safe-area-inset-bottom)); }
-    #relayFrame,.frame-wrap { height:calc(100dvh - 192px - env(safe-area-inset-bottom)); min-height:360px; }
+    #relayFrame { height:calc(100dvh - 192px - env(safe-area-inset-bottom)); min-height:360px; }
+    .frame-wrap { height:calc(100dvh - var(--header-h) - 171px - env(safe-area-inset-bottom)); }
     .frame-head { flex-wrap:wrap; } .frame-wrap { margin:0 -18px; } .brand .conn { font-family:var(--sans); }
     .job-table-head span { display:none; } .job-row { padding:15px 13px; }
   }
@@ -845,23 +853,28 @@
 
 <main>
   <section id="home">
+    <div class="page-nav">
     <div class="section-head">
-      <div class="grow"><h2>Home</h2><p>What needs your attention, then what is moving.</p></div>
+      <div class="grow"><h2>Home</h2></div>
       <button class="sm" id="refreshHome">refresh</button>
+    </div>
     </div>
     <div id="homeGrid" class="widgets"><div class="empty">checking</div></div>
   </section>
 
   <section id="search" hidden>
+    <div class="page-nav">
     <div class="section-head">
       <div class="grow"><h2>search</h2><p id="findWhat" hidden></p></div>
       <button class="sm" id="findClear">clear</button>
+    </div>
     </div>
     <div id="findOut" class="action-list"><div class="empty">type a word in the search box and press enter</div></div>
   </section>
 
   <section id="agents" hidden>
-    <div class="section-head"><div class="grow"><h2>Agents</h2><p>Active sessions, pending requests, and queued work.</p></div></div>
+    <div class="page-nav">
+    <div class="section-head"><div class="grow"><h2>Agents</h2></div></div>
     <div class="subnav" role="tablist" aria-label="agent views">
       <button class="on" role="tab" aria-selected="true" data-agent-view="board">board</button>
       <button role="tab" aria-selected="false" data-agent-view="wall">wall</button>
@@ -869,6 +882,7 @@
       <button role="tab" aria-selected="false" data-agent-view="crew">crew</button>
     </div>
 
+    </div>
     <section id="board">
       <div id="boardOverview" class="board-overview"></div>
       <div id="boardOut" class="grid"><div class="empty">no sessions yet</div></div>
@@ -912,11 +926,13 @@
   </section>
 
   <section id="automations" hidden>
-    <div class="section-head"><div class="grow"><h2>Automations</h2><p>Current checks, recorded deliveries, and schedules.</p></div></div>
+    <div class="page-nav">
+    <div class="section-head"><div class="grow"><h2>Automations</h2></div></div>
     <div class="subnav" role="tablist" aria-label="health views">
       <button class="on" role="tab" aria-selected="true" data-health-view="status">status now</button>
       <button role="tab" aria-selected="false" data-health-view="runs">run log</button>
       <button role="tab" aria-selected="false" data-health-view="schedule">intended schedule</button>
+    </div>
     </div>
     <div class="card" id="healthStatus"><div id="healthOut" class="empty">loading</div></div>
     <div class="card" id="healthRuns" hidden><div id="runsOut" class="empty">loading</div></div>
@@ -927,21 +943,26 @@
        question this panel answers is the one its own errors do not: which
        account is about to serve, and which of them can still serve at all. -->
   <section id="relay" hidden>
+    <div class="page-nav">
     <div class="section-head"><div class="grow"><h2>Relay</h2></div>
       <a class="sm" id="relayPop" href="#" target="_blank" rel="noreferrer" hidden>open alone</a>
       <button class="ghost" id="refreshRelay" type="button">refresh</button></div>
+    </div>
     <div id="relayOut" class="empty">loading</div>
     <iframe id="relayFrame" title="codex-relay dashboard" hidden></iframe>
   </section>
 
   <section id="money" hidden>
-    <div class="section-head"><div class="grow"><h2>Money</h2><p>Actual charges and API-equivalent usage, with source coverage.</p></div></div>
+    <div class="page-nav">
+    <div class="section-head"><div class="grow"><h2>Money</h2></div></div>
+    </div>
     <div id="spendOut" class="empty">loading</div>
   </section>
 
   <section id="jobs" hidden>
+    <div class="page-nav">
     <div class="section-head">
-      <div class="grow"><h2>Jobs</h2><p>Applications and follow-ups in one place.</p></div>
+      <div class="grow"><h2>Jobs</h2></div>
       <button class="sm" id="syncJobs">sync Notion</button>
     </div>
     <div class="jobs-toolbar">
@@ -958,15 +979,18 @@
         <option value="none">not set</option>
       </select>
     </div>
+    </div>
     <div class="card" id="jobCharts" hidden></div>
     <div class="section-head"><span id="jobCount" class="job-count"></span><span id="jobSyncState" class="job-count"></span></div>
     <div id="jobsOut" class="empty">loading</div>
   </section>
   <section id="hack" hidden>
+    <div class="page-nav">
     <div class="frame-head">
-      <span class="hdetail">HackQueue · research, build, and submit</span>
+      <span class="hdetail">HackQueue</span>
       <a class="sm" id="hackPop" href="/board" target="_blank" rel="noreferrer">open alone</a>
       <button class="sm" id="refreshHack">refresh</button>
+    </div>
     </div>
     <div class="frame-wrap"><iframe id="hackFrame" title="hackqueue board" src="about:blank"></iframe></div>
   </section>
@@ -3107,6 +3131,8 @@ setInterval(() => {
 // covered portion so the field being edited stays reachable.
 const measureChrome = () => {
   document.documentElement.style.setProperty('--header-h', document.querySelector('header').offsetHeight + 'px');
+  const pageNav = document.querySelector('main > section:not([hidden]) > .page-nav');
+  document.documentElement.style.setProperty('--page-nav-h', (pageNav?.offsetHeight || 0) + 'px');
   if (window.visualViewport) {
     const vv = window.visualViewport;
     const covered = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
@@ -3114,6 +3140,8 @@ const measureChrome = () => {
   }
 };
 new ResizeObserver(measureChrome).observe(document.querySelector('header'));
+const pageNavObserver = new ResizeObserver(measureChrome);
+document.querySelectorAll('.page-nav').forEach(nav => pageNavObserver.observe(nav));
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', measureChrome);
   window.visualViewport.addEventListener('scroll', measureChrome);
