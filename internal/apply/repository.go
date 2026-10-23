@@ -3,6 +3,7 @@ package apply
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -109,6 +110,11 @@ func (r *Repository) UpsertFromNotion(ctx context.Context, a Application) (Appli
 	if a.Status == "" {
 		a.Status = "Applied"
 	}
+	if a.NotionID != "" {
+		if err := r.followRenamedPage(ctx, a.NotionID, a.ID); err != nil {
+			return Application{}, err
+		}
+	}
 	now := time.Now().UTC()
 	_, err := r.db.ExecContext(ctx, `INSERT INTO applications
       (key,notion_id,notion_url,company,role,url,ats,source,applied_at,status,category,cycle,location,work_auth,tier,sponsorship,updated_at,sync_state)
@@ -130,6 +136,42 @@ func (r *Repository) UpsertFromNotion(ctx context.Context, a Application) (Appli
 		return Application{}, fmt.Errorf("import notion application: %w", err)
 	}
 	return r.Get(ctx, a.ID)
+}
+
+// followRenamedPage moves a Notion page's row to the page's new key.
+//
+// The key is company plus role, so editing either in Notion gives the page a
+// new key while its old row still holds the page's id. Inserting under the new
+// key then broke the unique index on notion_id, and that error ended every sync
+// ("UNIQUE constraint failed: applications.notion_id", every few minutes, so
+// jobs said the last sync did not finish). The row follows the page: re-keyed
+// when the new key is free; when it is taken, dropped if it was only a synced
+// copy of the page, or made to let go of the id if it holds an unpushed edit.
+func (r *Repository) followRenamedPage(ctx context.Context, notionID, key string) error {
+	var old, state string
+	err := r.db.QueryRowContext(ctx, `SELECT key, sync_state FROM applications WHERE notion_id=? AND key<>?`, notionID, key).Scan(&old, &state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("find renamed notion page: %w", err)
+	}
+	var taken int
+	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM applications WHERE key=?`, key).Scan(&taken); err != nil {
+		return fmt.Errorf("find renamed notion page: %w", err)
+	}
+	switch {
+	case taken == 0:
+		_, err = r.db.ExecContext(ctx, `UPDATE applications SET key=? WHERE key=?`, key, old)
+	case state == "synced":
+		_, err = r.db.ExecContext(ctx, `DELETE FROM applications WHERE key=?`, old)
+	default:
+		_, err = r.db.ExecContext(ctx, `UPDATE applications SET notion_id='', notion_url='' WHERE key=?`, old)
+	}
+	if err != nil {
+		return fmt.Errorf("follow renamed notion page: %w", err)
+	}
+	return nil
 }
 
 type ListOptions struct {

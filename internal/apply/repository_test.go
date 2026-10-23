@@ -69,6 +69,42 @@ func TestNotionImportDoesNotOverwriteAPendingLocalEdit(t *testing.T) {
 	}
 }
 
+// Editing a page's company or role in Notion gives it a new key. The old row
+// held the page's id, and the import failed on the unique index every sync.
+func TestARenamedNotionPageMovesItsRow(t *testing.T) {
+	_, repo := openApplicationRepo(t)
+	ctx := context.Background()
+	page := Application{Company: "Acme", Role: "SWE Intern", Status: "Applied", Source: SourceNotion, NotionID: "page-1", AppliedAt: time.Now()}
+	if _, err := repo.UpsertFromNotion(ctx, page); err != nil {
+		t.Fatal(err)
+	}
+	renamed := page
+	renamed.Role = "Software Engineering Intern"
+	got, err := repo.UpsertFromNotion(ctx, renamed)
+	if err != nil {
+		t.Fatalf("renamed page must import: %v", err)
+	}
+	if got.NotionID != "page-1" || got.Role != "Software Engineering Intern" {
+		t.Fatalf("got %+v", got)
+	}
+	if n, _ := repo.Count(ctx, ListOptions{}); n != 1 {
+		t.Fatalf("one page is one row, got %d", n)
+	}
+
+	// Renamed onto a key a local capture already holds: the synced copy goes.
+	local := Application{Company: "Beta", Role: "PM Intern", Status: "Applied", Source: SourceExtension, AppliedAt: time.Now()}
+	if _, err := repo.UpsertLocal(ctx, local); err != nil {
+		t.Fatal(err)
+	}
+	renamed.Company, renamed.Role = "Beta", "PM Intern"
+	if _, err := repo.UpsertFromNotion(ctx, renamed); err != nil {
+		t.Fatalf("rename onto a taken key must import: %v", err)
+	}
+	if n, _ := repo.Count(ctx, ListOptions{}); n != 1 {
+		t.Fatalf("the old synced copy should be gone, got %d rows", n)
+	}
+}
+
 type failingSink struct{}
 
 func (failingSink) Name() string                                      { return "notion" }
