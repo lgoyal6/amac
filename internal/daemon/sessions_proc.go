@@ -70,7 +70,7 @@ func procViews(list []procs.Session, known map[string]bool, now time.Time) []ses
 		if p.WorkDir != "" {
 			v.Dir = p.WorkDir
 		}
-		if p.Agent == "codex" && p.Kind == "desktop" {
+		if p.Agent == "codex" && p.Kind == "desktop" && strings.Contains(p.Command, "app-server") {
 			v.Name = "Codex app"
 			v.Detail = "the app's conversations are inside it; amac sees the process, not each one"
 		}
