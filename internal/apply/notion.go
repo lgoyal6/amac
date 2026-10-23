@@ -310,16 +310,19 @@ func SyncFromNotion(ctx context.Context, r *Repository, n *Notion) (SyncMeta, er
 		_ = r.SetSyncMeta(ctx, m)
 		return m, err
 	}
+	// One page that will not import is recorded and skipped. Returning on it
+	// left every page after it unimported and the push below never ran, for as
+	// long as that one page stayed as it was.
+	var firstErr error
 	for _, a := range apps {
-		if _, err := r.UpsertFromNotion(ctx, a); err != nil {
-			return SyncMeta{}, err
+		if _, err := r.UpsertFromNotion(ctx, a); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("%s %s: %w", a.Company, a.Role, err)
 		}
 	}
 	pending, err := r.Pending(ctx)
 	if err != nil {
 		return SyncMeta{}, err
 	}
-	var firstErr error
 	for _, a := range pending {
 		if err := n.Upsert(ctx, a.ID, a); err != nil {
 			_ = r.MarkSyncError(ctx, a.ID, err.Error())

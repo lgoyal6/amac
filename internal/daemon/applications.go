@@ -55,7 +55,13 @@ func (s *Server) listApplications(w http.ResponseWriter, r *http.Request) {
 	if _, err := apply.NewNotion(); err != nil {
 		resp.Warning = "Notion backup is not connected"
 	} else if meta.Error != "" {
-		resp.Warning = "The last Notion sync did not finish"
+		// With the reason. "did not finish" alone gave nothing to act on for
+		// the weeks one renamed page kept failing the import.
+		why := meta.Error
+		if len(why) > 160 {
+			why = why[:157] + "..."
+		}
+		resp.Warning = "The last Notion sync did not finish: " + why
 	}
 	writeJSON(w, 200, resp)
 }
