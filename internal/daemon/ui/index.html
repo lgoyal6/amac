@@ -1750,10 +1750,20 @@ async function loadHome(force = false) {
   const ready = (Array.isArray(tasks) ? tasks : []).filter(t => t.state === 'ready');
   if (ready.length) actions.push({tone:'info', title:`${ready.length} queued task${ready.length === 1 ? '' : 's'} ready`,
     detail:'Claim the next task when you have capacity.', label:'open queue', tab:'agents', view:'queue'});
-  for (const rep of (health.reports || []).filter(x => x.category !== 'machine' && x.state !== 'ok').slice(0, 3)) {
+  // Every one, named. This was the first three, so home said three were broken
+  // while the tile beside it said five; one item per automation also crowded
+  // everything else off the list, so a single failure keeps its own row and
+  // several share one.
+  const broke = automationReports(health).filter(x => x.state !== 'ok');
+  if (broke.length === 1) {
+    const rep = broke[0];
     actions.push({tone:rep.state === 'failing' || rep.state === 'down' ? 'urgent' : '', failure:rep.state === 'failing',
       title:`${rep.name} is ${rep.state}`, detail:rep.detail || 'The latest expected evidence is missing.',
       label:'check', tab:'automations', anchor:`auto-${rep.name}`});
+  } else if (broke.length) {
+    actions.push({tone:broke.some(x => x.state === 'failing' || x.state === 'down') ? 'urgent' : '', failure:true,
+      title:`${broke.length} automations need a look`, detail:broke.map(x => `${x.name} (${x.state})`).join(', '),
+      label:'check', tab:'automations', anchor:`auto-${broke[0].name}`});
   }
   const machine = (health.reports || []).find(x => x.category === 'machine' && x.state !== 'ok');
   if (machine) actions.push({tone:'', title:'Mac capacity warning',
