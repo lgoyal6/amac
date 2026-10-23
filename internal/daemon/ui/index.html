@@ -1935,7 +1935,7 @@ function renderHome({ actions, unread, health, spend, apps, appsTotal, runs, mac
     // lives here now rather than at the top of the automations tab: Mac capacity
     // is not an automation, and it is the thing to look at when the machine
     // feels slow, which is a home question.
-    { key:'machine', cls:'wide', head:'Machine', tab:null, badge:`${m.percent != null ? m.percent + '% memory' : ''}${sw.percent ? ` · swap ${sw.percent}%` : ''}`,
+    { key:'machine', cls:'wide', head:'Machine', tab:null, badge:`${m.percent != null ? m.percent + '% memory' : ''}${sw.used ? ` · ${bytes(sw.used)} swap` : ''}${dk.percent != null ? ` · disk ${dk.percent}%` : ''}`,
       body:'<details class="machine-details"><summary>Memory, storage, and processes</summary><div id="machineOut" class="empty">loading</div></details>' },
     { key:'recent', cls:'wide', head:'Recent activity', badge: `${recent.warnings && recent.warnings.length ? 'partial · ' : ''}last 24h`, tab:null,
       body:`<div class="w-list">${items.filter(i => !(i.kind === 'hack' && /closes in/.test(i.detail || ''))).slice(0, 9).map(i => `<div class="w-item"><span class="t">${esc(hhmm(i.at))}</span><span class="n">${esc(i.kind === 'session' ? (/^-Users-[^-]+$/.test(i.project) ? 'home' : i.project) : i.title)}</span><span class="d">${esc(i.kind === 'session' ? `session · ${i.detail || ''}` : i.detail || i.kind)}</span></div>`).join('') || '<div class="w-sub">nothing recorded in the last day</div>'}</div>` },
@@ -2362,9 +2362,13 @@ const bytes = n => {
 // A ratio against a limit is a meter, not a pie. The severity word travels with
 // the colour because a colour alone is not a reading: green and amber are the
 // same bar to a reader who cannot separate them, and to a printed page.
-function meter(label, used, total, pct) {
-  const level = pct >= 90 ? 'fail' : pct >= 75 ? 'late' : 'ok';
-  const word = pct >= 90 ? 'critical' : pct >= 75 ? 'tight' : 'healthy';
+//
+// The cut-offs are the sweep's, from machine-pressure in ~/.amac/health.json
+// (disk limit 95, swap limit 100% of RAM). The meter had its own, 90 for
+// everything, and called the Mac critical on home while the sweep said ok.
+function meter(label, used, total, pct, critical = 95, tight = 85) {
+  const level = pct >= critical ? 'fail' : pct >= tight ? 'late' : 'ok';
+  const word = pct >= critical ? 'critical' : pct >= tight ? 'tight' : 'healthy';
   return `<div class="meter">
     <div class="meter-label">${esc(label)}</div>
     <div class="meter-track"><div class="meter-fill ${level}" style="width:${Math.min(pct, 100)}%"></div></div>
@@ -2470,7 +2474,7 @@ async function loadMachine() {
       <div class="chart-head"><span class="chart-title">storage and swap</span>
         <span class="chart-note">${esc(m.disk.mount)}</span></div>
       ${meter('disk', m.disk.used, m.disk.total, m.disk.percent)}
-      ${m.swap.total ? meter('swap', m.swap.used, m.swap.total, m.swap.percent) : ''}
+      ${m.swap.total ? meter('swap, against RAM', m.swap.used, m.memory.total, Math.round(100 * m.swap.used / m.memory.total), 100, 75) : ''}
     </div>
     ${topProcesses(m.top)}
     <div class="hdetail" style="margin-top:12px">
