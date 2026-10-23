@@ -38,12 +38,22 @@ func TestFailureCount(t *testing.T) {
 		{"done (0 failures)", 0},
 		{"done (3 failures)", 3},
 		{"done (1 failure)", 1},
-		{"local passes done", 0}, // the other job has no tally at all
+		{"done (1 failures, gmail auth expired)", 1}, // devspend-refresh
+		{"local passes done", 0},                     // the other job has no tally at all
 		{"", 0},
 	} {
 		if got := markerCount(tc.note); got != tc.want {
 			t.Errorf("markerCount(%q) = %d, want %d", tc.note, got, tc.want)
 		}
+	}
+}
+
+func TestFailureReason(t *testing.T) {
+	if got := markerReason("done (1 failures, gmail auth expired)"); got != "gmail auth expired" {
+		t.Errorf("reason = %q", got)
+	}
+	if got := markerReason("done (3 failures)"); got != "" {
+		t.Errorf("no reason given, got %q", got)
 	}
 }
 

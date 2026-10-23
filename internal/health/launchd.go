@@ -225,7 +225,11 @@ func spendSnapshot(ctx context.Context, label string) (Report, error) {
 	return r, nil
 }
 
-var countRe = regexp.MustCompile(`\((\d+) (?:failures?|errors?)\)`)
+// The reason after the tally is optional: devspend-refresh writes
+// "done (1 failures, gmail auth expired)", and requiring ")" straight after the
+// count read every one of its failed runs as clean while the status check, which
+// reads the exit code, said failing.
+var countRe = regexp.MustCompile(`\((\d+) (?:failures?|errors?)(?:, ([^)]*))?\)`)
 
 // markerCount reads a failure tally a job wrote into its own completion marker.
 //
@@ -239,4 +243,12 @@ func markerCount(note string) int {
 	}
 	n, _ := strconv.Atoi(m[1])
 	return n
+}
+
+// markerReason is the job's own explanation after the tally, if it gave one.
+func markerReason(note string) string {
+	if m := countRe.FindStringSubmatch(note); m != nil {
+		return strings.TrimSpace(m[2])
+	}
+	return ""
 }

@@ -402,6 +402,9 @@ func launchdRuns(ctx context.Context, seen map[string]bool) ([]Run, error) {
 			if n := markerCount(m.note); n > 0 {
 				r.Status = RunFailed
 				r.Detail = fmt.Sprintf("%d step(s) failed", n)
+				if why := markerReason(m.note); why != "" {
+					r.Detail += ": " + why
+				}
 			}
 			if note := strings.TrimSpace(m.note); j.name == "tmux-idle-reaper" || j.name == "disk-sweep" {
 				r.Detail = note
