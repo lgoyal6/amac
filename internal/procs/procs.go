@@ -122,11 +122,13 @@ func Parse(ps string) []Session {
 		if agent != "claude" && agent != "codex" {
 			continue
 		}
-		// The ChatGPT app runs codex twice: app-server, which holds its
-		// conversations, and exec-server, a bridge to cloud environments that
-		// has no session of its own. Listing the bridge put a second "unknown"
-		// card on the board for nothing.
-		if agent == "codex" && slices.Contains(args, "exec-server") {
+		// The ChatGPT app runs codex as app-server, which holds its
+		// conversations, beside two kinds of plumbing with no session of their
+		// own: exec-server, a bridge to cloud environments, and short
+		// `exec --ephemeral` jobs it starts for itself every few minutes. Each
+		// put another "unknown" card on the board for nothing.
+		if agent == "codex" && (slices.Contains(args, "exec-server") ||
+			(slices.Contains(args, "exec") && slices.Contains(args, "--ephemeral"))) {
 			continue
 		}
 		s := Session{

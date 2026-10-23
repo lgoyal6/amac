@@ -243,12 +243,13 @@ func TestTranscriptLabelReadsTitleAndNewestCwd(t *testing.T) {
 	}
 }
 
-// The ChatGPT app's exec-server is a bridge to cloud environments, not a
-// session; its app-server is the one that holds conversations.
+// The ChatGPT app's exec-server and its ephemeral exec jobs are plumbing, not
+// sessions; its app-server is the one that holds conversations.
 func TestParseDropsTheCodexAppsBridge(t *testing.T) {
 	ps := `  PID  PPID     ELAPSED COMMAND
   100     1       05:00 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex -c features.x=true app-server --analytics-default-enabled
   101     1       05:00 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex -c forced_login_method="chatgpt" exec-server --remote https://example.invalid/api
+  102     1       00:18 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex exec --json --skip-git-repo-check --ephemeral --thread-source computer_history
 `
 	list := Parse(ps)
 	if len(list) != 1 || list[0].PID != 100 || list[0].Kind != "desktop" {
