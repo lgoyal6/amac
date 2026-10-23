@@ -1202,6 +1202,14 @@ function render() {
   for (const s of all) grid.appendChild(cardFor(s));
 }
 
+// The directory a session works in, as the repo name you would look for. Home
+// and the filesystem root are no answer to "the session on repo X", so they
+// show nothing rather than a chip that reads "lakshgoyal".
+function repoOf(dir) {
+  const parts = String(dir || '').split('/').filter(Boolean);
+  return parts.length > 2 ? parts[parts.length - 1] : '';
+}
+
 function cardFor(s) {
   const card = document.createElement('div');
   // The state is on the card, which colours the light down its edge. Said in
@@ -1242,7 +1250,8 @@ function cardFor(s) {
     ${account ? `<span class="agent" title="login this is spending">${esc(account)}</span>` : ''}
     <span class="kind" title="${({acp:'started by amac, driven over ACP', tmux:'a tmux session amac only watches',
       desktop:'a Claude Code desktop session, seen in the process table', terminal:'a claude in a plain terminal, seen in the process table'})[s.kind] || s.kind}">${({acp:'managed', tmux:'tmux', desktop:'desktop', terminal:'terminal'})[s.kind] || esc(s.kind || '')}</span>
-    ${s.attached ? '<span class="kind on" title="a terminal is attached to this session right now">attached</span>' : ''}`;
+    ${s.attached ? '<span class="kind on" title="a terminal is attached to this session right now">attached</span>' : ''}
+    ${repoOf(s.dir) ? `<span class="kind" title="${esc(s.dir)}">${esc(repoOf(s.dir))}</span>` : ''}`;
   card.appendChild(tags);
 
   const d = document.createElement('div');
