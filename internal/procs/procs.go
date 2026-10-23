@@ -25,6 +25,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,6 +53,12 @@ type Session struct {
 	Dir          string
 	Transcript   string
 	LastActivity time.Time
+	// From the transcript: the title the session was given and the directory
+	// it last worked in. A desktop-app session runs with its cwd at $HOME
+	// whatever repo it is in, so without these every card read "pid-NNN" in
+	// ~ and the session on repo X could not be found.
+	Title   string
+	WorkDir string
 }
 
 // Working is how recent the transcript's last write has to be for the session
@@ -113,6 +120,13 @@ func Parse(ps string) []Session {
 		rows[pid] = row{pid: pid, ppid: ppid, exe: path.Base(exe)}
 		agent := path.Base(exe)
 		if agent != "claude" && agent != "codex" {
+			continue
+		}
+		// The ChatGPT app runs codex twice: app-server, which holds its
+		// conversations, and exec-server, a bridge to cloud environments that
+		// has no session of its own. Listing the bridge put a second "unknown"
+		// card on the board for nothing.
+		if agent == "codex" && slices.Contains(args, "exec-server") {
 			continue
 		}
 		s := Session{
@@ -279,6 +293,7 @@ func attachTranscripts(list []Session, now time.Time) {
 			unnamed[s.Dir]++
 		}
 	}
+	attachCodexApp(list, now)
 	for i := range list {
 		s := &list[i]
 		if s.Agent != "claude" {
@@ -292,6 +307,81 @@ func attachTranscripts(list []Session, now time.Time) {
 		}
 		if s.Transcript != "" {
 			s.LastActivity = lastTimestamp(s.Transcript)
+			s.Title, s.WorkDir = transcriptLabel(s.Transcript)
+		}
+	}
+}
+
+// transcriptLabel is the session's title and the directory it last worked in,
+// from the same tail lastTimestamp reads. Claude repeats the custom-title line
+// through the file, so the tail carries it.
+func transcriptLabel(p string) (title, cwd string) {
+	f, err := os.Open(p)
+	if err != nil {
+		return "", ""
+	}
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return "", ""
+	}
+	start := max(info.Size()-tailBytes, 0)
+	buf, err := io.ReadAll(io.NewSectionReader(f, start, info.Size()-start))
+	if err != nil {
+		return "", ""
+	}
+	lines := bytes.Split(buf, []byte("\n"))
+	for i := len(lines) - 1; i >= 0 && (title == "" || cwd == ""); i-- {
+		var line struct {
+			Type        string `json:"type"`
+			CustomTitle string `json:"customTitle"`
+			AITitle     string `json:"aiTitle"`
+			Cwd         string `json:"cwd"`
+		}
+		if json.Unmarshal(lines[i], &line) != nil {
+			continue
+		}
+		if title == "" {
+			if line.CustomTitle != "" {
+				title = line.CustomTitle
+			} else if line.AITitle != "" {
+				title = line.AITitle
+			}
+		}
+		if cwd == "" && line.Cwd != "" {
+			cwd = line.Cwd
+		}
+	}
+	return title, cwd
+}
+
+// attachCodexApp gives the Codex app's process the time of the newest rollout
+// written since it started, which is the only activity signal Codex leaves on
+// disk. Only when it is the sole codex process outside tmux: a codex in a
+// terminal writes to the same directory, and nothing in the file says whose
+// it is.
+func attachCodexApp(list []Session, now time.Time) {
+	var app *Session
+	for i := range list {
+		if list[i].Agent != "codex" || list[i].InTmux {
+			continue
+		}
+		if app != nil || list[i].Kind != "desktop" {
+			return
+		}
+		app = &list[i]
+	}
+	home, err := os.UserHomeDir()
+	if app == nil || err != nil {
+		return
+	}
+	started := now.Add(-app.Elapsed)
+	for _, day := range []time.Time{now, now.AddDate(0, 0, -1)} {
+		dir := filepath.Join(home, ".codex", "sessions", day.Format("2006"), day.Format("01"), day.Format("02"))
+		if p := newest(dir, started); p != "" {
+			if info, err := os.Stat(p); err == nil && info.ModTime().After(app.LastActivity) {
+				app.LastActivity = info.ModTime()
+			}
 		}
 	}
 }

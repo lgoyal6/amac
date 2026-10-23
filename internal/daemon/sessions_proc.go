@@ -64,6 +64,16 @@ func procViews(list []procs.Session, known map[string]bool, now time.Time) []ses
 			ContinueCommand: resumeCommand(p.Agent, p.ResumeID),
 			Detail:          procDetail(p),
 		}
+		if p.Title != "" {
+			v.Name = p.Title
+		}
+		if p.WorkDir != "" {
+			v.Dir = p.WorkDir
+		}
+		if p.Agent == "codex" && p.Kind == "desktop" {
+			v.Name = "Codex app"
+			v.Detail = "the app's conversations are inside it; amac sees the process, not each one"
+		}
 		// dispatch.mjs builds a hackathon by spawning claude -p in the project
 		// directory. On the board that is a session like any other, named for
 		// what it is building rather than for its pid.

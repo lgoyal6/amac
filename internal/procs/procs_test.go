@@ -224,3 +224,34 @@ func TestLastTimestampFallsBackToTheFilesOwnTime(t *testing.T) {
 		t.Errorf("got %v, want the mtime %v", got, at)
 	}
 }
+
+// A desktop session runs at $HOME whatever repo it is in; the transcript says
+// what it is called and where it is working.
+func TestTranscriptLabelReadsTitleAndNewestCwd(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "x.jsonl")
+	body := `{"type":"user","cwd":"/Users/me","timestamp":"2026-10-22T10:00:00Z"}
+{"type":"custom-title","customTitle":"Hackathon curation","sessionId":"x"}
+{"type":"assistant","cwd":"/Users/me/amac","timestamp":"2026-10-22T11:00:00Z"}
+{"type":"mode","mode":"normal"}
+`
+	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	title, cwd := transcriptLabel(p)
+	if title != "Hackathon curation" || cwd != "/Users/me/amac" {
+		t.Errorf("got %q in %q", title, cwd)
+	}
+}
+
+// The ChatGPT app's exec-server is a bridge to cloud environments, not a
+// session; its app-server is the one that holds conversations.
+func TestParseDropsTheCodexAppsBridge(t *testing.T) {
+	ps := `  PID  PPID     ELAPSED COMMAND
+  100     1       05:00 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex -c features.x=true app-server --analytics-default-enabled
+  101     1       05:00 /Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex -c forced_login_method="chatgpt" exec-server --remote https://example.invalid/api
+`
+	list := Parse(ps)
+	if len(list) != 1 || list[0].PID != 100 || list[0].Kind != "desktop" {
+		t.Fatalf("want only the app-server, as a desktop session, got %+v", list)
+	}
+}
