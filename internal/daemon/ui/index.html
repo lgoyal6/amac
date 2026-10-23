@@ -1093,6 +1093,23 @@ function ago(iso) {
   return hrs < 48 ? hrs + 'h ago' : Math.round(hrs / 24) + 'd ago';
 }
 
+// One way to write a moment, everywhere: "Sep 27, 9:29 AM", with the year only
+// when it is not this one. The tabs had four ("4h ago", "9/27/2026, 9:29:08 AM",
+// raw ISO strings, "Oct 19, 07:55"), so the same instant read differently
+// depending on where you looked.
+function stamp(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  const opts = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleString([], opts);
+}
+const day = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleDateString([], { month: 'short', day: 'numeric' }); };
+
+// URLs in a probe's detail become links. The detail is escaped first, so only
+// the URL itself is turned into markup.
+const linkify = text => esc(text).replace(/https?:\/\/[^\s<]+/g, u => `<a href="${u}" target="_blank" rel="noopener">${u.replace(/^https?:\/\/(www\.)?/, '').slice(0, 60)}<span class="ext" aria-hidden="true">↗</span></a>`);
+
 let sessions = new Map();
 let logs = new Map();      // session id -> recent lines
 let activeSessionId = requestedSession; // exactly one expanded card; stable on a phone
@@ -1781,7 +1798,7 @@ async function loadHome(force = false) {
   // A stale scan is itself the first money item, and its alerts say when they
   // are from. The scan sat at Sep 27 for 26 days while home presented its
   // alerts as current and the header read "$0 today".
-  const scannedOn = spend.at ? new Date(spend.at).toLocaleDateString([], {month:'short', day:'numeric'}) : '';
+  const scannedOn = spend.at ? day(spend.at) : '';
   if (spend.stale) actions.push({tone:'urgent', title:`Money figures are from ${scannedOn || 'an old scan'}`,
     detail:'The spend scan has not completed since then, so nothing after it is counted. The automations tab says why (devspend-refresh).',
     label:'check', tab:'automations', anchor:'auto-devspend-refresh'});
@@ -1853,8 +1870,8 @@ async function loadHealth() {
           ${plan.host ? `<span class="kind">${esc(plan.host)}</span>` : ''}
           ${plan.schedule ? `<span class="kind">${esc(plan.schedule)}</span>` : ''}
         </div>
-        <div class="hdetail">${esc(rep.detail)}</div>
-        ${(rep.notes || []).map(n => `<div class="hdetail">${esc(n)}</div>`).join('')}
+        <div class="hdetail">${linkify(rep.detail)}</div>
+        ${(rep.notes || []).map(n => `<div class="hdetail">${linkify(n)}</div>`).join('')}
         ${rep.home && rep.state !== 'ok' ? `<div class="acts">
              <button class="sm fix" data-name="${esc(rep.name)}">fix it</button>
              <button class="sm shell" data-name="${esc(rep.name)}">shell</button>
@@ -1872,7 +1889,7 @@ async function loadHealth() {
   el.innerHTML = `<div class="hdetail explain-count" title="Machine capacity is shown separately and never counted as a failed automation."><b>${automations.filter(x => x.state === 'ok').length} of ${automations.length} automations healthy</b></div>`
     + `<div class="hgrid">${rows}</div>`
     + (machineRows ? `<div class="hdetail" style="margin-top:16px"><b>Machine status</b></div><div class="hgrid">${machineRows}</div>` : '')
-    + `<div class="hdetail" style="margin-top:12px">swept ${esc(new Date(at).toLocaleString())}</div>`;
+    + `<div class="hdetail" style="margin-top:12px">swept ${esc(stamp(at))}</div>`;
 
   // Only on rows that are not ok. Every row carrying two buttons made the
   // healthy ones as loud as the broken one, which is backwards for a screen
@@ -1931,7 +1948,7 @@ function renderHome({ actions, unread, health, spend, apps, appsTotal, runs, mac
     ${unread.length ? `<div class="w-act bad"><span class="n">cannot tell</span><span class="lbl">daemon</span><span class="d">could not read ${esc(unread.join(', '))}</span></div>` : ''}
     ${orderedActions.slice(0,4).map(a => item(a, a.tone === 'urgent' ? 'urgent' : '')).join('')}
     ${orderedActions.length > 4 ? `<details class="more-actions"><summary>Show ${orderedActions.length - 4} more items</summary>${orderedActions.slice(4).map(a => item(a, a.tone === 'urgent' ? 'urgent' : '')).join('')}</details>` : ''}
-    ${!unread.length && !actions.length ? `<div class="w-sub">nothing needs you. read ${esc(new Date().toLocaleTimeString())}</div>` : ''}`;
+    ${!unread.length && !actions.length ? `<div class="w-sub">nothing needs you. read ${esc(stamp(new Date()))}</div>` : ''}`;
 
   const widgets = [
     { key:'needs', cls:'wide', head:'Needs you', badge: actions.length ? String(actions.length) : '',
@@ -1977,7 +1994,7 @@ function renderHome({ actions, unread, health, spend, apps, appsTotal, runs, mac
       ${w.body || ''}
     </${w.tab ? 'button' : 'div'}>`;
   const active = sess.filter(s => ['working','blocked'].includes(s.state));
-  const activeHTML = `<div class="widget home-active"><span class="w-head"><b>Active work</b><span>${active.length} sessions</span></span>${active.length ? active.slice(0,8).map(s => `<button class="active-work" data-home-agent><span class="hstate ${s.state === 'blocked' ? 'down' : 'unknown'}">${esc(s.state === 'blocked' ? 'needs you' : 'working')}</span><span><b>${esc(s.name || s.id)}</b><small>${esc(s.detail || s.agent || s.kind || 'session')}</small></span><span class="go">Open ›</span></button>`).join('') : '<p class="w-sub">No active sessions reported.</p>'}</div>`;
+  const activeHTML = `<div class="widget home-active"><span class="w-head"><b>Active work</b><span>${active.length} session${active.length === 1 ? "" : "s"}</span></span>${active.length ? active.slice(0,8).map(s => `<button class="active-work" data-home-agent><span class="hstate ${s.state === 'blocked' ? 'down' : 'unknown'}">${esc(s.state === 'blocked' ? 'needs you' : 'working')}</span><span><b>${esc(s.name || s.id)}</b><small>${esc(s.detail || s.agent || s.kind || 'session')}</small></span><span class="go">Open ›</span></button>`).join('') : '<p class="w-sub">No active sessions reported.</p>'}</div>`;
   el.innerHTML = '<div class="home-primary">' + widgets.filter(w => ['needs','recent','machine'].includes(w.key)).map(w => widgetHTML(w,widgets.indexOf(w))).join('') + '</div><aside class="home-aside">' + widgets.filter(w => !['needs','recent','machine'].includes(w.key)).map(w => widgetHTML(w,widgets.indexOf(w))).join('') + '</aside>';
   el.querySelector('[data-home-key="needs"]').insertAdjacentHTML('afterend', activeHTML);
   el.querySelectorAll('[data-home-agent]').forEach(b => b.onclick = () => openTopTab('agents'));
@@ -2075,7 +2092,7 @@ async function loadHealthRuns() {
       const list = el.querySelector(`.runlist[data-name="${CSS.escape(name)}"]`);
       const open = list.hidden;
       list.hidden = !open;
-      b.textContent = open ? 'hide runs' : `show ${list.dataset.count} runs`;
+      b.textContent = open ? 'hide runs' : `show ${list.dataset.count} run${list.dataset.count === '1' ? '' : 's'}`;
       b.setAttribute('aria-expanded', open ? 'true' : 'false');
       // Remembered so a live automation.run event, which redraws the whole
       // list, does not collapse the row someone is reading.
@@ -2099,7 +2116,7 @@ function runRow(a, days) {
   const open = runsOpen.has(a.automation);
   const more = shown.length ? `<div class="acts">
       <button class="sm runs-toggle" data-name="${esc(a.automation)}" aria-expanded="${open}">
-        ${open ? 'hide runs' : `show ${shown.length} runs`}</button>
+        ${open ? 'hide runs' : `show ${shown.length} run${shown.length === 1 ? '' : 's'}`}</button>
     </div>
     <div class="runlist" data-name="${esc(a.automation)}" data-count="${shown.length}" ${open ? '' : 'hidden'}>
       ${(a.runs || []).map(runLine).join('')}
@@ -2137,7 +2154,7 @@ function runLine(x) {
 }
 
 function runTitle(x) {
-  return `${new Date(x.at).toLocaleString()} - ${x.status}${x.detail ? ': ' + x.detail : ''}`;
+  return `${stamp(x.at)} - ${x.status}${x.detail ? ': ' + x.detail : ''}`;
 }
 
 // Said in words because the strip is the one place on this screen where colour
@@ -2632,7 +2649,7 @@ async function loadSpend() {
     <div class="hname">recent activity</div>${events.slice(0, 10).map(e => `<div class="hrow">
       <span class="klabel ${e.severity >= 3 ? 'failing' : e.severity ? 'late' : 'ok'}">${esc(e.kind || 'event')}</span>
       <div style="min-width:0;flex:1"><div class="hname">${esc(e.service || e.serviceId || 'service')}</div>
-      <div class="hdetail">${esc([e.date, e.amountUsd, e.creditsRemainingUsd ? `${e.creditsRemainingUsd} credits left` : '', e.unread ? 'unread' : ''].filter(Boolean).join(' · '))}</div></div>
+      <div class="hdetail">${esc([stamp(e.date), e.amountUsd, e.creditsRemainingUsd ? `${e.creditsRemainingUsd} credits left` : '', e.unread ? 'unread' : ''].filter(Boolean).join(' · '))}</div></div>
     </div>`).join('')}</div>` : '';
   const notConnected = providers.filter(p => p.status !== 'ok').length + noApi.length;
   const providerRows = providers.length || noApi.length ? `<details class="card money-section coverage">
@@ -2643,7 +2660,7 @@ async function loadSpend() {
     </details>` : '';
   el.className = '';
   el.innerHTML = `
-    <div class="data-freshness ${d.stale ? 'stale' : ''}"><b>${d.stale ? 'Data is stale' : 'Source freshness'}</b> · ${esc(d.at ? new Date(d.at).toLocaleString() : 'No timestamp reported')}<div>${esc(d.caveat || 'Coverage depends on connected providers.')}</div></div>
+    <div class="data-freshness ${d.stale ? 'stale' : ''}"><b>${d.stale ? 'Data is stale' : 'Source freshness'}</b> · ${esc(d.at ? stamp(d.at) : 'No timestamp reported')}${d.stale ? '<div>Nothing after this is counted until the scan completes again; the automations tab says why.</div>' : ''}</div>
     <div class="spend-charts">
       <div class="card">
         <div class="chart-head"><span class="chart-title">API-equivalent by day</span>
@@ -2658,7 +2675,7 @@ async function loadSpend() {
     <div class="tiles">
       <div class="tile"><div class="tv">${esc(d.monthlyUsd)}</div><div class="tl">recurring / month</div></div>
       <div class="tile"><div class="tv">${esc(d.todayUsd || 'not scanned today')}</div><div class="tl">API equivalent today, not billed spend</div></div>
-      <div class="tile"><div class="tv">${esc(d.agentUsd)}</div><div class="tl">API equivalent, ${d.days}d${d.stale && d.at ? ` to ${esc(new Date(d.at).toLocaleDateString([], {month:'short', day:'numeric'}))}` : ''}</div></div>
+      <div class="tile"><div class="tv">${esc(d.agentUsd)}</div><div class="tl">API equivalent, ${d.days}d${d.stale && d.at ? ` to ${esc(day(d.at))}` : ''}</div></div>
       ${counts.trials ? `<div class="tile"><div class="tv">${esc(counts.trials)}</div><div class="tl">active trials</div></div>` : ''}
       ${(counts.creditAccounts || counts.creditsNeedingAttention) ? `<div class="tile"><div class="tv">${esc(counts.creditAccounts || counts.creditsNeedingAttention)}</div><div class="tl">credit balances</div></div>` : ''}
     </div>
@@ -2674,7 +2691,7 @@ async function loadSpend() {
            </div>`).join('')
         : '<div class="hdetail">nothing to act on</div>'}
       <div class="hdetail" style="margin-top:12px">
-        scanned ${esc(new Date(d.at).toLocaleString())}${d.stale ? ' - stale, the daily scan has not run' : ''}
+        scanned ${esc(stamp(d.at))}${d.stale ? ' - stale, the daily scan has not run' : ''}
       </div>
     </div>
     ${serviceRows}${eventRows}${providerRows}`;
