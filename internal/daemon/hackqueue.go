@@ -278,6 +278,10 @@ func (s *Server) hackqueueCountUncached(w http.ResponseWriter, r *http.Request) 
 	// finished build, where whether it went in before the deadline is a fact only
 	// you have. The dispatcher reaps the rest within five minutes; counting them
 	// until then made the badge promise work that was only a dead row.
+	//
+	// That exception lasts days, not forever. Three builds from September were
+	// still counted in late October, so the badge said 18 where the board said
+	// 15 need you.
 	now := time.Now()
 	for _, status := range []string{"pending", "idea_pending", "ready", "failed"} {
 		var entries []struct {
@@ -291,6 +295,9 @@ func (s *Server) hackqueueCountUncached(w http.ResponseWriter, r *http.Request) 
 			if e.ID == "" {
 				continue
 			}
+			if status == "ready" && hackDeadlinePassed(e.Closes, now.Add(-readyGrace)) {
+				continue
+			}
 			if status != "ready" && hackDeadlinePassed(e.Closes, now) {
 				continue
 			}
@@ -299,6 +306,9 @@ func (s *Server) hackqueueCountUncached(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, 200, map[string]any{"needsYou": needs})
 }
+
+// How long after its deadline a finished build still asks whether it went in.
+const readyGrace = 3 * 24 * time.Hour
 
 // Whether a deadline has passed. An unreadable one is treated as open, so a
 // format the Worker changes can only over-count, never hide a live decision.
