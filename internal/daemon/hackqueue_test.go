@@ -189,13 +189,14 @@ func TestTheBadgeSkipsClosedHackathons(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	past := time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339)
+	longPast := time.Now().Add(-40 * 24 * time.Hour).UTC().Format(time.RFC3339)
 	future := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"pending": [{"id":"live","closes":"` + future + `"},{"id":"dead","closes":"` + past + `"},{"id":"undated","closes":null}],
 			"failed": [{"id":"dead-fail","closes":"` + past + `"}],
-			"ready": [{"id":"late-build","closes":"` + past + `"}],
+			"ready": [{"id":"late-build","closes":"` + past + `"},{"id":"september-build","closes":"` + longPast + `"}],
 			"expired": [{"id":"gone","closes":"` + past + `"}]
 		}`))
 	}))
@@ -209,6 +210,6 @@ func TestTheBadgeSkipsClosedHackathons(t *testing.T) {
 	rec := &countRecorder{header: http.Header{}}
 	testServer(t).hackqueueCountUncached(rec, httptest.NewRequest("GET", "/api/hackqueue/count", nil))
 	if got := rec.body["needsYou"]; got != float64(3) {
-		t.Fatalf("want live, undated and the finished build counted (3), got %v", got)
+		t.Fatalf("want live, undated and the just-closed build counted (3), not the month-old one, got %v", got)
 	}
 }
