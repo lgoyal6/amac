@@ -976,6 +976,7 @@
         <option value="">all follow-ups</option>
         <option value="due">due now</option>
         <option value="scheduled">scheduled</option>
+        <option value="nudge">shortlist, no reply in 2+ weeks</option>
         <option value="none">not set</option>
       </select>
     </div>
@@ -2812,6 +2813,11 @@ function renderJobs() {
     if (follow === 'due' && !due) return false;
     if (follow === 'scheduled' && (!a.followUpAt || due)) return false;
     if (follow === 'none' && a.followUpAt) return false;
+    // No follow-up date had ever been set on any of 476 applications, so
+    // "due now" was always empty. This is the list worth a nudge instead:
+    // shortlisted, still at Applied, two weeks on.
+    if (follow === 'nudge' && !(a.tier === 'T1' && a.status === 'Applied' && !a.followUpAt
+      && Date.now() - new Date(a.appliedAt) >= 14 * 86400000)) return false;
     return true;
   });
   $('jobCount').textContent = `${filtered.length} of ${jobMeta.total ?? applications.length} applications`;
