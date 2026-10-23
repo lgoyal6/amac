@@ -387,7 +387,13 @@ func USD(cents int64) string {
 	if cents < 100 {
 		return fmt.Sprintf("$%.2f", float64(cents)/100)
 	}
-	return fmt.Sprintf("$%.0f", float64(cents)/100)
+	// Grouped, because "$65895" beside bars labelled "$2,804" reads as a
+	// different kind of number.
+	s := fmt.Sprintf("%.0f", float64(cents)/100)
+	for i := len(s) - 3; i > 0 && s[i-1] != '-'; i -= 3 {
+		s = s[:i] + "," + s[i:]
+	}
+	return "$" + s
 }
 
 // Breakdown merges one of looseapi's per-tool groupings into a ranked list.
