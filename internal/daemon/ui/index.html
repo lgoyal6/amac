@@ -1759,9 +1759,17 @@ async function loadHome(force = false) {
   if (machine) actions.push({tone:'', title:'Mac capacity warning',
     detail:`Automations are not marked failed. ${machine.detail || 'The machine is under pressure.'}`,
     label:'details', tab:'automations'});
+  // A stale scan is itself the first money item, and its alerts say when they
+  // are from. The scan sat at Sep 27 for 26 days while home presented its
+  // alerts as current and the header read "$0 today".
+  const scannedOn = spend.at ? new Date(spend.at).toLocaleDateString([], {month:'short', day:'numeric'}) : '';
+  if (spend.stale) actions.push({tone:'urgent', title:`Money figures are from ${scannedOn || 'an old scan'}`,
+    detail:'The spend scan has not completed since then, so nothing after it is counted. The automations tab says why (devspend-refresh).',
+    label:'check', tab:'automations', anchor:'auto-devspend-refresh'});
   (spend.alerts || []).slice(0, 3).forEach((alert, i) => {
-    actions.push({tone:alert.severity >= 3 ? 'urgent' : '', title:'Money needs attention',
-      detail:alert.message || 'A balance, trial, or charge needs review.', label:'review', tab:'money', anchor:`malert-${i}`});
+    actions.push({tone:alert.severity >= 3 ? 'urgent' : '', title:`${alert.service || 'Money'} needs attention`,
+      detail:(alert.message || 'A balance, trial, or charge needs review.') + (spend.stale ? ` (as of ${scannedOn})` : ''),
+      label:'review', tab:'money', anchor:`malert-${i}`});
   });
   const today = new Date(); today.setHours(23, 59, 59, 999);
   const due = apps.filter(a => a.followUpAt && new Date(a.followUpAt) <= today && !['Offer','Rejected'].includes(a.status));
@@ -2626,8 +2634,8 @@ async function loadSpend() {
     </div>
     <div class="tiles">
       <div class="tile"><div class="tv">${esc(d.monthlyUsd)}</div><div class="tl">recurring / month</div></div>
-      <div class="tile"><div class="tv">${esc(d.todayUsd)}</div><div class="tl">API equivalent today, not billed spend</div></div>
-      <div class="tile"><div class="tv">${esc(d.agentUsd)}</div><div class="tl">API equivalent, ${d.days}d</div></div>
+      <div class="tile"><div class="tv">${esc(d.todayUsd || 'not scanned today')}</div><div class="tl">API equivalent today, not billed spend</div></div>
+      <div class="tile"><div class="tv">${esc(d.agentUsd)}</div><div class="tl">API equivalent, ${d.days}d${d.stale && d.at ? ` to ${esc(new Date(d.at).toLocaleDateString([], {month:'short', day:'numeric'}))}` : ''}</div></div>
       ${counts.trials ? `<div class="tile"><div class="tv">${esc(counts.trials)}</div><div class="tl">active trials</div></div>` : ''}
       ${(counts.creditAccounts || counts.creditsNeedingAttention) ? `<div class="tile"><div class="tv">${esc(counts.creditAccounts || counts.creditsNeedingAttention)}</div><div class="tl">credit balances</div></div>` : ''}
     </div>

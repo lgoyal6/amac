@@ -447,10 +447,15 @@ func (s *Server) spend(w http.ResponseWriter, r *http.Request) {
 		providers = append(providers, v)
 	}
 
+	// Empty, not "$0", when the snapshot is from another day: zero is a claim.
+	today := ""
+	if now := time.Now(); snap.CoversDay(now) {
+		today = spend.USD(snap.TodayCents(now))
+	}
 	writeJSON(w, 200, spendView{
 		MonthlyUSD:          spend.USD(snap.MonthlyCents),
 		AgentUSD:            spend.USD(snap.AgentCents()),
-		TodayUSD:            spend.USD(snap.TodayCents(time.Now())),
+		TodayUSD:            today,
 		Days:                snap.Usage.Days,
 		Source:              snap.Source,
 		MessageCount:        snap.MessageCount,

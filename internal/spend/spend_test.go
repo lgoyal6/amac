@@ -56,6 +56,16 @@ func TestTotalsAcrossTools(t *testing.T) {
 	}
 }
 
+func TestCoversDayIsTheSnapshotsOwnLocalDay(t *testing.T) {
+	s := Snapshot{GeneratedAt: time.Date(2026, 9, 27, 16, 29, 0, 0, time.UTC)}
+	if !s.CoversDay(time.Date(2026, 9, 27, 18, 0, 0, 0, time.UTC)) {
+		t.Error("same day must be covered")
+	}
+	if s.CoversDay(time.Date(2026, 10, 22, 18, 0, 0, 0, time.UTC)) {
+		t.Error("a snapshot from Sep 27 cannot say what Oct 22 cost")
+	}
+}
+
 func TestServicesExposeTrialsCreditsAndAttention(t *testing.T) {
 	const richer = `{
   "generatedAt":"2026-08-28T12:00:00Z",

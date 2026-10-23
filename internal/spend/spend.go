@@ -244,6 +244,14 @@ func (s Snapshot) TodayCents(now time.Time) int64 {
 	return n
 }
 
+// CoversDay says whether the snapshot was taken on now's local day, which is
+// the only case where TodayCents answers "today". A snapshot from Sep 27 read
+// on Oct 22 has no entry for Oct 22, so TodayCents is 0, and the header showed
+// "$0 API-equivalent today" beside tens of millions of tokens.
+func (s Snapshot) CoversDay(now time.Time) bool {
+	return s.GeneratedAt.In(now.Location()).Format("2006-01-02") == now.Format("2006-01-02")
+}
+
 // Services turns looseapi's durable event ledger into the rows a control
 // surface needs. The snapshot remains the source of truth; this is only a
 // presentation projection and does not attempt to classify billing mail again.
