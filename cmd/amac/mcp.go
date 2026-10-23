@@ -331,8 +331,11 @@ func cmdMCP(args []string) error {
 				return "", fmt.Errorf("no spend snapshot yet: %w", err)
 			}
 			var b strings.Builder
-			fmt.Fprintf(&b, "%s over %d days, %s today.\n\n",
-				spend.USD(snap.AgentCents()), snap.Usage.Days, spend.USD(snap.TodayCents(time.Now())))
+			today := "today unknown, the snapshot is from " + snap.GeneratedAt.Local().Format("Jan 2")
+			if now := time.Now(); snap.CoversDay(now) {
+				today = spend.USD(snap.TodayCents(now)) + " today"
+			}
+			fmt.Fprintf(&b, "%s over %d days, %s.\n\n", spend.USD(snap.AgentCents()), snap.Usage.Days, today)
 			fmt.Fprintf(&b, "by account:\n")
 			for _, a := range snap.Accounts(account.All()) {
 				who := a.Email
