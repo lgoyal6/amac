@@ -43,8 +43,8 @@ func serviceOnTailnet(ctx context.Context, label, daemonPort string) (Report, er
 		return r, nil
 	}
 
-	ip, ok := tailnetAddr()
-	if !ok {
+	ips := tailnetAddrs()
+	if len(ips) == 0 {
 		// Not a failure of the daemon. It is doing exactly what it was built
 		// to do, which is refuse to bind anywhere but the tailnet, and saying
 		// "down" without the reason would send you reading amac's logs instead
@@ -57,14 +57,30 @@ func serviceOnTailnet(ctx context.Context, label, daemonPort string) (Report, er
 	// A dial, not an HTTP request. Every route needs the token, so a 401 and a
 	// 200 prove the same thing here: something is listening and it is the
 	// daemon. Asking for more would mean putting the token in the probe.
-	conn, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp", net.JoinHostPort(ip, daemonPort))
-	if err != nil {
+	//
+	// Every candidate, not the first. 100.64.0.0/10 is also carrier-grade NAT
+	// space, so on a hotspot or a campus network the Wi-Fi interface holds a
+	// 100.x address too. The probe dialled that one (100.64.1.26) and reported
+	// the daemon down on the very page the daemon was serving from its real
+	// tailnet address.
+	ip := ""
+	var lastErr error
+	for _, candidate := range ips {
+		conn, err := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "tcp", net.JoinHostPort(candidate, daemonPort))
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		_ = conn.Close()
+		ip = candidate
+		break
+	}
+	if ip == "" {
 		r.State = Down
-		r.Detail = "loaded and the tailnet is up, but nothing is listening on " + ip + ":" + daemonPort
-		r.Err = err.Error()
+		r.Detail = "loaded and the tailnet is up, but nothing is listening on " + strings.Join(ips, " or ") + ":" + daemonPort
+		r.Err = lastErr.Error()
 		return r, nil
 	}
-	_ = conn.Close()
 
 	r.Detail = "serving the board on " + ip + ":" + daemonPort
 	if host, err := os.Hostname(); err == nil {
@@ -115,26 +131,51 @@ func serviceOnLoopback(ctx context.Context, label, port string) (Report, error) 
 	return r, nil
 }
 
-// tailnetAddr finds this machine's tailnet address on a local interface.
+// tailnetAddrs lists the 100.x addresses on local interfaces, utun first.
 //
 // Deliberately not the Tailscale CLI: it reports the node's address from the
 // control plane even while the client is stopped, so trusting it would report
 // a daemon as merely crashed when Tailscale is simply off. The interface list
 // answers the question the probe actually has, which is whether that address
-// exists here right now.
-func tailnetAddr() (string, bool) {
-	addrs, err := net.InterfaceAddrs()
+// exists here right now. Tailscale's interface is a utun, so those go first;
+// the rest are kept because the probe would rather dial one address too many
+// than miss the one the daemon is on.
+func tailnetAddrs() []string {
+	ifaces, err := net.Interfaces()
 	if err != nil {
-		return "", false
+		return nil
 	}
-	for _, a := range addrs {
-		ipnet, ok := a.(*net.IPNet)
-		if !ok || ipnet.IP.To4() == nil {
+	var found []ifaceAddr
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
 			continue
 		}
-		if ip := ipnet.IP.To4().String(); strings.HasPrefix(ip, "100.") {
-			return ip, true
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			if ipnet, ok := a.(*net.IPNet); ok && ipnet.IP.To4() != nil {
+				found = append(found, ifaceAddr{iface.Name, ipnet.IP.To4().String()})
+			}
 		}
 	}
-	return "", false
+	return orderTailnet(found)
+}
+
+type ifaceAddr struct{ iface, ip string }
+
+func orderTailnet(found []ifaceAddr) []string {
+	var utun, other []string
+	for _, a := range found {
+		if !strings.HasPrefix(a.ip, "100.") {
+			continue
+		}
+		if strings.HasPrefix(a.iface, "utun") {
+			utun = append(utun, a.ip)
+		} else {
+			other = append(other, a.ip)
+		}
+	}
+	return append(utun, other...)
 }
